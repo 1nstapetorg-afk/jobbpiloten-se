@@ -1,0 +1,10 @@
+# Round-77-post init — top-level .gitignore
+node_modules/
+.next/
+out/
+*.lock
+extension/build/
+extension/__lint_await_async_negative_test__.js
+dev-*.log
+/tmp/
+.DS_Store
