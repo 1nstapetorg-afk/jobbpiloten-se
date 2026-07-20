@@ -1,0 +1,507 @@
+/* JobbPiloten Auto-Fill — popup styles
+ *
+ * Vanilla CSS (no Tailwind/React) to keep the extension bundle small.
+ * The palette mirrors the dashboard: amber-500 accent + slate text +
+ * emerald for "connected" state, indigo for links. All values scoped
+ * via .jp- prefix so a stray popup-stylesheet on a host job-site page
+ * can't bleed into JobbPiloten's own UI.
+ */
+
+:root {
+  --jp-amber: #f59e0b;
+  --jp-amber-strong: #d97706;
+  --jp-indigo: #4f46e5;
+  --jp-indigo-strong: #4338ca;
+  --jp-emerald: #10b981;
+  --jp-red: #ef4444;
+  --jp-slate-50: #f8fafc;
+  --jp-slate-100: #f1f5f9;
+  --jp-slate-200: #e2e8f0;
+  --jp-slate-400: #94a3b8;
+  --jp-slate-600: #475569;
+  --jp-slate-900: #0f172a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: var(--jp-slate-900);
+  background: var(--jp-slate-50);
+  width: 360px;
+}
+
+.jp-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px 12px;
+  background: linear-gradient(135deg, var(--jp-indigo) 0%, var(--jp-amber) 100%);
+  color: #fff;
+}
+
+.jp-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.jp-title-main {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.jp-title-sub {
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.jp-body {
+  padding: 14px 16px 16px;
+}
+
+.jp-status-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid var(--jp-slate-200);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.jp-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--jp-slate-400);
+  flex-shrink: 0;
+  transition: background 200ms;
+}
+
+.jp-status-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.jp-status-line {
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.2;
+  color: var(--jp-slate-900);
+}
+
+.jp-status-meta {
+  font-size: 11px;
+  color: var(--jp-slate-600);
+  margin-top: 2px;
+}
+
+.jp-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.jp-btn {
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  transition: background 150ms, border-color 150ms, color 150ms;
+}
+
+.jp-btn[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.jp-btn-primary {
+  background: var(--jp-amber);
+  color: var(--jp-slate-900);
+}
+
+.jp-btn-primary:hover:not([disabled]) {
+  background: var(--jp-amber-strong);
+}
+
+.jp-btn-secondary {
+  background: #fff;
+  color: var(--jp-indigo);
+  border-color: var(--jp-indigo);
+}
+
+.jp-btn-secondary:hover:not([disabled]) {
+  background: var(--jp-indigo);
+  color: #fff;
+}
+
+.jp-btn-link {
+  background: transparent;
+  color: var(--jp-indigo-strong);
+  border: none;
+  text-decoration: underline;
+  padding: 6px 0;
+}
+
+/* v0.2.1: jp-btn-danger — the Koppla från button (popup.js#disconnect)
+   uses this variant. Tinted red, increased saturation on hover so the
+   destructive action reads as deliberate peer of Öppna Dashboard
+   rather than a primary CTA. Inline-block width via the same shape
+   as jp-btn so the action labels stay grid-aligned. */
+.jp-btn.jp-btn-danger {
+  background: rgba(239, 68, 68, 0.06);
+  border: 1px solid rgba(239, 68, 68, 0.20);
+  color: #b91c1c;
+  font-weight: 500;
+  text-decoration: none;
+  padding: 8px 12px;
+}
+.jp-btn.jp-btn-danger:hover:not([disabled]) {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #991b1b;
+}
+
+.jp-btn-icon {
+  font-size: 14px;
+  display: inline-block;
+  transition: transform 120ms;
+}
+
+/* 2026-07-12 (Round-11) — "Sök igen" button icon-spin
+   affordance. Scoped to #jp-rescan-btn (NOT the global
+   .jp-btn:active selector) so the rotate doesn't apply
+   to the Fill / Refresh / Anslut buttons — those are
+   already busy with their own visual states and would
+   look noisy. The 120ms rotate communicates "scanning...". */
+#jp-rescan-btn:active .jp-btn-icon {
+  transform: rotate(180deg);
+}
+
+.jp-detected {
+  margin-top: 12px;
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid var(--jp-slate-200);
+  padding: 10px 12px;
+}
+
+.jp-section-title {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--jp-slate-600);
+}
+
+.jp-detected-list {
+  margin: 0;
+  padding: 0 0 0 14px;
+  font-size: 12px;
+  color: var(--jp-slate-900);
+  line-height: 1.4;
+}
+
+.jp-footer-hint {
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--jp-slate-600);
+  line-height: 1.4;
+  text-align: center;
+}
+
+/* Round-34 / Part 4 — Email-apply compose panel. Mirrors the
+ * settings panel shape (rounded card + input rows) so the popup
+ * visual stays coherent as the user toggles between the Fyll-i-nu
+ * and Ansök-via-mejl surfaces. */
+.jp-compose {
+  margin-top: 12px;
+  padding: 12px;
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid var(--jp-slate-200);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.jp-compose-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--jp-slate-600);
+  margin: 8px 0 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.jp-compose-textarea {
+  width: 100%;
+  min-height: 140px;
+  padding: 8px 10px;
+  border: 1px solid var(--jp-slate-200);
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: var(--jp-slate-900);
+  background: var(--jp-slate-50);
+  resize: vertical;
+  line-height: 1.4;
+}
+.jp-compose-textarea:focus {
+  outline: none;
+  border-color: var(--jp-indigo);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.18);
+  background: #fff;
+}
+.jp-compose-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.jp-compose-status { margin-top: 8px; }
+.jp-compose-status.jp-compose-status-ok {
+  background: rgba(16, 185, 129, 0.10);
+  color: #047857;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+.jp-compose-status.jp-compose-status-err {
+  background: rgba(239, 68, 68, 0.10);
+  color: #b91c1c;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+/* ---- Mode toggle (Round-52 / Issue 1) ----
+ *
+ * Two pills at the top of the popup body that switch between
+ * Jobbformulär and Mejlutkast. The active pill gets a strong
+ * indigo background; the inactive gets a neutral slate border.
+ * Single-pill width = 50% so the toggle sits compact in the 360px
+ * popup. Keyboard nav: Tab lands on the focused pill, Enter/Space
+ * activates the mode (standard button semantics, no extra JS).
+ */
+.jp-mode-toggle {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid var(--jp-slate-200);
+  border-radius: 10px;
+}
+.jp-mode-pill {
+  flex: 1 1 0;
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--jp-slate-600);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 9px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+.jp-mode-pill:hover:not([aria-selected="true"]) {
+  background: var(--jp-slate-100);
+  color: var(--jp-slate-900);
+}
+.jp-mode-pill[aria-selected="true"] {
+  background: var(--jp-indigo);
+  color: #fff;
+  border-color: var(--jp-indigo-strong);
+}
+.jp-mode-pill:focus-visible {
+  outline: 2px solid var(--jp-indigo);
+  outline-offset: 2px;
+}
+
+/* ---- Mejlutkast panel (Round-52 / Issue 1) ----
+ *
+ * Mirrors the existing .jp-compose / .jp-settings card shapes
+ * so the popup visual stays coherent. The recipient + match rows
+ * share the .jp-settings-help chip pattern; the picker <select>
+ * reuses the .jp-settings-input class for visual consistency.
+ */
+.jp-mejlutkast {
+  margin-top: 12px;
+  padding: 12px;
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid var(--jp-slate-200);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.jp-mejlutkast-recipient,
+.jp-mejlutkast-match {
+  display: inline-block;
+  font-weight: 600;
+  color: var(--jp-slate-900);
+  margin-left: 4px;
+}
+.jp-mejlutkast-match-row[data-state="matched"] #jp-mejlutkast-match {
+  color: #047857;
+}
+.jp-mejlutkast-match-row[data-state="nomatch"] #jp-mejlutkast-match {
+  color: #b45309;
+}
+.jp-mejlutkast-status.jp-mejlutkast-status-ok {
+  background: rgba(16, 185, 129, 0.10);
+  color: #047857;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+.jp-mejlutkast-status.jp-mejlutkast-status-err {
+  background: rgba(239, 68, 68, 0.10);
+  color: #b91c1c;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+/* ---- Settings panel (dashboard URL override, v0.2.1) ----
+ * Collapsed inline. Single column. The settings button (⚙️) lives in the
+ * header; clicking toggles `hidden` on `.jp-settings`. The amber button
+ * in the header is intentionally NOT highlighted — we want the dashboard
+ * button to remain the dominant affordance.
+ */
+.jp-icon-btn {
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #fff;
+  font-size: 14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 150ms, transform 120ms;
+}
+.jp-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.30);
+}
+.jp-icon-btn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.8);
+  outline-offset: 2px;
+}
+
+.jp-settings {
+  margin-top: 12px;
+  padding: 12px;
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid var(--jp-slate-200);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.jp-settings-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--jp-slate-600);
+  margin-bottom: 4px;
+}
+.jp-settings-help {
+  font-size: 11px;
+  color: var(--jp-slate-600);
+  margin: 0 0 8px;
+  line-height: 1.4;
+}
+.jp-settings-input {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--jp-slate-200);
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--jp-slate-900);
+  background: var(--jp-slate-50);
+}
+.jp-settings-input:focus {
+  outline: none;
+  border-color: var(--jp-indigo);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.18);
+  background: #fff;
+}
+.jp-settings-input::placeholder {
+  color: var(--jp-slate-400);
+}
+.jp-settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.jp-settings-status {
+  margin-top: 8px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.jp-settings-status.jp-settings-status-ok {
+  background: rgba(16, 185, 129, 0.10);
+  color: #047857;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+.jp-settings-status.jp-settings-status-err {
+  background: rgba(239, 68, 68, 0.10);
+  color: #b91c1c;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+@media (prefers-color-scheme: dark) {
+  .jp-settings {
+    background: #1f2937;
+    border-color: #334155;
+  }
+  .jp-settings-input {
+    background: var(--jp-slate-900);
+    color: var(--jp-slate-100);
+    border-color: #334155;
+  }
+  .jp-settings-input:focus {
+    background: var(--jp-slate-900);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  html, body {
+    background: var(--jp-slate-900);
+    color: var(--jp-slate-100);
+  }
+  .jp-status-card,
+  .jp-detected {
+    background: #1f2937;
+    border-color: #334155;
+  }
+  .jp-status-line {
+    color: var(--jp-slate-100);
+  }
+  .jp-btn-secondary {
+    background: transparent;
+    color: var(--jp-amber);
+    border-color: var(--jp-amber);
+  }
+  .jp-btn-secondary:hover:not([disabled]) {
+    background: var(--jp-amber);
+    color: var(--jp-slate-900);
+  }
+}

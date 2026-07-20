@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <!-- Content-Security-Policy meta: read-only shadow of the canonical
+       CSP in extension/manifest.json. Chrome ignores this when the
+       manifest is present; kept inline so a popup edit visibly shows
+       the policy. default-src 'none' blocks everything; we re-open
+       script-src + style-src + img-src to 'self', connect-src to
+       the single JobbPiloten production origin. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://jobbpiloten.se;">
+  <title>JobbPiloten Auto-Fill</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="jp-header">
+    <div class="jp-logo" aria-hidden="true">✈</div>
+    <div class="jp-title">
+      <div class="jp-title-main">JobbPiloten Auto-Fill</div>
+      <div class="jp-title-sub">Snabbfyll jobbansökningar</div>
+    </div>
+    <!-- Dashboard-URL override (manual entry point for users on a
+         preview/staging branch who want to point the extension at a
+         non-production backend). Click toggles the settings panel
+         below; the panel auto-collapses on Save/Reset so the dashboard
+         button stays the primary affordance. v0.2.1 -->
+    <button
+      type="button"
+      class="jp-icon-btn"
+      id="jp-settings-btn"
+      title="Dashboard-URL"
+      aria-label="Dashboard-URL"
+      data-testid="jp-settings-btn"
+    >⚙️</button>
+  </header>
+
+  <main class="jp-body">
+    <!-- Round-42 (Part 3 polish) — per-question style override.
+         Surfaces a 5-style picker that overrides the profile's
+         default stylePreference for the NEXT batch answer. The
+         selection is stored in chrome.storage.local under
+         jobbpiloten_styleOverride so the content script reads it
+         before posting to /api/extension/answer. Hidden by default
+         (the section's `data-attribute` is toggled by the JS once
+         the user is connected + has detected fields). -->
+    <section
+      class="jp-style-override"
+      id="jp-style-override"
+      hidden
+      data-testid="jp-style-override"
+    >
+      <label class="jp-compose-label" for="jp-style-override-select">Skrivstil för nästa svar</label>
+      <select
+        id="jp-style-override-select"
+        class="jp-settings-input"
+        data-testid="jp-style-override-select"
+      >
+        <option value="lagom">Lagom (standard)</option>
+        <option value="strukturerad">Strukturerad</option>
+        <option value="berattande">Berättande</option>
+        <option value="direkt">Direkt</option>
+        <option value="engagerad">Engagerad</option>
+      </select>
+      <p class="jp-settings-help" id="jp-style-override-help">
+        Åsidosätter din profils standardstil för nästa AI-svar.
+      </p>
+    </section>
+
+    <section class="jp-status-card" data-testid="jp-status-card">
+      <div class="jp-status-dot" id="jp-status-dot" aria-hidden="true"></div>
+      <div class="jp-status-text">
+        <div class="jp-status-line" id="jp-status-line">Kontrollerar…</div>
+        <div class="jp-status-meta" id="jp-status-meta"></div>
+      </div>
+    </section>
+
+    <!-- Round-52 / Issue 1 — Mejlutkast mode toggle. Two pills at
+         the top of the popup body that switch the popup between
+         the classic "Jobbformulär" surface (form-fill on ATS pages)
+         and the new "Mejlutkast" surface (recipient-driven draft
+         on Gmail/Outlook compose windows). The pill state lives in
+         chrome.storage.local (jobbpiloten_activeMode) so a popup
+         re-open remembers the user's last pick. Hidden on initial
+         render because both pills are conditionally enabled by the
+         connected-user gate in popup.js — see the wire() block. -->
+    <section
+      class="jp-mode-toggle"
+      id="jp-mode-toggle"
+      hidden
+      data-testid="jp-mode-toggle"
+      role="tablist"
+      aria-label="JobbPiloten-läge"
+    >
+      <button
+        type="button"
+        class="jp-mode-pill"
+        id="jp-mode-formular"
+        data-mode="formular"
+        role="tab"
+        aria-selected="false"
+        data-testid="jp-mode-formular"
+      >Jobbformulär</button>
+      <button
+        type="button"
+        class="jp-mode-pill"
+        id="jp-mode-mejlutkast"
+        data-mode="mejlutkast"
+        role="tab"
+        aria-selected="false"
+        data-testid="jp-mode-mejlutkast"
+      >Mejlutkast</button>
+    </section>
+
+    <section class="jp-actions">
+      <!-- Anslut din profil — primary CTA when disconnected (v0.2.2).
+           Opens a small /extension-auth popup window via
+           chrome.windows.create so the user can connect without
+           navigating the active tab. Hidden when a token is already
+           in chrome.storage.local — see jpAuthConnectBtnVisible
+           toggle in popup.js. -->
+      <button
+        type="button"
+        class="jp-btn jp-btn-primary"
+        id="jp-connect-btn"
+        data-testid="jp-connect-btn"
+      >
+        <span class="jp-btn-icon" aria-hidden="true">+</span>
+        <span>Anslut din profil</span>
+      </button>
+      <button type="button" class="jp-btn jp-btn-primary" id="jp-fill-btn" disabled>
+        <span class="jp-btn-icon" aria-hidden="true">⚡</span>
+        <span>Fyll i nu</span>
+      </button>
+      <button type="button" class="jp-btn jp-btn-secondary" id="jp-refresh-btn" disabled>
+        <span class="jp-btn-icon" aria-hidden="true">↻</span>
+        <span>Uppdatera data</span>
+      </button>
+      <!-- 2026-07-12 (Round-11) — manual "Sök igen" fallback for
+           late-rendering forms. The popup already re-queries
+           every 2s and listens for content-script storage
+           changes, but a tester who wants instant feedback
+           (e.g. just clicked the badge on a slow ATS page)
+           can hit this button to force a fresh scan. -->
+      <button
+        type="button"
+        class="jp-btn jp-btn-link"
+        id="jp-rescan-btn"
+        data-testid="jp-rescan-btn"
+        title="Tvinga en ny skanning av formuläret"
+      >
+        <span class="jp-btn-icon" aria-hidden="true">⟳</span>
+        <span>Sök igen</span>
+      </button>
+      <!-- Öppna Dashboard — secondary CTA. Kept so users on the
+           Connect handshake can still reach the dashboard tab if
+           the popup auth-window was blocked. -->
+      <button type="button" class="jp-btn jp-btn-link" id="jp-dashboard-btn">
+        Öppna Dashboard
+      </button>
+      <!-- Koppla från — surfaces ONLY when the user is currently
+           connected. Clears the chrome.storage.local token + profile so
+           all subsequent API calls (extension/answer, extension/profile,
+           extension/ai-answers) get an honest 401 instead of silently
+           using a stale bearer. The /settings page also exposes a
+           granular per-device disconnect list (server-side token
+           revocation). The popup's button is a fast path for "I'm done
+           using JobbPiloten on this machine". -->
+      <button
+        type="button"
+        class="jp-btn jp-btn-danger jp-btn-link"
+        id="jp-disconnect-btn"
+        hidden
+        data-testid="jp-disconnect-btn"
+      >
+        Koppla från
+      </button>
+    </section>
+
+    <section class="jp-detected" id="jp-detected" hidden>
+      <h3 class="jp-section-title">Upptäckta fält</h3>
+      <ul class="jp-detected-list" id="jp-detected-list"></ul>
+    </section>
+
+    <!-- Round-52 / Issue 1 — Mejlutkast panel. Hidden by default.
+         Surfaces when EITHER (a) the content-email.js script on a
+         Gmail/Outlook compose tab writes jobbpiloten_composeTarget
+         to chrome.storage.local, OR (b) the user manually toggles
+         the popup into "Mejlutkast" mode while on any page.
+
+         The panel surfaces:
+           • Detected recipient (the To: address Gmail/Outlook currently shows)
+           • Matched recent application (best-guess: the recruiter
+             email belongs to a job the user previously applied to)
+           • A "Vilket jobb gäller detta mejlet?" picker fallback when
+             no match is found
+           • AI-generated Subject + Body (prepopulated after the
+             user clicks "Generera mejlutkast")
+           • A "Fyll i Gmail/Outlook" button that injects the draft
+             into the active compose window via
+             chrome.tabs.sendMessage(content-email.js) -->
+    <section
+      class="jp-mejlutkast"
+      id="jp-mejlutkast-panel"
+      hidden
+      aria-labelledby="jp-mejlutkast-title"
+      data-testid="jp-mejlutkast-panel"
+    >
+      <div class="jp-settings-title" id="jp-mejlutkast-title">📧 Mejlutkast</div>
+      <p class="jp-settings-help" id="jp-mejlutkast-recipient-row">
+        <span data-testid="jp-mejlutkast-recipient-label">Identifierat mejl till:</span>
+        <span id="jp-mejlutkast-recipient" class="jp-mejlutkast-recipient">—</span>
+      </p>
+      <p class="jp-settings-help jp-mejlutkast-match-row" id="jp-mejlutkast-match-row" hidden>
+        <span data-testid="jp-mejlutkast-match-label">Matchar ansökan:</span>
+        <span id="jp-mejlutkast-match" class="jp-mejlutkast-match">—</span>
+      </p>
+
+      <label class="jp-compose-label" for="jp-mejlutkast-pick">Vilket jobb gäller detta mejlet?</label>
+      <select
+        id="jp-mejlutkast-pick"
+        class="jp-settings-input"
+        data-testid="jp-mejlutkast-pick"
+      >
+        <option value="">— Välj från dina senaste ansökningar —</option>
+      </select>
+
+      <button
+        type="button"
+        class="jp-btn jp-btn-primary"
+        id="jp-mejlutkast-generate-btn"
+        data-testid="jp-mejlutkast-generate"
+        disabled
+      >
+        <span class="jp-btn-icon" aria-hidden="true">✨</span>
+        Generera mejlutkast
+      </button>
+
+      <label class="jp-compose-label" for="jp-mejlutkast-subject-input">Ämne</label>
+      <input
+        type="text"
+        id="jp-mejlutkast-subject-input"
+        class="jp-settings-input"
+        placeholder="Ansökan: [Jobbtitel] — [Förnamn] [Efternamn]"
+        autocomplete="off"
+        data-testid="jp-mejlutkast-subject"
+      />
+      <label class="jp-compose-label" for="jp-mejlutkast-body-textarea">Brödtext</label>
+      <textarea
+        id="jp-mejlutkast-body-textarea"
+        class="jp-compose-textarea"
+        rows="8"
+        placeholder="AI-genererat mejlutkast visas här när du klickar Generera…"
+        data-testid="jp-mejlutkast-body"
+      ></textarea>
+      <div class="jp-compose-actions">
+        <button
+          type="button"
+          class="jp-btn jp-btn-primary"
+          id="jp-mejlutkast-inject-btn"
+          data-testid="jp-mejlutkast-inject"
+          disabled
+        >
+          <span class="jp-btn-icon" aria-hidden="true">✉</span>
+          Fyll i Gmail / Outlook
+        </button>
+        <button
+          type="button"
+          class="jp-btn jp-btn-link"
+          id="jp-mejlutkast-copy-btn"
+          data-testid="jp-mejlutkast-copy"
+        >
+          Kopiera ämne + brödtext
+        </button>
+      </div>
+      <div
+        class="jp-settings-status jp-mejlutkast-status"
+        id="jp-mejlutkast-status"
+        aria-live="polite"
+        hidden
+      ></div>
+    </section>
+
+    <!-- Round-34 / Part 4 — Email-apply compose panel. Hidden by
+         default; surfaces when the content script's mailto detector
+         (see extension/content.js — findMailtoSignals) writes
+         at least one signal to chrome.storage.local under
+         `jobbpiloten_emailSignals`. The body content (To / Subject /
+         Body) is pre-populated by the popup's storage listener and
+         edited via the textarea; Kopiera + Öppna mailto: + Spara
+         utkast buttons wire to the compose action. Hidden on
+         traditional form-fill pages where the Fyll-i-nu tab is the
+         primary affordance. -->
+    <section
+      class="jp-compose"
+      id="jp-compose-panel"
+      hidden
+      aria-labelledby="jp-compose-title"
+      data-testid="jp-compose-panel"
+    >
+      <div class="jp-settings-title" id="jp-compose-title">📧 Ansök via mejl</div>
+      <p class="jp-settings-help" id="jp-compose-help">
+        AI:n hittade en e-postadress på sidan. Granska utkastet nedan och klicka <strong>Öppna mailto:</strong> för att öppna din e-postklient.
+      </p>
+      <label class="jp-compose-label" for="jp-compose-to-input">Till</label>
+      <input
+        type="text"
+        id="jp-compose-to-input"
+        class="jp-settings-input"
+        placeholder="hr@foretag.se"
+        autocomplete="off"
+        spellcheck="false"
+        data-testid="jp-compose-to"
+      />
+      <label class="jp-compose-label" for="jp-compose-subject-input">Ämne</label>
+      <input
+        type="text"
+        id="jp-compose-subject-input"
+        class="jp-settings-input"
+        placeholder="Ansökan: Frontend-utvecklare — Ditt Namn"
+        autocomplete="off"
+        data-testid="jp-compose-subject"
+      />
+      <label class="jp-compose-label" for="jp-compose-body-textarea">Brödtext</label>
+      <textarea
+        id="jp-compose-body-textarea"
+        class="jp-compose-textarea"
+        rows="8"
+        placeholder="Hej [företag],&#10;&#10;Jag heter … och jag är intresserad av tjänsten …&#10;&#10;Jag bifogar mitt CV och står till förfogande för en kort intervju.&#10;&#10;Med vänliga hälsningar,&#10;[Ditt namn]"
+        data-testid="jp-compose-body"
+      ></textarea>
+      <div class="jp-compose-actions">
+        <button
+          type="button"
+          class="jp-btn jp-btn-secondary"
+          id="jp-compose-copy-btn"
+          data-testid="jp-compose-copy"
+        >
+          <span class="jp-btn-icon" aria-hidden="true">⎘</span>
+          Kopiera
+        </button>
+        <button
+          type="button"
+          class="jp-btn jp-btn-primary"
+          id="jp-compose-open-mailto-btn"
+          data-testid="jp-compose-open-mailto"
+        >
+          <span class="jp-btn-icon" aria-hidden="true">✉</span>
+          Öppna mailto:
+        </button>
+        <button
+          type="button"
+          class="jp-btn jp-btn-secondary"
+          id="jp-compose-open-gmail-btn"
+          data-testid="jp-compose-open-gmail"
+        >
+          <span class="jp-btn-icon" aria-hidden="true">G</span>
+          Gmail
+        </button>
+        <button
+          type="button"
+          class="jp-btn jp-btn-secondary"
+          id="jp-compose-open-outlook-btn"
+          data-testid="jp-compose-open-outlook"
+        >
+          <span class="jp-btn-icon" aria-hidden="true">O</span>
+          Outlook
+        </button>
+        <button
+          type="button"
+          class="jp-btn jp-btn-link"
+          id="jp-compose-save-draft-btn"
+          data-testid="jp-compose-save-draft"
+        >
+          Spara utkast i Dashboard
+        </button>
+      </div>
+      <div class="jp-settings-status jp-compose-status" id="jp-compose-status" aria-live="polite" hidden></div>
+    </section>
+
+    <p class="jp-footer-hint" id="jp-footer-hint"></p>
+
+    <!-- Settings panel — collapsed by default. Rendered inline (not a
+         new page) so the popup stays single-tab. Save writes to
+         chrome.storage.sync, Reset clears the override. After Save/Reset
+         the panel auto-collapses so the dashboard button stays the
+         primary affordance. v0.2.1 -->
+    <section
+      class="jp-settings"
+      id="jp-settings"
+      hidden
+      aria-labelledby="jp-settings-title"
+    >
+      <div class="jp-settings-title" id="jp-settings-title">Dashboard-URL</div>
+      <p class="jp-settings-help">
+        Normalt sätts den automatiskt när du ansluter din profil i Dashboard.
+        Överrida bara om du använder en preview-/staging-build.
+      </p>
+      <input
+        type="url"
+        id="jp-settings-url-input"
+        class="jp-settings-input"
+        placeholder="https://jobbpiloten.se"
+        autocomplete="url"
+        spellcheck="false"
+      />
+      <div class="jp-settings-actions">
+        <button type="button" class="jp-btn jp-btn-secondary" id="jp-settings-save-btn">Spara</button>
+        <button type="button" class="jp-btn jp-btn-link" id="jp-settings-reset-btn">Återställ</button>
+      </div>
+      <div
+        class="jp-settings-status"
+        id="jp-settings-status"
+        aria-live="polite"
+        hidden
+      ></div>
+    </section>
+  </main>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

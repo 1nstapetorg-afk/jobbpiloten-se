@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ansökan — Städservice &amp; Fastighetsskötsel | JobbPiloten test</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+  <style>
+    :root { --bp-blue: #2563eb; --bp-gray: #4b5563; --bp-bg: #f9fafb; --bp-border: #e5e7eb; }
+    * { box-sizing: border-box; }
+    body { font-family: 'Inter', -apple-system, system-ui, sans-serif; margin: 0; background: var(--bp-bg); color: #111827; }
+    header { background: white; border-bottom: 1px solid var(--bp-border); padding: 16px 24px; }
+    header h1 { margin: 0; font-size: 18px; color: var(--bp-blue); }
+    header p { margin: 4px 0 0; font-size: 13px; color: var(--bp-gray); }
+    main { max-width: 720px; margin: 32px auto; padding: 0 20px 80px; }
+    .job-card { background: white; border: 1px solid var(--bp-border); border-radius: 8px; padding: 20px; margin-bottom: 24px; }
+    .job-card h2 { margin: 0 0 4px; font-size: 16px; }
+    .job-card p { margin: 4px 0; font-size: 13px; color: var(--bp-gray); }
+    h3 { font-size: 15px; margin: 32px 0 12px; color: #111827; }
+    .field { margin-bottom: 16px; }
+    .field label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: #374151; }
+    .field label .req { color: #dc2626; }
+    .field input[type="text"], .field input[type="email"], .field input[type="tel"], .field select {
+      width: 100%; padding: 10px 12px; font: inherit; border: 1px solid var(--bp-border); border-radius: 6px; background: white;
+    }
+    .field input:focus, .field select:focus { outline: 2px solid var(--bp-blue); outline-offset: -1px; border-color: var(--bp-blue); }
+    .toggle-group { display: flex; gap: 8px; }
+    .toggle-group label {
+      flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 10px 12px; border: 1px solid var(--bp-border); border-radius: 6px; cursor: pointer; font-weight: 400;
+      background: white; transition: all .15s;
+    }
+    .toggle-group label:hover { border-color: var(--bp-blue); background: #eff6ff; }
+    .toggle-group input[type="radio"] { margin: 0; }
+    .toggle-group input[type="radio"]:checked + span { font-weight: 600; color: var(--bp-blue); }
+    fieldset { border: 1px solid var(--bp-border); border-radius: 6px; padding: 16px; margin: 0 0 16px; background: white; }
+    legend { font-size: 13px; font-weight: 600; padding: 0 6px; color: #111827; }
+    .checkbox-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 8px; }
+    .checkbox-grid label { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+    .checkbox-grid input[type="checkbox"] { margin: 0; }
+    .consent-row { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: var(--bp-gray); line-height: 1.5; }
+    .consent-row input[type="checkbox"] { margin-top: 3px; }
+    .submit { margin-top: 24px; background: var(--bp-blue); color: white; padding: 12px 24px; border: none; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; }
+    .submit:hover { background: #1d4ed8; }
+    .jp-test-banner {
+      position: fixed; bottom: 16px; right: 16px; max-width: 320px;
+      background: #1f2937; color: #f3f4f6; padding: 12px 16px; border-radius: 8px;
+      font-size: 12px; line-height: 1.5; z-index: 10000; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .jp-test-banner strong { color: #fbbf24; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Lokalvård &amp; Service AB</h1>
+    <p>Stockholm · Heltid · Publicerad 2026-07-14</p>
+  </header>
+
+  <main>
+    <div class="job-card">
+      <h2>Serviceinriktad medarbetare — Städ &amp; Fastighetsskötsel</h2>
+      <p>Vi söker en driven och ansvarstagande person till vårt team i Stockholmsområdet.</p>
+      <p>Arbetet innefattar städning, enklare fastighetsskötsel och maskinkörning.</p>
+    </div>
+
+    <h3>1. Personuppgifter</h3>
+
+    <div class="field">
+      <label for="firstName">Förnamn <span class="req">*</span></label>
+      <input type="text" id="firstName" name="firstName" autocomplete="given-name">
+    </div>
+
+    <div class="field">
+      <label for="lastName">Efternamn <span class="req">*</span></label>
+      <input type="text" id="lastName" name="lastName" autocomplete="family-name">
+    </div>
+
+    <div class="field">
+      <label for="email">E-post <span class="req">*</span></label>
+      <input type="email" id="email" name="email" autocomplete="email">
+    </div>
+
+    <div class="field">
+      <label for="phone">Telefon <span class="req">*</span></label>
+      <input type="tel" id="phone" name="phone" autocomplete="tel">
+    </div>
+
+    <div class="field">
+      <label for="address">Gatuadress</label>
+      <input type="text" id="address" name="address" autocomplete="street-address">
+    </div>
+
+    <div class="field">
+      <label for="zip">Postnummer</label>
+      <input type="text" id="zip" name="zip" autocomplete="postal-code">
+    </div>
+
+    <div class="field">
+      <label for="city">Ort</label>
+      <input type="text" id="city" name="city" autocomplete="address-level2">
+    </div>
+
+    <h3>2. Behörighet &amp; erfarenhet</h3>
+
+    <fieldset>
+      <legend>Har du B-körkort?</legend>
+      <div class="toggle-group">
+        <label><input type="radio" name="driversLicense" value="yes"><span>Ja</span></label>
+        <label><input type="radio" name="driversLicense" value="no"><span>Nej</span></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Är du medborgare i Sverige eller annat EU/EEA-land?</legend>
+      <div class="toggle-group">
+        <label><input type="radio" name="euCitizen" value="yes"><span>Ja</span></label>
+        <label><input type="radio" name="euCitizen" value="no"><span>Nej</span></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Har du minst 3 års arbetslivserfarenhet?</legend>
+      <div class="toggle-group">
+        <label><input type="radio" name="experience" value="yes"><span>Ja</span></label>
+        <label><input type="radio" name="experience" value="no"><span>Nej</span></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Har du truckförarbevis?</legend>
+      <div class="toggle-group">
+        <label><input type="radio" name="forklift" value="yes"><span>Ja</span></label>
+        <label><input type="radio" name="forklift" value="no"><span>Nej</span></label>
+      </div>
+    </fieldset>
+
+    <div class="field">
+      <label for="gender">Kön</label>
+      <select id="gender" name="gender">
+        <option value="">Välj</option>
+        <option value="male">Man</option>
+        <option value="female">Kvinna</option>
+        <option value="other">Annat</option>
+      </select>
+    </div>
+
+    <h3>3. Kompetens</h3>
+
+    <fieldset>
+      <legend>Jag har erfarenhet av (markera alla som gäller)</legend>
+      <div class="checkbox-grid">
+        <label><input type="checkbox" name="skill" value="Maskiner"> Maskiner</label>
+        <label><input type="checkbox" name="skill" value="Sanering"> Sanering</label>
+        <label><input type="checkbox" name="skill" value="Service"> Service</label>
+        <label><input type="checkbox" name="skill" value="Förvaltning"> Förvaltning</label>
+        <label><input type="checkbox" name="skill" value="Truck"> Truck</label>
+      </div>
+    </fieldset>
+
+    <h3>4. Samtycke</h3>
+
+    <fieldset>
+      <legend>Behandling av personuppgifter</legend>
+      <div class="consent-row">
+        <input type="checkbox" id="consent" name="consent" required>
+        <label for="consent">Jag har läst och godkänner att Lokalvård &amp; Service AB behandlar mina personuppgifter enligt GDPR och integritetspolicyn.</label>
+      </div>
+    </fieldset>
+
+    <button type="submit" class="submit">Skicka ansökan</button>
+  </main><div class="jp-test-banner">
+      <strong>JobbPiloten test page</strong><br>
+      Open DevTools → Console to see extension load messages.<br>
+      Fields tagged for the extension's auto-fill should light up once the profile is in chrome.storage.local.
+    </div>
+
+  <!-- ============================================================ -->
+  <!-- Test harness: mock the chrome.* API surface used by content.js -->
+  <!-- and load the extension code as a regular script tag.          -->
+  <!-- This lets us validate Round-12 detection/click behaviour     -->
+  <!-- end-to-end without loading the extension via chrome://ext.    -->
+  <!-- ============================================================ -->
+  <script>
+    // ---- 1. chrome.storage.local mock with a realistic profile ----
+    const _profile = {
+      firstName: 'Erik',
+      lastName: 'Lindqvist',
+      fullName: 'Erik Lindqvist',
+      email: 'erik.lindqvist@example.com',
+      phone: '+46 70 123 45 67',
+      address: 'Storgatan 12',
+      zip: '111 22',
+      city: 'Stockholm',
+      linkedin: 'https://linkedin.com/in/erik-lindqvist',
+      hasDriversLicense: true,
+      isEuCitizen: true,
+      hasWorkPermit: undefined,        // omitted → leave untouched
+      yearsExperience: 5,              // → click Ja on the 3+ years question
+      hasHighSchoolDiploma: undefined,
+      hasForkliftLicense: false,        // → click Nej on truckförarbevis
+      hasSecurityClearance: undefined,
+      hasLeadershipExperience: undefined,
+      isBilingual: undefined,
+      hasTechnicalEducation: undefined,
+      hasCustomerExperience: undefined,
+      gender: 'Man',
+      nationality: 'SE',
+      phoneCountryCode: '+46',
+      dateOfBirth: '1985-06-12',
+      skills: ['Maskiner', 'Service', 'Truck'],
+      autoConsent: false,              // safety gate → paint consent_unchecked
+      languages: 'Svenska, Engelska',
+    }
+    const _storage = {
+      'jobbpiloten_token': 'test-bearer-token',
+      'jobbpiloten_profile': _profile,
+      'jobbpiloten_styleOverride': '',
+    }
+    window.chrome = {
+      storage: {
+        local: {
+          get(keys, cb) {
+            const arr = Array.isArray(keys) ? keys : (typeof keys === 'string' ? [keys] : Object.keys(_storage))
+            const out = {}
+            for (const k of arr) out[k] = _storage[k]
+            if (typeof cb === 'function') cb(out)
+            return Promise.resolve(out)
+          },
+          set(items, cb) {
+            Object.assign(_storage, items)
+            if (typeof cb === 'function') cb()
+            return Promise.resolve()
+          },
+          remove(keys, cb) { if (typeof cb === 'function') cb(); return Promise.resolve() },
+        },
+      },
+      runtime: {
+        id: 'test-extension-id',
+        getManifest() { return { version: '0.99.0-test', name: 'JobbPiloten (test)' } },
+        sendMessage(_msg, _cb) { if (typeof _cb === 'function') _cb({ ok: true }) },
+        onMessage: { addListener() {} },
+        connect() { return { onMessage: { addListener() {} }, postMessage() {}, disconnect() {} } },
+        onConnect: { addListener() {} },
+        onMessageExternal: { addListener() {} },
+        lastError: null,
+      },
+    }
+    // Mark the extension as loaded so the cross-world presence signal works
+    document.documentElement.setAttribute('data-jobbpiloten-ext', '1')
+    document.documentElement.setAttribute('data-jobbpiloten-ext-version', '0.99.0-test')
+  </script>
+
+  <!-- Load the extension's content.js as a regular script. The IIFE-like -->
+  <!-- top-level functions (fillAll, scheduleScan, etc.) become window.    -->
+  <!-- globals in non-strict mode, which the trigger below calls.          -->
+  <script src="../extension/content.js"></script>
+
+  <script>
+    // ---- 2. Auto-trigger after DOM + extension init ----
+    // Round-12 followup: fillAll() is async + the inner loop awaits
+    // chrome.storage reads. We must await the full fill before the
+    // report fires, otherwise the snapshot shows fields in their
+    // pre-fill state even though fillAll() is actively running.
+    // Round-12 followup-2: WRAP fillAll + collectInputs with logging
+    // proxies so we can see exactly which branches fire in DevTools.
+    // The wrappers preserve `this` + arguments and return the original
+    // function's result, so behaviour is byte-identical to a real
+    // extension invocation.
+    function installProxies() {
+      const proxied = {}
+      // NOTE: we do NOT wrap window.collectInputs — content.js's internal
+      // calls (inside scanAndPaint + fillAll) bypass window entirely and
+      // use the local function reference, so a window-level proxy would
+      // silently log nothing useful. The fillAll wrapper below gives us
+      // pre/post state diff which is what we actually need.
+      if (typeof window.fillAll === 'function') {
+        const orig = window.fillAll
+        window.fillAll = async function (...args) {
+          console.info('[JP-TEST] fillAll() entered')
+          // Snapshot ALL fillable input types — extended per code-reviewer
+          // WARNING #2 so the diff catches radios/checkboxes/selects too.
+          const snap = (sel) => {
+            const out = {}
+            document.querySelectorAll(sel).forEach((el, i) => {
+              // Use name+value (for radios) or name+index (for checkboxes)
+              // so each control gets a unique slot in the diff object.
+              const key = el.type === 'radio' && el.name
+                ? `${el.name}_${el.value}`
+                : el.type === 'checkbox'
+                  ? `${el.name || 'cb'}_${el.value || i}`
+                  : el.name || el.id || `idx${i}`
+              out[key] = (el.type === 'checkbox' || el.type === 'radio') ? el.checked : el.value
+            })
+            return out
+          }
+          const before = {
+            text: snap('input[type="text"], input[type="email"], input[type="tel"]'),
+            select: snap('select'),
+            radio: snap('input[type="radio"]'),
+            checkbox: snap('input[type="checkbox"]'),
+          }
+          console.info('[JP-TEST] pre-fill state: ' + JSON.stringify(before))
+          let result
+          try {
+            result = await orig.apply(this, args)
+          } catch (e) {
+            console.error('[JP-TEST] fillAll() threw: ' + (e && e.message ? e.message : e))
+            throw e
+          }
+          const after = {
+            text: snap('input[type="text"], input[type="email"], input[type="tel"]'),
+            select: snap('select'),
+            radio: snap('input[type="radio"]'),
+            checkbox: snap('input[type="checkbox"]'),
+          }
+          console.info('[JP-TEST] post-fill state: ' + JSON.stringify(after))
+          console.info('[JP-TEST] fillAll() returned: ' + JSON.stringify(result))
+          return result
+        }
+        proxied.fillAll = true
+      }
+      console.info('[JP-TEST] proxies installed: ' + JSON.stringify(Object.keys(proxied)))
+    }
+    // The proxies must be installed AFTER content.js loads (so the
+    // original functions exist) but BEFORE the load handler fires
+    // (so the load handler sees the proxies). content.js loaded via
+    // <script src> is synchronous, so by the time this <script>
+    // block runs, the originals exist.
+    installProxies()
+
+    window.addEventListener('load', async () => {
+      await new Promise((r) => setTimeout(r, 400))
+      console.info('[JP-TEST] phase 1: scheduleScan + scanAndPaint')
+      try {
+        if (typeof window.scheduleScan === 'function') {
+          window.scheduleScan()
+          console.info('[JP-TEST] scheduleScan() invoked')
+        }
+        if (typeof window.scanAndPaint === 'function') {
+          await window.scanAndPaint()
+          console.info('[JP-TEST] scanAndPaint() resolved (paint states applied)')
+        }
+      } catch (e) {
+        console.error('[JP-TEST] scan error:', e)
+      }
+      // Verify the test profile is intact in chrome.storage.local
+      try {
+        const stored = await chrome.storage.local.get(['jobbpiloten_profile'])
+        console.info('[JP-TEST] chrome.storage.local.get(profile) = ' + JSON.stringify({
+          firstName: stored.jobbpiloten_profile && stored.jobbpiloten_profile.firstName,
+          lastName: stored.jobbpiloten_profile && stored.jobbpiloten_profile.lastName,
+          hasDriversLicense: stored.jobbpiloten_profile && stored.jobbpiloten_profile.hasDriversLicense,
+          hasForkliftLicense: stored.jobbpiloten_profile && stored.jobbpiloten_profile.hasForkliftLicense,
+          yearsExperience: stored.jobbpiloten_profile && stored.jobbpiloten_profile.yearsExperience,
+          skills: stored.jobbpiloten_profile && stored.jobbpiloten_profile.skills,
+          autoConsent: stored.jobbpiloten_profile && stored.jobbpiloten_profile.autoConsent,
+        }))
+      } catch (e) {
+        console.error('[JP-TEST] storage verify error: ' + e)
+      }
+      // Let paint states settle, then trigger fillAll and AWAIT it.
+      await new Promise((r) => setTimeout(r, 200))
+      let fillResult = null
+      console.info('[JP-TEST] phase 2: calling fillAll() (awaiting)')
+      try {
+        if (typeof window.fillAll === 'function') {
+          fillResult = await window.fillAll()
+          console.info('[JP-TEST] fillAll() resolved: ' + JSON.stringify(fillResult))
+        } else {
+          console.warn('[JP-TEST] fillAll not exposed on window')
+        }
+      } catch (e) {
+        console.error('[JP-TEST] fillAll error: ' + (e && e.message ? e.message : e))
+      }
+      // Extra microtask drain so any pending .then() from setInputValue
+      // (which dispatches input/change events that React listens to)
+      // has a chance to flush.
+      await new Promise((r) => setTimeout(r, 400))
+      reportFieldStates(fillResult)
+    })
+
+    function reportFieldStates(fillResult) {
+      const report = {
+        timestamp: new Date().toISOString(),
+        fillResult: fillResult || null,
+        detectedCount: 0,
+        okCount: 0,
+        missingCount: 0,
+        booleanFilledCount: 0,
+        consentUncheckedCount: 0,
+        reviewNeededCount: 0,
+        fields: [],
+      }
+      document.querySelectorAll('input, select, textarea').forEach((el) => {
+        const status = el.getAttribute('data-jobbpiloten-status') || null
+        const f = {
+          tag: el.tagName.toLowerCase(),
+          type: el.type || null,
+          name: el.name || null,
+          id: el.id || null,
+          status,
+          title: el.getAttribute('title') || null,
+          value: el.value != null ? el.value : null,
+          checked: el.checked != null ? el.checked : null,
+        }
+        report.fields.push(f)
+        if (status) report.detectedCount++
+        if (status === 'ok') report.okCount++
+        else if (status === 'missing') report.missingCount++
+        else if (status === 'boolean_filled') report.booleanFilledCount++
+        else if (status === 'consent_unchecked') report.consentUncheckedCount++
+        else if (status === 'review_needed') report.reviewNeededCount++
+      })
+      console.info('[JP-TEST-REPORT] ' + JSON.stringify(report))
+      window.__JP_TEST_REPORT__ = report
+    }
+  </script>
+</body>
+</html>

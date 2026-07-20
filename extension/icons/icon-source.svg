@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="jp-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4f46e5"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded square background — exact corner radius matches Chrome's
+       recommended extension icon shape (16/unit → 8px at 128x128,
+       24/unit → 12px at 384x384, scaled to 256^2). -->
+  <rect width="256" height="256" rx="56" ry="56" fill="url(#jp-bg)"/>
+
+  <!-- Paper-plane silhouette, rotated -30° around the centre, white
+       fill ~90% opacity so it sits comfortably against the gradient at
+       every raster size (16/48/128). The cockpit dot is a small
+       indigo-600 circle — a single high-contrast colour detail that
+       keeps the icon crisp at favicon sizes. -->
+  <g transform="rotate(-30 128 128)" fill="#ffffff">
+    <!-- Outer wing / fuselage -->
+    <path d="M 38 174 L 222 88 L 196 156 L 130 140 L 130 162 L 102 144 L 102 124 L 78 124 L 56 148 Z"/>
+    <!-- Inner fold line — keeps the silhouette readable at 16x16 where
+         the outer shape would otherwise blend into a single blob. -->
+    <path d="M 130 140 L 222 88 L 154 130 Z" fill="#e0e7ff"/>
+  </g>
+  <!-- Cockpit dot — sits on the upper wing plane, helps keep the icon
+       recognisable at favicon scale. -->
+  <circle cx="170" cy="120" r="8" fill="#4f46e5"/>
+</svg>

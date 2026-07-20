@@ -1,0 +1,166 @@
+name: e2e
+
+# CI workflow for the JobbPiloten Playwright e2e suite.
+#
+# Triggers:
+#   • pull_request targeting main — full unit + e2e + build
+#   • push to main — same as PR plus a build artifact upload
+#   • workflow_dispatch — manual run from the Actions tab
+#
+# Why this lives in `.github/workflows/e2e.yml` (not `.yml` at the
+# repo root or under a sub-folder): GitHub Actions looks for
+# workflow files at `.github/workflows/*.yml` exclusively. Renaming
+# or relocating silently disables the workflow.
+#
+# Architecture:
+#   • Node 20 + Yarn 1.22 (matches the project's `packageManager`
+#     pin in package.json).
+#   • Mongo 7 in a service container — same major as the
+#     production deploy so aggregation/operator behaviour matches.
+#     The `MONGO_URL` env var is wired to the container's
+#     host:port so the Next.js process can reach it.
+#   • Yarn cache via `actions/setup-node@v4`'s built-in cache
+#     strategy (keyed on yarn.lock) — saves ~30s per run.
+#   • Playwright browser install is skipped at the workflow level
+#     because `playwright.config.js` only uses the default
+#     Chromium channel; `npx playwright install --with-deps
+#     chromium` runs once in the install step.
+#   • Test artifacts (videos, traces, screenshots) upload on
+#     failure for debugging — they expire after 7 days to keep
+#     storage costs bounded.
+#
+# Why we run the unit suite BEFORE the e2e suite: a unit failure
+# usually means the e2e suite will also fail in a non-actionable
+# way. Failing fast on unit saves the Playwright boot time (~20s
+# on a cold cache) and surfaces the smaller, more focused diff.
+#
+# Why we run `yarn build` AFTER the e2e suite: the build is the
+# slowest step and the most likely to flake on a stale `.next/`
+# cache. A build failure is usually a code issue that the e2e
+# suite would have caught anyway. Running it last keeps the fast
+# feedback loop in front.
+#
+# When to re-introduce sharding (currently DISABLED):
+#   The e2e suite is intentionally small (6-8 specs, ~60s of pure
+#   test time on a warm cache). Sharding it across 2 runners would
+#   ADD ~60-90s of per-shard setup (yarn install, Playwright
+#   Chromium download, dev server boot) and SAVE only ~30s of test
+#   time, making the sharded pipeline a NET LOSS. We run as a
+#   single runner for now and re-introduce the matrix (2 → 3 → 4
+#   shards) once the suite exceeds ~20 specs. To re-shard, add
+#   back the `strategy.matrix.shard: [1, 2]` block and append
+#   `--shard=${{ matrix.shard }}/2` to the e2e run step.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel in-progress runs for the same branch / PR — a new push
+# to a PR supersedes the previous run. Saves CI minutes when a
+# developer pushes a fix while the e2e suite is still running.
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Hard-coded values that don't change between runs.
+  # Branch-specific secrets (Stripe, VAPID, etc.) are NOT
+  # required for the e2e suite — the test helpers use the
+  # demo-user-001 cookie fallback (see tests/e2e/_fixtures/auth.js)
+  # and the /api/jobs-available route degrades gracefully when
+  # the AF/Blocket APIs are unreachable.
+  NEXT_PUBLIC_BASE_URL: http://localhost:3000
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_xxx_demo
+  CLERK_SECRET_KEY: sk_test_xxx_demo
+  DB_NAME: jobbpiloten_e2e
+  NODE_ENV: test
+
+jobs:
+  e2e:
+    name: Playwright e2e (${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    # Service containers run alongside the job. Mongo 7 matches
+    # the production major; the official image runs on every
+    # runner size.
+    services:
+      mongodb:
+        image: mongo:7
+        # Healthcheck — the job waits for the container to be
+        # healthy before continuing. The Next.js server's first
+        # connection attempt also retries, but the healthcheck
+        # makes the failure mode cleaner.
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 27017:27017
+    env:
+      MONGO_URL: mongodb://localhost:27017
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node + Yarn
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          # Caches ~/.cache/yarn keyed on yarn.lock so dependency
+          # install is ~10s on a cache hit (vs ~60s on miss).
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        # Only Chromium because the playwright.config.js project
+        # list is `{ name: 'chromium' }` — installing all browsers
+        # would waste ~200 MB of runner disk + 30 s of wall-time.
+        run: npx playwright install --with-deps chromium
+
+      - name: Run unit tests
+        # Run BEFORE the e2e suite so a unit failure doesn't
+        # waste 5 minutes booting Chromium. Unit tests don't
+        # need a running Next.js server, so they exit fast.
+        run: yarn test:unit
+
+      - name: Run Playwright e2e
+        # `webServer.reuseExistingServer: true` in
+        # playwright.config.js lets the runner skip starting
+        # `yarn dev` if one is already listening — useful when
+        # this workflow is invoked locally with `act` or similar.
+        run: npx playwright test
+        env:
+          MONGO_URL: mongodb://localhost:27017
+
+      - name: Run yarn build
+        # Build runs LAST so the fast-feedback e2e + unit loop
+        # surfaces first. A build failure is usually also caught
+        # by the e2e suite (because `yarn dev` compiles the same
+        # route tree on first navigation), so we tolerate the
+        # extra ~30s of build time as a final sanity check.
+        # MONGO_URL is included so the catch-all route's
+        # `getDb()` call (which checks `process.env.MONGO_URL`)
+        # resolves during route discovery — the build itself
+        # doesn't execute the route handlers, but the env-var
+        # presence keeps Next.js from warning about a missing
+        # connection string in any build-time prerender pass.
+        run: yarn build
+        env:
+          MONGO_URL: mongodb://localhost:27017
+
+      - name: Upload Playwright artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore

@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "JobbPiloten Auto-Fill",
+    "description": "Extension name"
+  },
+  "extDescription": {
+    "message": "Fyll i jobbansökningar automatiskt med din JobbPiloten-profil",
+    "description": "Extension description"
+  }
+}

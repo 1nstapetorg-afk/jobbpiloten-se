@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="55%" stop-color="#4338ca"/>
+      <stop offset="100%" stop-color="#1e40af"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fde68a"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </linearGradient>
+  </defs>
+  <!-- Full-canvas brand background. Maskable-safe because the launcher
+       applies roughly a 40% inner inset (~205px on 512) and the BG is
+       allowed to bleed under that mask. -->
+  <rect x="0" y="0" width="512" height="512" fill="url(#bg)"/>
+  <!-- Mark lives entirely inside the 60% center safe zone (102..410
+       on each axis). No body text — launcher already shows the app name
+       separately, and shading/rebasing on some launchers would clip
+       text drawn near the edges. -->
+  <!-- Inner pre-translate = (-45, -45) so the plane logomark's geometric
+       centroid (computed via the shoelace formula at path ~(125, 129);
+       after scale(0.35) that's ~(43.75, 45.15)) lands at viewBox (256,256)
+       through the full transform T(256,256) · R(-30) · T(tx,ty) · S(0.35).
+       Earlier guesses (-130,-130) and (-150,-145) drifted the centroid to
+       ~(139,226) and ~(114,223) respectively — visually off-center to the
+       left and slightly down. -->
+  <g transform="translate(256 256) rotate(-30) translate(-45 -45) scale(0.35)">
+    <path d="M0 0 L260 75 L175 160 L260 260 L0 195 L65 130 Z"
+          fill="url(#mark)"
+          stroke="#fff7ed"
+          stroke-width="14"
+          stroke-linejoin="round"/>
+  </g>
+  <!-- Subtle inner-ring hint so users can see the safe zone edge during
+       design preview. Hidden from end users via opacity 0.05. -->
+  <circle cx="256" cy="256" r="200"
+          fill="none"
+          stroke="#fde68a"
+          stroke-opacity="0.05"
+          stroke-width="2"
+          aria-hidden="true"/>
+</svg>

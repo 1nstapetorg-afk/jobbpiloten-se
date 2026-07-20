@@ -1,0 +1,25 @@
+   ▲ Next.js 15.5.16
+   - Local:        http://localhost:3000
+   - Network:      http://0.0.0.0:3000
+   - Environments: .env
+
+ ✓ Starting...
+ ✓ Ready in 1557ms
+ ✓ Compiled /middleware in 251ms (213 modules)
+ ○ Compiling / ...
+ ✓ Compiled / in 3.2s (2218 modules)
+ GET / 200 in 3910ms
+ ✓ Compiled in 244ms (889 modules)
+ ○ Compiling /api/[[...path]] ...
+ ✓ Compiled /api/[[...path]] in 1690ms (2909 modules)
+[groq] using provider=groq model=llama-3.3-70b-versatile
+[groq] using provider=groq model=llama-3.3-70b-versatile
+ GET /api/health 200 in 3283ms
+ GET /api/public/stats 200 in 32ms
+[groq] using provider=groq model=llama-3.3-70b-versatile
+ ✓ Compiled in 658ms (890 modules)
+ ✓ Compiled /api/[[...path]] in 318ms (801 modules)
+[groq] using provider=groq model=llama-3.3-70b-versatile
+ GET /api/public/stats 200 in 907ms
+ GET /api/health 200 in 31ms
+[groq] using provider=groq model=llama-3.3-70b-versatile
