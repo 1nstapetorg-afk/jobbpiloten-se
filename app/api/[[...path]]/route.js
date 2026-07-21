@@ -711,6 +711,19 @@ export async function POST(req, ctx) {
         // outside the canonical set, so a stale client cannot break
         // AI generation).
         'stylePreference',
+        // Round-73 / BUG F — nuvarande arbete split keys
+        'currentJobTitle',
+        'currentOrganization',
+        // Round-12 — Auto-fill extension fields. Must be in ALLOWED to
+        // reach $set, otherwise the per-field validators below are dead
+        // code (they only run on keys already in $set).
+        'hasDriversLicense', 'isEuCitizen', 'hasWorkPermit',
+        'hasHighSchoolDiploma', 'hasForkliftLicense', 'hasSecurityClearance',
+        'hasLeadershipExperience', 'isBilingual', 'hasTechnicalEducation',
+        'hasCustomerExperience', 'autoConsent',
+        'yearsExperience',
+        'dateOfBirth', 'gender', 'nationality', 'phoneCountryCode',
+        'skills',
       ];
 
       // Build `$set` BEFORE any guard so the guards can reference it
