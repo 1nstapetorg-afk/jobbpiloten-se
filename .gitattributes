@@ -1,0 +1,7 @@
+# Lock encoding for environment template so Windows clients can't re-corrupt
+# the em-dash on checkout (Round-74 closeout: file was previously shipped
+# with a stray cp1252 byte that caused patch-tool failures).
+*.env.template	text=utf-8	eol=lf
+
+# Standard LF for all source files (matches package manager test runners).
+*	text=auto	eol=lf
