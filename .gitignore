@@ -24,3 +24,6 @@ extension/build-config.json
 # the filename to start with dev-, no leading dot).
 .dev-server.log
 .dev-server.pid
+
+# Allow .env.template (placeholders, NEVER real secrets)
+!.env.template
