@@ -245,12 +245,27 @@ test('Lock 4: IMAGE_ONLY_PDF branch parses + has status 400 + contract keys', ()
   // Anchor on the unique Swedish marker: 'PDF:en verkar vara inskannad'.
   // This substring appears exactly once in the file (in the
   // IMAGE_ONLY_PDF error message) so we have a precise anchor.
+  // IMPORTANT: slice from `return NextResponse.json(` (not from
+  // the substring 'NextResponse.json' which sits MID-LINE) so the
+  // FIRST body extractAllNextResponseBodies finds is the branch's
+  // own return, not the next one down.
   const marker = 'PDF:en verkar vara inskannad'
   const markerIdx = SRC.indexOf(marker)
   assert.ok(markerIdx >= 0, 'IMAGE_ONLY_PDF marker must be present in route.js')
-  const nextResponseIdx = SRC.indexOf('NextResponse.json', markerIdx)
-  assert.ok(nextResponseIdx > markerIdx, 'IMAGE_ONLY_PDF branch must be returned via NextResponse.json')
-  const bodies = extractAllNextResponseBodies(SRC.slice(nextResponseIdx))
+  const returnMatches = [...SRC.matchAll(/return\s+NextResponse\.json\s*\(/g)]
+  // The marker `'PDF:en verkar vara inskannad'` is the error-MESSAGE
+  // STRING inside the IMAGE_ONLY_PDF body's `error:` value — i.e.
+  // it's INSIDE the body of the branch's own return statement, not
+  // BEFORE it. The FIRST return AFTER the marker is the SUCCESS path
+  // (further down in route.js), not the IMAGE_ONLY_PDF branch. Find
+  // the LAST return whose position is BEFORE the marker — that's
+  // the return whose body LITERALLY contains the marker text.
+  const returnBeforeMarker = [...returnMatches].reverse().find((m) => m.index < markerIdx)
+  assert.ok(
+    returnBeforeMarker,
+    'IMAGE_ONLY_PDF marker must be inside the body of some `return NextResponse.json(...)` upstream — search BACKWARDS from the marker.',
+  )
+  const bodies = extractAllNextResponseBodies(SRC.slice(returnBeforeMarker.index))
   const imageOnlyBody = bodies[0]
   assert.ok(imageOnlyBody, 'IMAGE_ONLY_PDF body must be parseable')
   parseOnly(imageOnlyBody.body)
@@ -326,10 +341,10 @@ test('Lock 6: every NextResponse.json body avoids JSON-unsafe + module-scope con
     { pattern: /\bBigInt\s*\(/, name: 'BigInt(' },
     { pattern: /\bfetch\s*\(/, name: 'fetch(' },
     { pattern: /\bawait\s+fetch\b/, name: 'await fetch' },
-    { pattern: /\(\s*\w*\s*\)\s*=>/, name: 'arrow function expression ((arg) => ...)' },
+    { pattern: /\([^)]*\)\s*=>/, name: 'arrow function expression (...params => ...)' },
     { pattern: /\bfunction\s+[a-zA-Z_$]/, name: 'function declaration' },
     { pattern: /\bclass\s+[A-Z]/, name: 'class declaration' },
-    { pattern: /\bprocess\.env\.(?!NODE_ENV\b)\w+/, name: 'process.env.X (non-NODE_ENV — leaks secret at build-time)' },
+    { pattern: /\bprocess\.env\.(?!NODE_ENV\b|NEXT_PUBLIC_)\w+/, name: 'process.env.X (non-NODE_ENV + non-NEXT_PUBLIC_ — leaks secret at build-time)' },
     { pattern: /\brequire\s*\(/, name: 'require()' },
     { pattern: /\bimport\s*\(/, name: 'import()' },
   ]
