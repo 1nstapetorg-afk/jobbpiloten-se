@@ -3131,11 +3131,24 @@ async function loadAndPaint() {
     if (disconnectBtn) disconnectBtn.hidden = !error && !token
     return
   }
-  const connected = !!token && !!profile
-  const detected = connected ? await queryActiveTab() : []
-  setStatus({ connected, profile, detected })
-  $('jp-fill-btn').disabled = !connected || detected.length === 0
-  $('jp-refresh-btn').disabled = !connected
+  // 2026-07-21 (Round-73 / BUG A) — RENAMED: `const connected` →
+  // `const isConnected`. The previous mid-loadAndPaint `const`
+  // SHADOWED module-scope `var connected = false` (line 35) and
+  // triggered a TDZ ReferenceError ("Cannot access 'connected'
+  // before initialization") on any nested function or async callback
+  // that referenced `connected` lexically BEFORE line 3134 executed.
+  // Renaming lifts the lexical shadow so any closure falling back to
+  // the module `var connected` reads the hoisted, initialized `false`
+  // instead of the TDZ `const`. The `setStatus({ connected: ... })`
+  // property name stays `connected` because setStatus destructures
+  // its argument under that exact key — only the LOCAL binding name
+  // changed. Locked by tests/unit/bug-12-tdz-csp.test.mjs (existing)
+  // and tests/unit/round73-bug-a-shadowed.test.mjs (new).
+  const isConnected = !!token && !!profile
+  const detected = isConnected ? await queryActiveTab() : []
+  setStatus({ connected: isConnected, profile, detected })
+  $('jp-fill-btn').disabled = !isConnected || detected.length === 0
+  $('jp-refresh-btn').disabled = !isConnected
   // v0.2.2 — when disconnected, the "Anslut din profil" CTA is
   // the primary affordance, so it stays visible. When connected,
   // it hides to keep the popup focused on Fill / Refresh / Disconnect.
