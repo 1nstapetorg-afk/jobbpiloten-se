@@ -2698,7 +2698,43 @@ const idleScheduler = (cb) => {
   } catch (_) { /* fall through */ }
   setTimeout(cb, 50)
 }
-if (document.readyState === 'loading') {
+
+// ---- Auth-page guard (Round-80) ----
+// Skip scanning/observer/heartbeat-mirror on JobbPiloten's own auth
+// pages (sign-in / sign-up / extension-auth) to prevent React
+// hydration mismatches caused by the content script adding
+// `data-jobbpiloten-status` and `title` attributes to input fields
+// BEFORE React hydrates. The hydration diff sees `data-jobbpiloten-
+// status="ok"` and `title` in the DOM but not in the component's
+// render output, triggering the mismatch warning.
+//
+// The cross-world presence signal (`data-jobbpiloten-ext` on
+// document.documentElement) and the heartbeat (`data-jobbpiloten-
+// ext-ping-at`) are still set because the dashboard polls them for
+// the "Tillägget är anslutet" indicator. Only the observer + scan
+// + paint cycle is skipped — these pages don't need auto-fill and
+// the DOM modifications would conflict with React's hydration.
+//
+// NOTE: Must use an IIFE (not `try { return }`) because this file
+// is parsed as ESM by the test suite — `return` at the top level
+// is a syntax error in module scope.
+const _skipAuthPage = (() => {
+  try {
+    const host = window.location.hostname
+    const path = window.location.pathname || ''
+    return (
+      (host === 'localhost' || host === '127.0.0.1' || host === 'jobbpiloten.se' || host.endsWith('.jobbpiloten.se')) &&
+      (path.startsWith('/sign-in') || path.startsWith('/sign-up') || path.startsWith('/extension-auth'))
+    )
+  } catch (_) { return false }
+})()
+
+if (_skipAuthPage) {
+  // Still start the heartbeat so the dashboard's "Tillägget är
+  // anslutet" pill reflects the current browser state.
+  startHeartbeat()
+  startHeartbeatAttributeMirror()
+} else if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     startObserver()
     startHeartbeat()
