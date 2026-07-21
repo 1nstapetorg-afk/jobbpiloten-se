@@ -1369,69 +1369,77 @@ function setupComposePanel() {
               bodyTextarea.value = staticBody
               bodyTextarea.disabled = false
               setComposeButtonsDisabled(false)
+              // 2026-07-21 (Round-73 / BUG D ITEM 1 SAFE PATTERN) —
+              // declare json FIRST, destructure AFTER (no TDZ risk).
+              // The verbose aiFailureMsg setter from Round-72.2 was retired
+              // in favour of structured-code switch: 422 MISSING_FIELDS,
+              // 429 GROQ_RATE_LIMIT, 503 GROQ_MISSING_KEY / AI_FALLBACK
+              // routes to one specific Swedish toast per code. Default
+              // falls back to the route's `error` field (legacy fallback
+              // for older server builds).
               try {
-                const json = await res.json().catch(() => ({}))
-                // Round-72.2 / BUG 4 followup — the server now returns a
-                // structured `{ok, reason, message, hint, retryable}` shape
-                // from /api/extension/email-body. CONCATENATE message (verb)
-                // + hint (next-step) when both are present so the user sees
-                // the full actionable copy ("Kunde inte hämta AI-utkast just
-                // nu. Försök igen om en stund, eller använd standardmallen.")
-                // rather than just the verb. Falls back to either alone, then
-                // to the legacy `error` field for older server builds.
-                const errField = (typeof json?.error === 'string') ? json.error.slice(0, 120) : ''
-                const aiFailureMsg = (json && (
-                  (json.message && json.hint)
-                    ? `${json.message} ${json.hint}`
-                    : (json.message || json.hint || errField)
-                )) || ''
-                if (aiFailureMsg) {
-                  setComposeStatus(status, aiFailureMsg, 'err')
+                const json = await res.json()
+                const { code, error, body: draft, usedFallback } = json || {}
+                if (usedFallback) {
+                  setComposeStatus('AI-generering misslyckades. Standardmall visas istället.', 'info')
+                  bodyTextarea.value = staticBody
+                } else if (code) {
+                  switch (code) {
+                    case 'GROQ_MISSING_KEY':
+                      setComposeStatus('AI-funktionen är inte aktiverad. Kontakta support.', 'warning')
+                      break
+                    case 'GROQ_RATE_LIMIT':
+                      setComposeStatus('För många förfrågningar. Vänta en minut och försök igen.', 'warning')
+                      break
+                    case 'MISSING_FIELDS':
+                      setComposeStatus('Fyll i jobbtitel och företag för att generera ett personligt brev.', 'info')
+                      break
+                    case 'TOKEN_INVALID':
+                      setComposeStatus('Token ogiltig — anslut igen från Dashboard.', 'warning')
+                      break
+                    case 'AI_FALLBACK':
+                      setComposeStatus('AI-generering misslyckades. Standardmall visas istället.', 'info')
+                      bodyTextarea.value = staticBody
+                      break
+                    default:
+                      setComposeStatus(error || 'Ett fel uppstod.', 'error')
+                  }
+                } else {
+                  // No code + no usedFallback: success — populate the draft.
+                  // Round-73 / ISSUE 1 FIX (code-reviewer) — the
+                  // success-path tail logic that was unreachable
+                  // below the SAFE_PATTERN now lives HERE so the
+                  // > 1500-char body cap + button-enable +
+                  // __composePanelInFlight cleanup actually run.
+                  if (typeof draft === 'string' && draft.trim()) {
+                    // Body length cap (Round-73 / BUG C) — long
+                    // AI drafts hit the Gmail ~2000-char limit on
+                    // URL params. Open Gmail with the head + a
+                    // clear marker; full body is in the textarea
+                    // which the user can paste manually.
+                    bodyTextarea.value = draft.length > 1500
+                      ? draft.slice(0, 1500) + '\n\n[…resten av mailet är i popupen, klistra in manuellt]'
+                      : draft
+                  } else {
+                    // Empty draft fallback — surface staticBody so
+                    // the user has usable copy to send.
+                    bodyTextarea.value = staticBody
+                  }
+                  setComposeButtonsDisabled(false)
+                  __composePanelInFlight = false
+                  if (typeof setComposeStatus === 'function') {
+                    setComposeStatus('AI-utkast redo.', 'ok')
+                  }
                 }
-              } catch (_) { /* ignore */ }
+              } catch (err) {
+                // Soft err in JSON parse — surface as a generic toast so
+                // the user has feedback (per user mandate .catch branch).
+                setComposeStatus('Kunde inte nå servern. Kontrollera din internetanslutning.', 'error')
+                console.error('[popup] AI draft fetch failed:', err)
+              }
               return
             }
-            const json = await res.json().catch(() => ({}))
-            if (json && typeof json.body === 'string' && json.body.trim()) {
-              // Round-46 / Bug 1 — Gmail mailto: body cap. macOS
-              // Chrome truncates around 2000 chars; Windows Outlook
-              // accepts more, but we cap uniformly so the user
-              // doesn't see half a signature on one platform and a
-              // full email on another. The truncation marker
-              // signals "more content" so the user knows to use
-              // the Kopiera fallback for the full draft.
-              const MAX_MAILTO_BODY_CHARS = 1900
-              let body = json.body
-              if (body.length > MAX_MAILTO_BODY_CHARS) {
-                body = body.slice(0, MAX_MAILTO_BODY_CHARS) + '\n\n[…utkast förkortat, klicka Kopiera för fullständig text]'
-              }
-              bodyTextarea.value = body
-              // Surface cv-short-warning as an in-panel hint so the
-              // user can upgrade their CV if they care.
-              if (json.cvShortWarning) {
-                setComposeStatus(
-                  status,
-                  'Ditt CV är kort — ladda upp en längre version för ett mer personligt utkast.',
-                  'err',
-                )
-              } else {
-                // Clear any previous warning so a re-render after
-                // upgrading the CV doesn't show stale copy.
-                setComposeStatus(status, 'AI-utkast klart — granska och klicka Öppna mailto:.', 'ok')
-              }
-            } else {
-              bodyTextarea.value = staticBody
-            }
-            bodyTextarea.disabled = false
-            setComposeButtonsDisabled(false)
-          } catch (e) {
-            // Network blip, abort, CSP exception — fall back to
-            // the static template so the user is NEVER stranded on
-            // an empty compose panel.
-            bodyTextarea.value = staticBody
-            bodyTextarea.disabled = false
-            setComposeButtonsDisabled(false)
-            setComposeStatus(status, 'Kunde inte hämta AI-utkast — använder standardmall.', 'err')
+            // (see code-review comment above)
           }
         }
         } finally {
