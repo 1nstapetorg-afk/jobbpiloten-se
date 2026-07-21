@@ -52,6 +52,7 @@
     "https://jobbpiloten.se/*",
     "https://*.vercel.app/*",
     "https://*.preview.emergentagent.com/*",
+    "https://*.preview.app.github.dev/*",
     "http://localhost:*/*",
     "https://mail.google.com/*",
     "https://outlook.live.com/*",
@@ -60,6 +61,6 @@
     "https://*.blocket.se/*"
   ],
   "content_security_policy": {
-    "extension_pages": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://jobbpiloten.se https://*.vercel.app https://*.preview.emergentagent.com http://localhost:* https://mail.google.com https://outlook.live.com https://outlook.office.com https://*.arbetsformedlingen.se https://*.blocket.se; object-src 'none'; form-action 'none'; frame-ancestors 'none'"
+    "extension_pages": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://jobbpiloten.se https://*.vercel.app https://*.preview.emergentagent.com https://*.preview.app.github.dev http://localhost:* https://mail.google.com https://outlook.live.com https://outlook.office.com https://*.arbetsformedlingen.se https://*.blocket.se; object-src 'none'; form-action 'none'; frame-ancestors 'none'"
   }
 }

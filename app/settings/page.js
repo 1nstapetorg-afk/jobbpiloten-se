@@ -314,13 +314,16 @@ function buildPatch(profile, form) {
   // profile that never set dateOfBirth doesn't trigger a save when
   // the user later types a value. `ROUND12_STRING_KEYS` from the
   // shared registry includes phoneCountryCode (which has a real
-  // '+46' default — handled by the same ''-vs-string compare
-  // because the form's `formFromProfile` always emits '+46' for
-  // the empty-profile case, so the two sides agree on the safe
-  // default and no save fires).
+  // '+46' default — the form's `formFromProfile` always emits
+  // '+46' for the empty-profile case, so we normalise the profile
+  // side to the same default to prevent a never-dirty state).
   for (const k of ROUND12_STRING_KEYS) {
     const fv = String(form[k] ?? '')
-    const pv = String(profile?.[k] ?? '')
+    let pv = String(profile?.[k] ?? '')
+    // phoneCountryCode: treat empty/undefined profile value the same
+    // as the '+46' default that formFromProfile emits, otherwise the
+    // form starts dirty on every page load.
+    if (k === 'phoneCountryCode' && pv === '') pv = '+46'
     if (fv !== pv) out[k] = fv
   }
   // Skills — sorted-compare so reordering the chips doesn't trigger
@@ -688,6 +691,14 @@ function ProfileEditor({ profile, onSaved }) {
   // The coercion `profile -> form` shape lives in `formFromProfile` so
   // the `useState` initializer and `handleReset` cannot drift apart.
   const [form, setForm] = useState(() => formFromProfile(profile))
+  // Sync form state when the profile reference changes (e.g. after a
+  // successful save triggers load() which fetches the updated profile).
+  // This clears the "osparade ändringar" indicator so the user sees the
+  // save took effect — without this, buildPatch(profile, form) would
+  // still see differences because the form state was captured at mount.
+  useEffect(() => {
+    setForm(formFromProfile(profile))
+  }, [profile])
   const [saving, setSaving] = useState(false)
   // Part 5: CV enhancement state lives at the component top level
   // (not inside a JSX expression) so the hook call order is stable
