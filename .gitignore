@@ -17,3 +17,10 @@ dev-*.log
 dist/
 test-results/
 extension/build-config.json
+
+# 2026-07-21 / Round-72.2 / Followup-3 — runtime artifacts from
+# scripts/run-dev.mjs that should never be committed. The dot-prefix
+# means they don't match the existing dev-*.log glob (which requires
+# the filename to start with dev-, no leading dot).
+.dev-server.log
+.dev-server.pid
