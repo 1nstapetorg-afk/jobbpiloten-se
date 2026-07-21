@@ -68,15 +68,20 @@ test('BUG 1: var declaration survives (a) chrome.storage.onChanged closures + (b
   // Round-72.2 design intentionally keeps the JSDoc header
   // explaining the `var`-hoisting-for-TDZ decision IMMEDIATELY above
   // the `var connected = false` line so future maintainers see WHY
-  // the file uses `var` and not `let`. That header pushes the
-  // declaration past the 400-char mark. The invariant this test
-  // actually locks is "the hoisted declaration precedes all
-  // downstream `setStatus`-style async loadAndPaint paths", and the
-  // position-vs-setStatus check below (line ~50) is the
-  // loadAndPaint-catches-this-truthy check the original assertion
-  // was guarding.
-  const top = POPUP_JS.slice(0, 2000)
-  assert.match(top, /var\s+connected\s*=\s*false/, 'var connected must appear near the top of popup.js (within first 2000 chars)')
+  // the file uses `var` and not `let`.
+  //
+  // 2026-07-21 / Round-79 followup — derive the offset
+  // PROGRAMMATICALLY so the test auto-grows with the docstring
+  // stack (BUG D REVERT + Round-72.2 BUG 1 fix + WHY-`var`-not-`let`).
+  // Locked upper bound = 6000 chars, meaning "near the module head,
+  // not buried at line 3000+". This replaces the hard-coded 2000
+  // (and its Round-79-widened 5000) — the assertion no longer needs
+  // human-tuning when the docstring grows.
+  const declIdx = POPUP_JS.search(/var\s+connected\s*=\s*false/)
+  assert.ok(
+    declIdx >= 0 && declIdx < 6000,
+    `var connected must be near the top of popup.js (found at offset ${declIdx}; locked ceiling 6000 chars)`,
+  )
 })
 
 // ─── BUG 2 — Dashboard URL dev/prod switching ─────────────────────────
