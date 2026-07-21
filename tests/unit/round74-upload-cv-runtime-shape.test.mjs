@@ -134,7 +134,23 @@ function parseOnly(body) {
  * string key/value would not match `[,{]`.
  */
 function hasKeyAtKeyPosition(body, key) {
-  const re = new RegExp(`(^|[,{])\\s*${key}\\s*:`, 'm')
+  // Leading anchor `(^|[,:])` matches KEY-position boundaries:
+  //   - `^` is start-of-line (top-level key at start of body)
+  //   - `,` separates sibling keys at the same depth
+  //   - `{` precedes a key inside a nested object literal
+  //   - `:` precedes a key immediately after a ternary result like
+  //     `condition ? {} : { key: value }`
+  // Trailing anchor `(:|[,}]|$)` accepts BOTH classic key-value
+  // pairs (`key: value`) AND ES6 property shorthand (`code,` /
+  // `code}` / `code` at end-of-string). The fatal-error branch in
+  // route.js uses `code,` shorthand — a strict `: ` tail would
+  // miss it AND incorrectly suggest the body has no `code` key.
+  // Optional `['"]?` quotes accept quoted-key shapes (rare in
+  // JSON-route bodies but harmless).
+  const re = new RegExp(
+    `(^|[,:])\\s*(?:['"]?)${key}(?:['"]?)\\s*(:|[,}]|$)`,
+    'm',
+  )
   return re.test(body)
 }
 
@@ -310,10 +326,10 @@ test('Lock 6: every NextResponse.json body avoids JSON-unsafe + module-scope con
     { pattern: /\bBigInt\s*\(/, name: 'BigInt(' },
     { pattern: /\bfetch\s*\(/, name: 'fetch(' },
     { pattern: /\bawait\s+fetch\b/, name: 'await fetch' },
-    { pattern: /=>/, name: '=> (arrow function)' },
+    { pattern: /\(\s*\w*\s*\)\s*=>/, name: 'arrow function expression ((arg) => ...)' },
     { pattern: /\bfunction\s+[a-zA-Z_$]/, name: 'function declaration' },
     { pattern: /\bclass\s+[A-Z]/, name: 'class declaration' },
-    { pattern: /\bprocess\.env\b/, name: 'process.env' },
+    { pattern: /\bprocess\.env\.(?!NODE_ENV\b)\w+/, name: 'process.env.X (non-NODE_ENV — leaks secret at build-time)' },
     { pattern: /\brequire\s*\(/, name: 'require()' },
     { pattern: /\bimport\s*\(/, name: 'import()' },
   ]
@@ -353,11 +369,25 @@ test('Lock 8: fatal-error branch (PASSWORD_PROTECTED / CORRUPT_DOCX) parses + ha
       `fatal-error body must include key "${canonical}" at a KEY position.\n\nBody:\n${fatalBody.body}`,
     )
   }
-  // For fatal errors the server writes `code: e.message` (NOT a
-  // literal). The discriminator IS the `code` property. Lock:
-  // the body references `e.message` (dynamic) at the code: value.
-  assert.match(fatalBody.body, /code:\s*e\.message/, 'fatal-error body must set code from e.message')
-  assert.match(fatalBody.statusChunk, /needsManualFallback:\s*false/, 'fatal-error must NOT save the file (needsManualFallback: false)')
+  // For fatal errors route.js uses TWO distinct code paths:
+  //   (a) `error: e.message` — surfaces the thrown exception's
+  //       message verbatim so the UI shows what actually went wrong.
+  //   (b) `code` ES6 shorthand — uses the OUTER `code` variable
+  //       captured earlier in the function (PASSWORD_PROTECTED,
+  //       CORRUPT_DOCX) as the discriminator. The shorthand
+  //       shape (no colon, just `code,`) hides the value source.
+  // Lock: assert (a) the body actually surfaces `e.message` (so the
+  // thrown text reaches the user) and (b) `code` is shorthand
+  // (positive lookahead for `,` or `}` after the key) so a future
+  // refactor doesn't silently switch to a hardcoded literal.
+  assert.match(fatalBody.body, /error:\s*e\.message/, 'fatal-error body must surface `error: e.message` so the thrown text reaches the user.')
+  assert.match(fatalBody.body, /\bcode\s*(?=,|\s*\})/, 'fatal-error body must use ES6 `code,` shorthand (the outer `code` variable carries the discriminator).')
+  // needsManualFallback: false is INSIDE the body (not the status
+  // block) — verify on body. The status block is just
+  // `{ status: 400 }`; the boolean flag lives alongside error +
+  // code + needsManualFallback in the FIRST argument to
+  // NextResponse.json.
+  assert.match(fatalBody.body, /needsManualFallback:\s*false/, 'fatal-error body must set needsManualFallback: false (file ISN\\u0027T saved in this branch).')
   assert.match(fatalBody.statusChunk, /status:\s*400/, 'fatal-error must return status 400')
 })
 
@@ -370,13 +400,27 @@ test('Lock 8: fatal-error branch (PASSWORD_PROTECTED / CORRUPT_DOCX) parses + ha
 // =====================================================================
 
 test('Lock 9: outer catch fallthrough parses + has 400 + error key', () => {
-  // The OUTER catch's NextResponse.json call is the LAST
-  // NextResponse.json call in route.js (everything past it is
-  // helper-code comments). Slice from the LAST occurrence.
-  const matches = [...SRC.matchAll(/return\s+NextResponse\.json\s*\(/g)]
-  assert.ok(matches.length >= 4, 'expected at least 4 NextResponse.json return sites')
-  const lastStart = matches[matches.length - 1].index
-  const bodies = extractAllNextResponseBodies(SRC.slice(lastStart))
+  // Anchor on the LAST \u0060catch (\u0060 LITERAL since nested catch
+  // blocks come BEFORE the outer catch in source order. Robust to
+  // refactors that ADD new return statements after the catch
+  // (which would break a brittle LAST-`return NextResponse.json`
+  // anchor): adding a new return does NOT introduce a new catch
+  // block.
+  // Documented limitations:
+  //   - Misses ES2019 \u0060catch { \u0060 optional-binding form
+  //     (not used in route.js, would only break if refactored).
+  //   - If a JSDoc-style \u0060@example catch (e) {\u0060 comment
+  //     precedes a return, comment-text could match. route.js has
+  //     no JSDoc near the outer catch so this is hypothetical.
+  const catchMatches = [...SRC.matchAll(/catch\s*\(\s*\w+\s*\)\s*\{/g)]
+  assert.ok(catchMatches.length >= 1, 'expected at least one catch block in route.js')
+  const lastCatchIdx = catchMatches[catchMatches.length - 1].index
+  const sliceFrom = SRC.indexOf('return NextResponse.json', lastCatchIdx)
+  assert.ok(
+    sliceFrom > lastCatchIdx,
+    'outer catch block must contain a return NextResponse.json(...) after its closing brace.',
+  )
+  const bodies = extractAllNextResponseBodies(SRC.slice(sliceFrom))
   const catchBody = bodies[0]
   assert.ok(catchBody, 'outer catch body must be parseable')
   parseOnly(catchBody.body)
