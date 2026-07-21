@@ -27,3 +27,6 @@ extension/build-config.json
 
 # Allow .env.template (placeholders, NEVER real secrets)
 !.env.template
+
+next-env.d.ts
+tsconfig.json

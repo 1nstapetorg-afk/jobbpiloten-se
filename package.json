@@ -14,7 +14,7 @@
         "icons:extension": "node scripts/generate-extension-icons.js",
         "validate:extension": "node scripts/validate-extension.js",
         "lint:await-async": "node scripts/lint-await-async.mjs",
-    "lint:field-patterns": "node scripts/lint-field-patterns.mjs",
+        "lint:field-patterns": "node scripts/lint-field-patterns.mjs",
         "build:extension": "yarn package:extension",
         "package:extension": "yarn validate:extension && yarn lint:await-async && yarn lint:field-patterns && node scripts/python.mjs scripts/package-extension.py --cws",
         "package:extension:cws": "node scripts/python.mjs scripts/package-extension.py --cws",
@@ -101,12 +101,14 @@
         "@capacitor/ios": "^8.4.2",
         "@playwright/test": "^1.61.1",
         "@types/lodash": "4.17.24",
+        "@types/react": "19.2.17",
         "acorn": "^8.17.0",
         "autoprefixer": "10.4.19",
         "docx": "^9.7.1",
         "globals": "16.2.0",
         "postcss": "8",
-        "tailwindcss": "3.4.1"
+        "tailwindcss": "3.4.1",
+        "typescript": "5.8.2"
     },
     "resolutions": {
         "follow-redirects": "1.16.0",

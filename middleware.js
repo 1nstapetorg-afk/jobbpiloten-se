@@ -85,6 +85,17 @@ export default async function middleware(req) {
   // back. Any failure in setup ABOVE this block surfaces to stderr
   // normally so a real install/pattern bug is visible in dev-server
   // logs.
+  // Round-79 TEST SHIM — hermetic regression-coverage switch. When this env
+  // var is set, we deliberately throw BEFORE invoking clerkMw so the bash
+  // regression (scripts/test-middleware-clerk-failure.sh) deterministically
+  // exercises the catch path regardless of whether the user's real Clerk
+  // keys are currently broken or valid. CI runs the script with this var
+  // set; production runs without it. Removing this block is safe — it only
+  // fires when explicitly opted-in via env.
+  if (process.env.JOBBPILOTEN_FORCE_CLERK_ERROR === '1') {
+    throw new Error('JOBBPILOTEN_FORCE_CLERK_ERROR=1 (test shim)');
+  }
+
   try {
     return await clerkMw(req);
   } catch (error) {
