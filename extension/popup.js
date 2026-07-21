@@ -15,6 +15,17 @@
  * the user connects. We just read + react.
  */
 
+// 2026-07-21 (Round-73 / BUG D REVERT) — the prior
+// switch(json.code) injection was reverted because it
+// references `json` BEFORE its block-scoped declaration
+// at line ~1379 inside the email-body fetch's inner try block,
+// which threw ReferenceError on every AI response. The verbose
+// aiFailureMsg setter at lines ~1388-1395 still surfaces the
+// route's structured message verbatim (actionable Swedish copy)
+// so the user-visible behavior is preserved. Follow-up commits
+// can reintroduce the structured switch INSIDE the try block
+// with a codeHandled guard to suppress the verbose setComposeStatus
+// overwrite.
 // 2026-07-21 / Round-72.2 (BUG 1 fix, persistent) — declare the
 // `connected` module-binding with `var` (hoisted with initialiser) at the
 // absolute top of the module, BEFORE any imports / window listeners /
@@ -1350,23 +1361,6 @@ function setupComposePanel() {
             // whitespace restores normal ASI semantics AND
             // matches the indentation pattern used by every
             // other `if (!res.ok)` branch in the file.
-            // 2026-07-21 (Round-73 / BUG D popup-side wiring) —
-            // map the route's structured `code` field to a SPECIFIC
-            // Swedish toast. Pre-fix the popup ignored json.code and
-            // fell back to a generic 'Tillfälligt fel' — losing the
-            // actionable signal (rate-limit, missing key, missing
-            // fields, etc.). This switch runs BEFORE the !res.ok
-            // soft-fail so each known code surfaces its own message.
-            {
-              const code = json && (json.code || json.reason)
-              if (code) {
-                if (code === 'GROQ_RATE_LIMIT') setComposeStatus('För många förfrågningar. Vänta en minut och försök igen.', 'warning')
-                else if (code === 'GROQ_MISSING_KEY') setComposeStatus('AI-funktionen är inte aktiverad. Kontakta support.', 'warning')
-                else if (code === 'MISSING_FIELDS') setComposeStatus('Fyll i jobbtitel och företag för att generera ett personligt brev.', 'info')
-                else if (code === 'TOKEN_INVALID') setComposeStatus('Token ogiltig — anslut igen från Dashboard.', 'warning')
-                else if (code === 'AI_FALLBACK' || code === 'ai_fallback') setComposeStatus('AI-generering misslyckades. Standardmall visas istället.', 'info')
-              }
-            }
             if (!res.ok) {
               // Surface a soft status but DON'T overwrite the body
               // with an error string — the static fallback is still
