@@ -393,6 +393,23 @@ const FIELD_PATTERNS = [
   { pattern: /\b(platser|work[\s_]?location|arbetsort)\b/i, profileKey: 'preferredLocations', kind: 'multiselect' },
 
   // BUG 6: Randstad forms — current job, salary, source tracking:
+  // 2026-07-21 (Round-73 / BUG F) — split nuvarande arbete into separate
+  // `currentJobTitle` + `currentOrganization` patterns so Randstad-style
+  // forms (which have two distinct fields, \"Nuvarande tjänst\" and
+  // \"Arbetsgivare\") can be filled independently instead of both receiving
+  // the same concatenated profile.currentJob string. Negative lookahead
+  // gates ensure the two new patterns don't hijack each other:
+  //   - currentJobTitle.label gate:  must NOT contain \"givare\"/\"employer\"
+  //     so an \"Arbetsgivare\" field routes to currentOrganization instead.
+  //   - currentOrganization.label gate:  must NOT match a bare title
+  //     (\"nuvarande titel\"/\"current title\") so a free-text title field
+  //     routes to currentJobTitle instead.
+  // These come BEFORE the combined currentJob fallback at the old line 396
+  // so a form with split fields (Randstad) gets the SPECIFIC mapping;
+  // a form with the combined free-text field (Manpower) falls through
+  // to the combined currentJob fallback unchanged.
+  { pattern: /\b(nuvarande[\s_]?(?:titel|position|tjänst|roll)|current[\s_]?(?:title|position|role|job[\s_]?title))\b(?!\s*[\s_]*(?:givare|employer|organisation))/i, profileKey: 'currentJobTitle' },
+  { pattern: /\b(nuvarande[\s_]?(?:arbetsgivare|organisation|f[öo]retag)|current[\s_]?(?:employer|organization|company))\b/i, profileKey: 'currentOrganization' },
   { pattern: /\b(nuvarande[\s_]?arbete|current[\s_]?(?:job|position|work)|current[\s_]?employer)\b/i, profileKey: 'currentJob' },
   { pattern: /\b(löneanspråk|önskad[\s_]?lön|salary[\s_]?expectation|expected[\s_]?salary|månadlig[\s_]?lön|annual[\s_]?salary)\b/i, profileKey: 'salaryExpectation', kind: 'salary' },
   { pattern: /\b(var[\s_]?hittade[\s_]?du[\s_]?den[\s_]?här[\s_]?annonsen|source[\s_]?tracking|hörde[\s_]?du[\s_]?om[\s_]?jobbet[\s_]?via|how[\s_]?did[\s_]?you[\s_]?find[\s_]?us)\b/i, profileKey: 'applicationSource', kind: 'multiselect' },

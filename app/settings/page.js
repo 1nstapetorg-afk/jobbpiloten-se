@@ -166,6 +166,9 @@ function formFromProfile(profile) {
     // non-empty defaults are `phoneCountryCode: '+46'` (Sweden) and
     // `gender: ''` (preserves the legacy fallback in buildExtensionProfile).
     hasDriversLicense: Boolean(profile?.hasDriversLicense) === true,
+    // 2026-07-21 (Round-73 / BUG F) — nuvarande arbete split keys
+    currentJobTitle: profile?.currentJobTitle ?? '',
+    currentOrganization: profile?.currentOrganization ?? '',
     isEuCitizen: Boolean(profile?.isEuCitizen) === true,
     hasWorkPermit: Boolean(profile?.hasWorkPermit) === true,
     yearsExperience: Number.isFinite(Number(profile?.yearsExperience))
@@ -862,6 +865,27 @@ function ProfileEditor({ profile, onSaved }) {
               value={form.personalNumber}
               onChange={(e) => setField('personalNumber', e.target.value)}
               placeholder="YYYYMMDD-XXXX"
+            />
+          </div>
+          {/* 2026-07-21 (Round-73 / BUG F) — split nuvarande arbete */}
+          <div className="space-y-1.5">
+            <Label htmlFor="currentJobTitle">Nuvarande arbete / titel</Label>
+            <Input
+              id="currentJobTitle"
+              data-testid="settings-currentJobTitle"
+              value={form.currentJobTitle}
+              onChange={(e) => setField('currentJobTitle', e.target.value)}
+              placeholder="Lagerarbetare"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="currentOrganization">Nuvarande arbetsgivare / organisation</Label>
+            <Input
+              id="currentOrganization"
+              data-testid="settings-currentOrganization"
+              value={form.currentOrganization}
+              onChange={(e) => setField('currentOrganization', e.target.value)}
+              placeholder="PostNord AB"
             />
           </div>
           <div className="sm:col-span-2 space-y-1.5">

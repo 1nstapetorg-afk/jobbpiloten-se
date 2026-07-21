@@ -220,7 +220,17 @@ export async function POST(request) {
   const auth = await resolveClerkId(request)
   if (!auth) {
     return NextResponse.json(
-      { error: 'Ogiltig eller saknad token — anslut tillägget från /dashboard.' },
+      {
+        // 2026-07-21 (Round-73 / BUG D) — add a structured `code` field so the
+        // popup's switch-on-code handler can map this to a SPECIFIC Swedish
+        // toast (\"Token ogiltig — anslut igen från Dashboard\") instead of the
+        // generic \"Tillfälligt fel\" text. Pre-fix the popup had to guess from
+        // the status number OR fall back to the static template — losing the
+        // actionable signal.
+        ok: false,
+        code: 'TOKEN_INVALID',
+        error: 'Ogiltig eller saknad token — anslut tillägget från /dashboard.',
+      },
       { status: 401 },
     )
   }
@@ -232,6 +242,14 @@ export async function POST(request) {
     const retrySec = Math.ceil((rl.retryAfterMs || RATE_LIMIT_WINDOW_MS) / 1000)
     return NextResponse.json(
       {
+        // 2026-07-21 (Round-73 / BUG D) — add structured `code` field. The
+        // popup's switch-on-code handler maps GROQ_RATE_LIMIT to the Swedish
+        // toast \"Fö många förfrågningar. Vänta ${retryAfter}s och försök igen.\".
+        // `retryAfter` is kept verbatim because the rate-limit response is the
+        // ONLY structured response that already exposed a numeric hint — the
+        // popup's existing `retryAfter` read continues to work.
+        ok: false,
+        code: 'GROQ_RATE_LIMIT',
         error: `För många e-postutkast — försök igen om ${retrySec}s.`,
         retryAfter: retrySec,
       },
@@ -387,7 +405,17 @@ export async function POST(request) {
     // error" (4xx codes).
     return NextResponse.json(
       {
+        // 2026-07-21 (Round-73 / BUG D) — add `code: 'AI_FALLBACK'` so the
+        // popup's switch-on-code handler can map this to "AI-generering
+        // misslyckades. Standardmall visas istället." + show the fallback
+        // template body in the textarea (not blank). The pre-fix `reason:
+        // 'ai_fallback'` field is kept VERBATIM so anyone reading the
+        // route's response sees both old + new keys, and older popups still
+        // work. Pre-fix the popup defaulted to the static template silently
+        // because the only signal was the 503 status + `retryable: true`,
+        // which couldn't be modulated per failure case.
         ok: false,
+        code: 'AI_FALLBACK',
         reason: 'ai_fallback',
         message: 'AI-utkast kunde inte genereras just nu. Du kan skriva ett eget mejl eller klicka "Generera igen" om en stund.',
         hint: 'Klicka "Generera igen" eller kopiera mallen nedan och anpassa den manuellt.',

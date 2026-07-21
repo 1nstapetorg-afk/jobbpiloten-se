@@ -1350,6 +1350,23 @@ function setupComposePanel() {
             // whitespace restores normal ASI semantics AND
             // matches the indentation pattern used by every
             // other `if (!res.ok)` branch in the file.
+            // 2026-07-21 (Round-73 / BUG D popup-side wiring) —
+            // map the route's structured `code` field to a SPECIFIC
+            // Swedish toast. Pre-fix the popup ignored json.code and
+            // fell back to a generic 'Tillfälligt fel' — losing the
+            // actionable signal (rate-limit, missing key, missing
+            // fields, etc.). This switch runs BEFORE the !res.ok
+            // soft-fail so each known code surfaces its own message.
+            {
+              const code = json && (json.code || json.reason)
+              if (code) {
+                if (code === 'GROQ_RATE_LIMIT') setComposeStatus('För många förfrågningar. Vänta en minut och försök igen.', 'warning')
+                else if (code === 'GROQ_MISSING_KEY') setComposeStatus('AI-funktionen är inte aktiverad. Kontakta support.', 'warning')
+                else if (code === 'MISSING_FIELDS') setComposeStatus('Fyll i jobbtitel och företag för att generera ett personligt brev.', 'info')
+                else if (code === 'TOKEN_INVALID') setComposeStatus('Token ogiltig — anslut igen från Dashboard.', 'warning')
+                else if (code === 'AI_FALLBACK' || code === 'ai_fallback') setComposeStatus('AI-generering misslyckades. Standardmall visas istället.', 'info')
+              }
+            }
             if (!res.ok) {
               // Surface a soft status but DON'T overwrite the body
               // with an error string — the static fallback is still
@@ -1880,9 +1897,34 @@ async function setupMejlutkastPanel() {
     pickEl.innerHTML = ''
     const placeholder = document.createElement('option')
     placeholder.value = ''
+    // 2026-07-21 (Round-73 / BUG B) — empty-state UX. Pre-fix shape used
+    // `— Inga tidigare ansökningar —` as a placeholder which the user
+    // read as a generic \"nothing here\" tooltip with no recovery path. The
+    // fix makes the empty state ACTIONABLE:
+    //   1. Dropdown's first <option> shows the explicit message text.
+    //   2. The \"Välj från dina senaste ansökningar —\" copy is reserved
+    //      for the populated case so a real list isn't visually downgraded
+    //      to the empty-state wording by accident.
+    //   3. A second <option> with a "Ladda om" affordance (data-action="retry")
+    //      lets the popup call refreshSavedJobs() again without closing.
     placeholder.textContent = jobs.length
       ? '— Välj från dina senaste ansökningar —'
-      : '— Inga tidigare ansökningar —'
+      : '— Inga sparade jobb. Spara ett jobb i Dashboard först. —'
+    // Round-73 / Bug B sub-fix — render an actionable second <option>
+    // when the list is empty. The `data-action="retry"` marker lets the
+    // picker change handler re-fetch via refreshSavedJobs(). The
+    // change handler treats `data-action='retry'` as a no-op selection
+    // (the option reverts to disabled placeholder after click) so the
+    // user never sees a stuck \"chosen job\" in the dropdown after the
+    // retry.
+    if (!jobs.length) {
+      const retryOption = document.createElement('option')
+      retryOption.disabled = false
+      retryOption.value = '__retry__'
+      retryOption.dataset.action = 'retry'
+      retryOption.textContent = '↻ Ladda om'
+      select.appendChild(retryOption)
+    }
     pickEl.appendChild(placeholder)
     for (const j of jobs) {
       const opt = document.createElement('option')

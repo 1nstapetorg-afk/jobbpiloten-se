@@ -32,7 +32,7 @@ test('Round-73 / BUG A: block-scoped const connected removed from popup.js', () 
   // Find any line declaring `const connected` — the pre-fix shape
   // had EXACTLY one declaration inside loadAndPaint at the renamed
   // location (was ~3134). Post-fix it must be ZERO.
-  const matches = src.match(/^\s*const\s+connected\s*=/gm) || []
+  const matches = src.match(/^\s*(let|const)\s+connected\s*=/gm) || []
   assert.equal(
     matches.length,
     0,
