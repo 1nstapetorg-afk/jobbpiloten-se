@@ -55,21 +55,23 @@ const SKILLS_SENTINEL = ['Maskiner', 'Service', 'Truck', 42, null, 'Städ'] // m
 
 // ===== A. Field COUNT =====
 //
-// buildExtensionProfile returns the legacy 17 leaf keys + the 17 new
-// Round-12 keys. The numbers below are pinned against the actual
-// source — if a future refactor adds/removes a key without
-// updating this assertion, the test fails with a clear diff.
-// (Originally the test asserted 35 (19+16) but the actual legacy
-//  leaf count is 17 and the Round-12 leaf count is 17 — both
-// numbers came in slightly under the original estimates. The
-//  error message references ROUND12_TOTAL_FIELDS so the
-//  source-of-truth field count is named.)
+// 2026-07-21 — Storgatan regression close-out. With BUG 3 (split-
+// address) the function exposes `street` and `country` as new keys
+// alongside the legacy `address`/`city`. The `zip` key was also
+// added in BUG 3 (parsed via parseAddressComponents) but a
+// duplicate source-level declaration had been overwriting the
+// parser's value with '' — fixed in Round-74. JS object-literal
+// semantics dedupes the duplicate to ONE runtime key, so `zip`
+// counts as 1 (NOT +1 above the existing baseline). The +2 extras
+// above the 17 legacy + 19 Round-12 = 36 baseline are therefore
+// exactly `street` and `country` (BUG 3 net additions).
 const LEGACY_LEAF_COUNT = 17
-test('buildExtensionProfile returns exactly 34 keys (17 legacy + 17 Round-12)', () => {
+const BUG3_SPLIT_KEYS = 2  // BUG 3 (Round-72.2) adds street + country at runtime; zip is also a BUG 3 field but it replaced the previous-days '' fallback (which itself counted as 1) so the net delta vs the pre-BUG 3 shape is +2.
+test('buildExtensionProfile returns exactly 38 keys (17 legacy + 19 Round-12 + 2 BUG 3 split)', () => {
   const out = buildExtensionProfile({}, null)
   const keys = Object.keys(out).sort()
-  assert.equal(keys.length, LEGACY_LEAF_COUNT + ROUND12_TOTAL_FIELDS,
-    `Expected ${LEGACY_LEAF_COUNT + ROUND12_TOTAL_FIELDS} fields (${LEGACY_LEAF_COUNT} legacy + ${ROUND12_TOTAL_FIELDS} Round-12). Got ${keys.length}: ${keys.join(', ')}`)
+  assert.equal(keys.length, LEGACY_LEAF_COUNT + ROUND12_TOTAL_FIELDS + BUG3_SPLIT_KEYS,
+    `Expected ${LEGACY_LEAF_COUNT + ROUND12_TOTAL_FIELDS + BUG3_SPLIT_KEYS} fields (${LEGACY_LEAF_COUNT} legacy + ${ROUND12_TOTAL_FIELDS} Round-12 + ${BUG3_SPLIT_KEYS} BUG 3 split). Got ${keys.length}: ${keys.join(', ')}`)
 })
 
 test('buildExtensionProfile returns ALL 16 Round-12 keys (registry parity)', () => {
@@ -317,8 +319,16 @@ test('legacy keys are all present and preserve their existing behaviour', () => 
   // Contact
   assert.equal(out.email, 'erik@example.com')
   assert.equal(out.phone, '+46 70 123 45 67')
-  assert.equal(out.address, 'Storgatan 12, Stockholm')
-  assert.equal(out.city, 'Stockholm') // split-address heuristic
+  // 2026-07-21 (Storgatan regression fix) — `address` must keep
+  // the full raw multi-part input so generic single-field forms
+  // + CV PDF reports see the original blob. `city` is the
+  // parseAddressComponents-derived second segment. The previous
+  // shape truncated `address` to street-only and broke this
+  // assertion.
+  assert.equal(out.address, 'Storgatan 12, Stockholm',
+    `legacy 'address' must preserve the full raw multi-part input. Got ${JSON.stringify(out.address)} — regression: the BUG 3 fix must NOT truncate the raw input.`)
+  assert.equal(out.city, 'Stockholm',
+    `city must be the parsed second segment (split-address heuristic). Got ${JSON.stringify(out.city)}.`)
   assert.equal(out.linkedin, 'https://linkedin.com/in/erik')
   // Salary / experience
   assert.equal(out.salaryExpectation, 45000)
@@ -334,6 +344,31 @@ test('legacy keys are all present and preserve their existing behaviour', () => 
   // employmentType / languages arrays
   assert.deepEqual(out.employmentType, ['heltid', 'tillsvidare'])
   assert.deepEqual(out.languages, ['sv', 'en'])
+})
+
+// ===== E2. Canonical 4-part Swedish address split =====
+//
+// 2026-07-21 — Storgatan regression close-out. Asserts the
+// BUG 3 splitter exposes ALL FOUR components correctly on a
+// canonical Swedish full-address input, AND that `address`
+// still carries the full raw multi-part blob for legacy callers.
+test('canonical 4-part Swedish address: all components split + raw "address" preserved', () => {
+  const profile = {
+    address: 'Hjällbogården 30, 424 36, Angered, Sverige',
+  }
+  const out = buildExtensionProfile(profile, null)
+  // Legacy contract — full raw multi-part string preserved.
+  assert.equal(out.address, 'Hjällbogården 30, 424 36, Angered, Sverige',
+    `legacy 'address' must preserve the full raw input. Got ${JSON.stringify(out.address)}.`)
+  // BUG 3 split — each component on its own key.
+  assert.equal(out.street, 'Hjällbogården 30',
+    `street must extract the first text segment. Got ${JSON.stringify(out.street)}.`)
+  assert.equal(out.zip, '424 36',
+    `zip must extract the 3-5 Swedish postal code. Got ${JSON.stringify(out.zip)}.`)
+  assert.equal(out.city, 'Angered',
+    `city must extract the second text segment. Got ${JSON.stringify(out.city)}.`)
+  assert.equal(out.country, 'Sverige',
+    `country must match the country allow-list. Got ${JSON.stringify(out.country)}.`)
 })
 
 // ===== F. Shared-registry PARITY =====
