@@ -9,14 +9,27 @@
  *   - Uses a plain middleware that allows all requests through
  *   - No "Publishable key not valid" crash
  *
- * Round-78/79 fix: the Clerk branch is wrapped in try/catch so a Clerk mount-time
- * or first-request failure (key rejection, network blip to clerk.accounts.dev,
- * V7 SDK incompat with Next 15 Edge runtime) doesn't take down every route
- * with a 500. Previously the throw bubbled out before the route rendered
- * and Next.js returned the cryptic "missing required error components,
- * refreshing..." dev-overlay HTML for ALL routes. Now the middleware
- * degrades to NextResponse.next() (matching demo-mode behaviour) and
- * logs the error so future debugging picks it up.
+ * Round-78/79 fix: Clerk SDK V7 was rejecting the user's publishable key
+ * (decoded to `eternal-pika-64.clerk.accounts.dev$`) on every request,
+ * throwing inside `clerkMiddleware()`. The throw bubbled out of
+ * middleware before the route rendered, and Next.js's dev-overlay swallowed
+ * the error. Every route returned HTTP 500 with the cryptic `missing
+ * required error components, refreshing...` body.
+ *
+ * Round-79 refinement (code-reviewer feedback):
+ *   • Try/catch scope is NARROW — only wraps `clerkMw(req)`. If the
+ *     import of `@clerk/nextjs/server` fails (broken npm install),
+ *     or `createRouteMatcher(...)` throws (malformed route pattern),
+ *     those errors propagate loudly so the dev-server log shows a
+ *     real stack instead of being silently swallowed.
+ *   • For `isProtectedRoute(req) === true`, fall back to
+ *     `NextResponse.redirect(new URL('/sign-in', req.url))` so
+ *     unauthenticated visitors land on the auth page rather than
+ *     bare dashboard markup. (Pre-refinement was returning
+ *     `NextResponse.next()`, which leaked protected route HTML to
+ *     anyone.)
+ *   • For PUBLIC routes, `NextResponse.next()` is fine — no auth
+ *     gate is enforced either way in degraded mode.
  */
 
 import { NextResponse } from 'next/server';
@@ -28,55 +41,62 @@ export default async function middleware(req) {
     return NextResponse.next();
   }
 
-  // Clerk is configured — wrap in try/catch so a Clerk-mount or
-  // first-request failure doesn't take down every route with a 500.
+  // Imports + matcher setup are OUTSIDE the try — let those crash loud
+  // if they fail (broken package install, malformed pattern, etc.).
+  // Only the actual clerkMw() invocation gets the defensive wrap.
+  const { clerkMiddleware, createRouteMatcher } = await import('@clerk/nextjs/server');
+
+  const isPublicRoute = createRouteMatcher([
+    '/',
+    '/sign-in(.*)',
+    '/sign-up(.*)',
+    '/api/webhooks/(.*)',
+    '/api/health',
+    // Extension auth bridge: the Chrome extension cannot supply
+    // Clerk cookies (cross-origin + HttpOnly), so /api/extension/*
+    // validates the bearer token directly. Listing the routes here
+    // ensures Clerk middleware does not 401 the extension before
+    // our own token check runs.
+    '/api/extension/(.*)',
+  ]);
+
+  const isProtectedRoute = createRouteMatcher([
+    '/dashboard(.*)',
+    '/onboarding(.*)',
+    '/settings(.*)',
+    '/api/profile(.*)',
+    '/api/applications(.*)',
+    '/api/stats(.*)',
+    '/api/apply-now(.*)',
+    '/api/report(.*)',
+    '/api/checkout(.*)',
+    '/api/portal(.*)',
+    '/api/subscription(.*)',
+  ]);
+
+  const clerkMw = clerkMiddleware(async (auth, req) => {
+    if (isProtectedRoute(req)) {
+      await auth.protect();
+    }
+  });
+
+  // Narrow try — only the call goes inside the catch. If clerkMw()
+  // throws because Clerk SDK rejected the keys, the catch logs + falls
+  // back. Any failure in setup ABOVE this block surfaces to stderr
+  // normally so a real install/pattern bug is visible in dev-server
+  // logs.
   try {
-    const { clerkMiddleware, createRouteMatcher } = await import('@clerk/nextjs/server');
-
-    const isPublicRoute = createRouteMatcher([
-      '/',
-      '/sign-in(.*)',
-      '/sign-up(.*)',
-      '/api/webhooks/(.*)',
-      '/api/health',
-      // Extension auth bridge: the Chrome extension cannot supply
-      // Clerk cookies (cross-origin + HttpOnly), so /api/extension/*
-      // validates the bearer token directly. Listing the routes here
-      // ensures Clerk middleware does not 401 the extension before
-      // our own token check runs.
-      '/api/extension/(.*)',
-    ]);
-
-    const isProtectedRoute = createRouteMatcher([
-      '/dashboard(.*)',
-      '/onboarding(.*)',
-      '/settings(.*)',
-      '/api/profile(.*)',
-      '/api/applications(.*)',
-      '/api/stats(.*)',
-      '/api/apply-now(.*)',
-      '/api/report(.*)',
-      '/api/checkout(.*)',
-      '/api/portal(.*)',
-      '/api/subscription(.*)',
-    ]);
-
-    const clerkMw = clerkMiddleware(async (auth, req) => {
-      if (isProtectedRoute(req)) {
-        await auth.protect();
-      }
-    });
-
-    // `await` is required for the try/catch to capture async throws.
     return await clerkMw(req);
   } catch (error) {
-    // SURFACE THE REAL ERROR: previously this fired-and-died silently
-    // because the dev-overlay caught it before Next.js logged to stderr.
-    // Now it logs so the dev-server console + CI capture it.
-    console.error('[middleware] Clerk middleware init/execution failed:', error && error.message ? error.message : error);
-    // Graceful degradation: allow the request through (server-side
-    // route handlers enforce auth via lib/auth.js#requireAuth).
-    // This matches the demo-mode behaviour (NextResponse.next()).
+    console.error('[middleware] Clerk middleware execution failed:', error && error.message ? error.message : error);
+    // For protected routes, redirect to /sign-in so unauthenticated
+    // visitors land on the auth page rather than bare dashboard
+    // markup (the pre-refinement NextResponse.next() leaked protected
+    // HTML to anyone). For public routes, next() is fine.
+    if (isProtectedRoute(req)) {
+      const signInUrl = new URL('/sign-in', req.url);
+      return NextResponse.redirect(signInUrl);
+    }
     return NextResponse.next();
   }
 }
