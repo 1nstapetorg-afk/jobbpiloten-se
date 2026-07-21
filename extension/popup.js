@@ -123,8 +123,6 @@ const ERROR_BUFFER_MAX = 10
 const ERROR_MSG_MAX = 80
 const ERROR_SOURCE_MAX = 32  // 2026-07-21 (BUG 1 fix, persistent as of Round-72.2) — `connected`
 const MAX_MAILTO_BODY_CHARS = 1900
-const CV_SHORT_WARNING_TEXT = 'Ditt CV är kort — överväg att ladda upp ett längre CV'
-const MAILTO_TRUNCATION_MARKER = '[…utkast förkortat, klicka Kopiera för fullständig text]'
   // is declared at the VERY TOP of the module with `var` (hoisted
   // across the entire module body). The duplicate `let` here would
   // be a SyntaxError; the binding lives at the top of the file
@@ -1573,7 +1571,10 @@ function setupComposePanel() {
     const clickProf = await chrome.storage.local.get(['jobbpiloten_profile'])
     const profile = clickProf && clickProf.jobbpiloten_profile
     const fullName = (profile && profile.fullName) || [profile && profile.firstName, profile && profile.lastName].filter(Boolean).join(' ')
-    const safeBody = body || composeStaticBody({ fullName })
+    let safeBody = body || composeStaticBody({ fullName })
+    if (safeBody.length > MAX_MAILTO_BODY_CHARS) {
+      safeBody = safeBody.slice(0, MAX_MAILTO_BODY_CHARS) + '\n\n[…utkast förkortat, klicka Kopiera för fullständig text]'
+    }
     const safeSubject = subject || `Ansökan via JobbPiloten${(profile && profile.firstName) ? ' — ' + [profile.firstName, profile.lastName].filter(Boolean).join(' ') : ''}`
     const params = new URLSearchParams({ view: 'cm', fs: '1', to, su: safeSubject, body: safeBody })
     const url = 'https://mail.google.com/mail/?' + params.toString()
@@ -1605,7 +1606,10 @@ function setupComposePanel() {
     const clickProf = await chrome.storage.local.get(['jobbpiloten_profile'])
     const profile = clickProf && clickProf.jobbpiloten_profile
     const fullName = (profile && profile.fullName) || [profile && profile.firstName, profile && profile.lastName].filter(Boolean).join(' ')
-    const safeBody = body || composeStaticBody({ fullName })
+    let safeBody = body || composeStaticBody({ fullName })
+    if (safeBody.length > MAX_MAILTO_BODY_CHARS) {
+      safeBody = safeBody.slice(0, MAX_MAILTO_BODY_CHARS) + '\n\n[…utkast förkortat, klicka Kopiera för fullständig text]'
+    }
     const safeSubject = subject || `Ansökan via JobbPiloten${(profile && profile.firstName) ? ' — ' + [profile.firstName, profile.lastName].filter(Boolean).join(' ') : ''}`
     const params = new URLSearchParams({ to, subject: safeSubject, body: safeBody })
     const url = 'https://outlook.office.com/mail/deeplink/compose?' + params.toString()
