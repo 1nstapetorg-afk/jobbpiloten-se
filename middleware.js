@@ -8,6 +8,15 @@
  * When Clerk keys are missing or invalid (demo mode):
  *   - Uses a plain middleware that allows all requests through
  *   - No "Publishable key not valid" crash
+ *
+ * Round-78/79 fix: the Clerk branch is wrapped in try/catch so a Clerk mount-time
+ * or first-request failure (key rejection, network blip to clerk.accounts.dev,
+ * V7 SDK incompat with Next 15 Edge runtime) doesn't take down every route
+ * with a 500. Previously the throw bubbled out before the route rendered
+ * and Next.js returned the cryptic "missing required error components,
+ * refreshing..." dev-overlay HTML for ALL routes. Now the middleware
+ * degrades to NextResponse.next() (matching demo-mode behaviour) and
+ * logs the error so future debugging picks it up.
  */
 
 import { NextResponse } from 'next/server';
@@ -19,14 +28,8 @@ export default async function middleware(req) {
     return NextResponse.next();
   }
 
-  // Clerk is configured — wrap in try/catch so a Clerk mount-time
-  // or first-request failure (key format rejection, network blip to
-  // clerk.accounts.dev, V7 SDK incompat with Next 15 Edge runtime)
-  // doesn't take down every route with a 500. Round-78 diagnostic
-  // confirmed middleware.js was the cascade trigger: when Clerk
-  // threw, Next.js returned the dev-overlay "missing required
-  // error components, refreshing..." body for ALL routes because
-  // middleware runs BEFORE the route renders.
+  // Clerk is configured — wrap in try/catch so a Clerk-mount or
+  // first-request failure doesn't take down every route with a 500.
   try {
     const { clerkMiddleware, createRouteMatcher } = await import('@clerk/nextjs/server');
 
@@ -64,14 +67,15 @@ export default async function middleware(req) {
       }
     });
 
+    // `await` is required for the try/catch to capture async throws.
     return await clerkMw(req);
   } catch (error) {
     // SURFACE THE REAL ERROR: previously this fired-and-died silently
-    // because the dev-overlay caught it before Next.js logged to
-    // stderr. Now it logs so the dev-server console + CI capture it.
-    console.error('[middleware] Clerk middleware init/execution failed:', error && error.message ? error.message : error)
+    // because the dev-overlay caught it before Next.js logged to stderr.
+    // Now it logs so the dev-server console + CI capture it.
+    console.error('[middleware] Clerk middleware init/execution failed:', error && error.message ? error.message : error);
     // Graceful degradation: allow the request through (server-side
-    // route handlers will enforce auth via lib/auth.js#requireAuth).
+    // route handlers enforce auth via lib/auth.js#requireAuth).
     // This matches the demo-mode behaviour (NextResponse.next()).
     return NextResponse.next();
   }
