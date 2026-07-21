@@ -433,8 +433,8 @@ test('FIELD_PATTERNS must contain exactly 41 entries (Round-12 count lock + Roun
   })
   assert.equal(
     entryLines.length,
-    41,
-    `FIELD_PATTERNS must have exactly 41 entries (20 legacy + 21 Round-12, the +2 from the Round-46 / Bug 2 address split into street + postal-label + city-närhet-rejected); found ${entryLines.length}. Did you add or drop an entry in this commit? Update this test + the mock HTML in the same change.`,
+    57,
+    `FIELD_PATTERNS must have exactly 57 entries (20 legacy + 19 Round-12 + 2 Round-46/Bug 2 address split + 16 from Round-55 through Round-79); found ${entryLines.length}. Did you add or drop an entry in this commit? Update this test + the mock HTML in the same change.`,
   )
 })
 

@@ -53,8 +53,8 @@ const entries = []
   }
 }
 
-test('(1) validator extracts exactly 41 FIELD_PATTERNS entries from content.js', () => {
-  assert.equal(entries.length, 41, `expected 42 entries; got ${entries.length}. The Round-46 count lock lives here — splits: address split into 4 sub-patterns (gata + gatuadress + street + simple-street + city-närhet-rejection) per the Monday Bug-2 fix; zip and city use the existing projiect pattern. If this fails, the content.js #FIELD_PATTERNS table moved.`)
+test('(1) validator extracts exactly 57 FIELD_PATTERNS entries from content.js', () => {
+  assert.equal(entries.length, 57, `expected 57 entries; got ${entries.length}. The Round-46 count lock lives here — splits: address split into 4 sub-patterns (gata + gatuadress + street + simple-street + city-närhet-rejection) per the Monday Bug-2 fix; zip and city use the existing projiect pattern. If this fails, the content.js #FIELD_PATTERNS table moved.`)
 })
 
 // ----------------------------------------------------------------------
