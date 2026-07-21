@@ -2261,7 +2261,7 @@ function DashboardContent() {
                           // This avoids the WAI-ARIA anti-pattern of nesting a
                           // real button inside a `role="button"` div.
                           <motion.div
-                            key={`${job.source || "af"}-${job.id}`}
+                            key={`${job.source || "af"}-${job.id}-${idx}`}
                             variants={{
                               hidden: { opacity: 0, y: 8 },
                               show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] } },
@@ -2398,9 +2398,9 @@ function DashboardContent() {
                     <div className="space-y-2 pt-2 border-t border-slate-100">
                       <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 pt-3">Fler matchningar</div>
                       <div className="space-y-2">
-                        {availableJobs.slice(3).map(job => (
+                        {availableJobs.slice(3).map((job, idx) => (
                           <motion.div
-                            key={`${job.source || "af"}-${job.id}`}
+                            key={`${job.source || "af"}-${job.id}-${idx}`}
                             whileHover={{ x: 2 }}
                             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                             className="flex items-center justify-between gap-4 p-3 rounded-lg border border-slate-100 hover:bg-slate-50 hover:border-slate-200 transition-colors"

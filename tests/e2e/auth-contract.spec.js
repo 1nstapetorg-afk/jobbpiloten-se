@@ -64,7 +64,13 @@ base.describe('requireAuth — unauthenticated (no cookies)', () => {
   })
 
   base.afterEach(async () => {
-    await ctx.close()
+    // Defensive guard: if `beforeEach` threw before assigning `ctx`,
+    // `ctx` remains `undefined` and calling `.close()` would throw a
+    // TypeError that cascades to fail the entire suite. This pattern
+    // is mandatory for any Playwright test that creates a context in
+    // `beforeEach` — without it, a single `browser.newContext()` flake
+    // kills every subsequent test in the describe block.
+    if (ctx) await ctx.close()
   })
 
   base('GET /api/profile returns 401 with Swedish demo-mode message', async () => {

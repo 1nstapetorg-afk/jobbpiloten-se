@@ -196,16 +196,15 @@ test('Round-51: mailto URL construction must continue to URL-encode subject+body
 // pattern looks for the JSX sequence:
 //
 //   <motion.div
-//     key={`${job.source || "af"}-${job.id}`}
+//     key={`${job.source || "af"}-${job.id}`}          (original)
+//     key={`${job.source || "af"}-${job.id}-${idx}`}    (with index suffix)
 //
-// anywhere in dashboard/page.js, anchored on the two specific render
-// sites (Dagens jobb highlight cards + Fler matchningar compact
-// list). This is line-drift-resilient: any future edit that adds or
-// removes lines above the render site (e.g. a Round-53 polish that
-// re-orders the hero) doesn't break the regression lock.
+// The optional `(-\${idx})?` in the regex covers both forms so
+// a future maintainer can use either pattern without breaking
+// the regression lock.
 
 const COMPOSITE_KEY_PATTERN =
-  /<motion\.div\s*\n\s*key=\{`\$\{job\.source\s*\|\|\s*["']af["']\}\s*-\s*\$\{job\.id\}`\}/g
+  /<motion\.div\s*\n\s*key=\{`\$\{job\.source\s*\|\|\s*["']af["']\}\s*-\s*\$\{job\.id\}(-\$\{idx\})?`\}/g
 
 test('Round-51: app/dashboard/page.js Dagens jobb card must use composite key `${source}-${id}`', () => {
   // The Dagens jobb cards (top 3 highlight) used key={job.id}. AF +

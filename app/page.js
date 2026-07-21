@@ -44,7 +44,6 @@ function SafeUserButton(props) {
 }
 
 export default function LandingPage() {
-  console.error('[app/page.js] LandingPage MOUNT — round-78 debug marker')
   const [annual, setAnnual] = useState(true)
   const [loadingTier, setLoadingTier] = useState(null)
   // Round-34 / Public stats — wire landing copy to real aggregate
