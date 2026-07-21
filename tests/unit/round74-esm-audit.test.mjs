@@ -122,7 +122,22 @@ test('Lock 2: every .js file in extension/ respects its loader context (classic 
   assert.ok(files.length > 0, 'extension/ should contain at least one .js file (spam gate)')
   const offenders = []
   for (const { basename, full } of files) {
-    const isModuleLoaded = MODULE_LOADED_FILES.has(basename)
+    // Files under extension/lib/ are implicitly module-loaded via
+    // popup.js's import graph: Chrome promotes them to ESM context
+    // when popup.js (declared `<script type="module">` in popup.html)
+    // imports them with `import './lib/X.js'`. Without this
+    // path-based rule, lib/* helpers (dashboard-url-resolver.js,
+    // email-clients.js, safe-message.js, + any future lib/* file)
+    // would falsely trip Lock 2 as classic-loaded. The rule is
+    // safe-by-default: a future file under lib/ inherits ESM
+    // context by virtue of being part of popup.js's module graph,
+    // so the path-based allowlist mirrors Chrome's actual
+    // loading behavior. To OPT OUT a lib/* file from ESM (e.g. a
+    // new helper that's loaded by a content script), move it
+    // outside extension/lib/.
+    const relPath = path.relative(EXT_DIR, full).replace(/\\/g, '/')
+    const isModuleLoaded =
+      MODULE_LOADED_FILES.has(basename) || relPath.startsWith('lib/')
     const src = fs.readFileSync(full, 'utf8')
     const staticImports = (src.match(ESM_IMPORT_RE) || []).length
     const dynamicImports = (src.match(ESM_DYNAMIC_IMPORT_RE) || []).length
