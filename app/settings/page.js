@@ -206,6 +206,8 @@ function buildPatch(profile, form) {
   // Direct string fields
   const directFields = [
     'fullName', 'email', 'phone', 'personalNumber', 'address', 'linkedin', 'cvSummary', 'afCaseNumber',
+    'currentJobTitle',
+    'currentOrganization',
   ]
   for (const k of directFields) {
     const prev = profile?.[k] ?? ''
