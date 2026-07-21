@@ -290,9 +290,19 @@ test('Lock 5: TINY_PDF branch parses + has status 400 + contract keys', () => {
   const marker = 'f\u00f6r liten eller tom'
   const markerIdx = SRC.indexOf(marker)
   assert.ok(markerIdx >= 0, 'TINY_PDF marker must be present in route.js')
-  const nextResponseIdx = SRC.indexOf('NextResponse.json', markerIdx)
-  assert.ok(nextResponseIdx > markerIdx, 'TINY_PDF branch must be returned via NextResponse.json')
-  const bodies = extractAllNextResponseBodies(SRC.slice(nextResponseIdx))
+  const returnMatches = [...SRC.matchAll(/return\s+NextResponse\.json\s*\(/g)]
+  // Same BACKWARDS-anchor pattern as Lock 4: the TINY_PDF marker
+  // 'för liten eller tom' is the error-MESSAGE STRING inside the
+  // TINY_PDF body's `error:` value — i.e. INSIDE the body of the
+  // branch's own return statement. The FIRST return AFTER the
+  // marker is the success-path return (further down in route.js).
+  // Find the LAST return whose position is BEFORE the marker.
+  const returnBeforeMarker = [...returnMatches].reverse().find((m) => m.index < markerIdx)
+  assert.ok(
+    returnBeforeMarker,
+    'TINY_PDF marker must be inside the body of some `return NextResponse.json(...)` upstream — search BACKWARDS from the marker.',
+  )
+  const bodies = extractAllNextResponseBodies(SRC.slice(returnBeforeMarker.index))
   const tinyBody = bodies[0]
   assert.ok(tinyBody, 'TINY_PDF body must be parseable')
   parseOnly(tinyBody.body)
