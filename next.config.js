@@ -1,3 +1,5 @@
+const path = require('path');
+
 const nextConfig = {
   // NOTE on output mode: this project ships to Vercel's managed
   // platform (serverless + edge). The standalone output mode is
@@ -32,6 +34,14 @@ const nextConfig = {
   // Renamed from experimental.serverComponentsExternalPackages in Next 15
   serverExternalPackages: ['mongodb'],
   webpack(config, { dev }) {
+    // Round-79 fix: add the @/ path alias so imports like
+    // `import { ... } from '@/lib/clerk-config'` resolve correctly.
+    // jsconfig.json has `@/* → ['./*']` but Next.js's webpack
+    // compiler does not inherit jsconfig paths automatically.
+    config.resolve = config.resolve || {};
+    config.resolve.alias = config.resolve.alias || {};
+    config.resolve.alias['@'] = path.resolve(__dirname).replace(/\\/g, '/');
+
     if (dev) {
       // Reduce CPU/memory from file watching
       config.watchOptions = {

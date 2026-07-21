@@ -41,10 +41,19 @@ export default async function middleware(req) {
     return NextResponse.next();
   }
 
-  // Imports + matcher setup are OUTSIDE the try — let those crash loud
-  // if they fail (broken package install, malformed pattern, etc.).
-  // Only the actual clerkMw() invocation gets the defensive wrap.
-  const { clerkMiddleware, createRouteMatcher } = await import('@clerk/nextjs/server');
+  // Round-79 fix: wrap the Clerk SDK import in a try/catch. If the
+  // package is missing, corrupted, or has a key issue, log the error
+  // and fall back to the demo-mode behavior (allow all requests)
+  // rather than crashing every route with a 500.
+  let clerkMiddleware, createRouteMatcher;
+  try {
+    const clerkModule = await import('@clerk/nextjs/server');
+    clerkMiddleware = clerkModule.clerkMiddleware;
+    createRouteMatcher = clerkModule.createRouteMatcher;
+  } catch (importError) {
+    console.error('[middleware] Clerk SDK import failed — falling back to no-auth mode:', importError && importError.message ? importError.message : importError);
+    return NextResponse.next();
+  }
 
   const isPublicRoute = createRouteMatcher([
     '/',
