@@ -48,21 +48,43 @@
  *     message channel.
  */
 
-// Round-55 / Followup 3 — import the shared webmail host helper
-// from extension/lib/email-clients.js. Pre-Round-55 the
-// detectProvider() body inlined the same three-host list that
-// extension/popup.js's isActiveTabEmailClient() used. A 4th
-// provider added in one site but not the other would leave a
-// host where the compose-target detector works but the
-// auto-switch doesn't fire — drift. The shared module is the
-// single source of truth.
+// Round-74 / Issue 2 — the Round-55 shared-module import
+// (detectProviderByHost from './lib/email-clients.js') broke at
+// runtime: Chrome content scripts loaded as classic (non-module)
+// scripts via the manifest's content_scripts entry, and bare
+// `import { ... } from './lib/X.js'` outside an ES-module
+// context hits V8 with "Cannot use import statement outside a
+// module". The Round-55.2 attempt to fix this by moving the
+// import to the top of the file only addressed parser ordering,
+// NOT the runtime module context.
 //
-// ESM IMPORT PLACEMENT NOTE: ES module imports must live at the
-// top of the file (above any other statements). An earlier Round-55
-// draft placed this import mid-file (after the documentElement
-// setAttribute block) which is a SyntaxError under V8's ESM parser
-// — fixed in Round-55.2 by moving the import up here.
-import { detectProviderByHost } from './lib/email-clients.js'
+// The Round-74 fix inlines the small `detectProviderByHost(host)`
+// helper directly into this file (it's 8 lines and only used
+// here) so the file remains a self-contained classic content
+// script with no static or dynamic ESM dependency. Drift with
+// extension/popup.js's host list is acceptable because popup.js
+// still imports the shared `isEmailClientUrl()` from
+// extension/lib/dashboard-url-resolver.js's exports (which
+// popup.js handles via a different module-loading path: its
+// bundler resolves the import statically). A 4th webmail
+// provider added in this file alone would now leave a host where
+// the popup's auto-switch fires but the compose-target detector
+// doesn't — fixed by a shared `EMAIL_CLIENT_HOSTS` constant in
+// extension/lib/email-clients.js which is read by popup.js AND
+// copied into this file's inline `detectProviderByHost` body.
+// Update both surfaces in lock-step when adding a 4th host.
+//
+// Helper — mirrors `detectProviderByHost` in
+// extension/lib/email-clients.js. The single consumer is the
+// `detectProvider()` wrapper below.
+function detectProviderByHost(host) {
+  if (typeof host !== 'string' || !host) return null
+  const h = host.toLowerCase()
+  if (h === 'mail.google.com') return 'gmail'
+  if (h === 'outlook.live.com') return 'outlook-personal'
+  if (h === 'outlook.office.com') return 'outlook-business'
+  return null
+}
 
 try {
   document.documentElement.setAttribute('data-jobbpiloten-email-ext', '1')

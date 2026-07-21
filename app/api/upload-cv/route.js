@@ -934,15 +934,36 @@ export async function POST(request) {
           warning:
             'Vi kunde inte läsa texten från din PDF — filen är sparad, men skriv en kort sammanfattning manuellt i fältet nedan så att AI:n har något att arbeta med.',
       // 2026-07-21 (Round-72.2 / BUG 4) — actionable Swedish copy
-      // for the most common failure modes. The picker dropdown
-      // surfaces these exact strings so the user can act without
-      // opening devtools. Order: file-type → file-size →
+      // for the most common 3 failure modes that the picker
+      // dropdown surfaces verbatim so the user can act without
+      // opening devtools. The 3 named keys correspond to:
+      //   • fileType        — wrong extension/MIME
+      //   • fileSize        — over 5 MB
+      //   • pdfUnparseable  — magic-byte OK but pdfjs-dist threw
+      // The pre-fix shape (committed in Round-72.2 / Round-73)
+      // accidentally dropped 3 bare strings into the object
+      // literal after the `warning:` key — JS object syntax
+      // requires each property to be a key:value pair, so
+      // `node --check` flagged a parser-level SyntaxError at
+      // line 943. Round-74.1 (this turn) restores the named
+      // keys so each message is its own structured field the
+      // picker can index by exact discriminator. Round-74.2
+      // (immediately after) tightened this comment to match
+      // reality — only 3 named failure-mode keys are shipped
+      // here; the breadcrumb's earlier "file-type → file-size →
       // pdf-unparseable → empty-text → unsupported (.doc) →
-      // generic. Pre-fix shape had a single generic Swedish
-      // message; the fix mirrors the canvas user's manual.
-      'Filtypen stöds inte. Ladda upp en PDF eller Word-fil (.docx) under 5 MB.',
-      'Filen är för stor. Max 5 MB. Du kan fortfarande spara utan CV.',
-      'PDF:en kunde inte tolkas. Försök med en annan PDF eller skriv en kort sammanfattning manuellt.',
+      // generic" order was a wishlist that was never actually
+      // cartography'd into discrete keys. Lock:
+      // tests/unit/round74-urgent-issues.test.mjs asserts
+      // exactly these 4 keys (warning + fileType + fileSize +
+      // pdfUnparseable) and that no orphan quoted strings
+      // remain in the body.
+      fileType:
+        'Filtypen stöds inte. Ladda upp en PDF eller Word-fil (.docx) under 5 MB.',
+      fileSize:
+        'Filen är för stor. Max 5 MB. Du kan fortfarande spara utan CV.',
+      pdfUnparseable:
+        'PDF:en kunde inte tolkas. Försök med en annan PDF eller skriv en kort sammanfattning manuellt.',
         }
       : {}
 
