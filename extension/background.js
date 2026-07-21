@@ -120,5 +120,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false
   }
 
+  // Round-72 — Log error channel. Content scripts + popup push a
+  // short { source, message } record into a FIFO buffer in
+  // chrome.storage.local under `jobbpiloten_errors`. The popup
+  // renders the buffer as a "⚠ N fel" button + collapsible list
+  // so the user can see WHY the fill failed on this tab without
+  // opening devtools. We replicate the FIFO logic here (the
+  // extension can't ESM-share libs with the popup without a
+  // bundler pass) so the buffer survives a background-script
+  // restart. The buffer is hard-capped at 20 entries; oldest
+  // rolls off on overflow. The popup's chrome.storage.onChanged
+  // listener picks up writes and re-paints automatically.
+  if (message.type === 'JOBBPILOTEN_LOG_ERROR') {
+    ;(async () => {
+      try {
+        const source = String(message.source || 'unknown').slice(0, 64)
+        const text = String(message.message || '').slice(0, 240)
+        if (!text) { sendResponse({ ok: false, ignored: 'empty' }); return }
+        const prev = await chrome.storage.local.get(['jobbpiloten_errors'])
+        const buf = Array.isArray(prev.jobbpiloten_errors) ? prev.jobbpiloten_errors : []
+        buf.push({ source, message: text, ts: Date.now() })
+        while (buf.length > 20) buf.shift()
+        await chrome.storage.local.set({ jobbpiloten_errors: buf })
+        sendResponse({ ok: true, count: buf.length })
+      } catch (e) {
+        sendResponse({ ok: false, error: String((e && e.message) || e) })
+      }
+    })()
+    return true
+  }
+
   return false
 })

@@ -8,7 +8,19 @@
        the policy. default-src 'none' blocks everything; we re-open
        script-src + style-src + img-src to 'self', connect-src to
        the single JobbPiloten production origin. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://jobbpiloten.se;">
+  <!-- 2026-07-21 (BUG 2 fix) — added dev hosts so a popup opened
+       while on a localhost dev instance of the dashboard does NOT
+       block its own /api/extension/email-body fetch. Chrome MV3
+       enforces the manifest.json extension_pages CSP, but this
+       inline <meta> shadow is the layer that matches the user's
+       reported error message (it's also what `chrome://extensions`
+       devtools shows on inspection). Keeping this in parity with
+       the manifest avoids "the popup trips a CSP violation only on
+       ad-hoc / puppeteer runs" classes of confusion. The list
+       mirrors extension/manifest.json extension_pages connect-src
+       EXACTLY — drift is locked by
+       tests/unit/popup-handshake.test.mjs since Round-7. v0.2.4 -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://jobbpiloten.se https://*.vercel.app https://*.preview.emergentagent.com http://localhost:* https://mail.google.com https://outlook.live.com https://outlook.office.com https://*.arbetsformedlingen.se https://*.blocket.se;">
   <title>JobbPiloten Auto-Fill</title>
   <link rel="stylesheet" href="popup.css">
 </head>
@@ -378,6 +390,43 @@
     </section>
 
     <p class="jp-footer-hint" id="jp-footer-hint"></p>
+
+    <!-- Round-72 — Errors button. Hidden by default; surfaces only
+         when the FIFO buffer in chrome.storage.local under
+         `jobbpiloten_errors` has at least one entry. The button is
+         pushed into the footer-hint slot so the affordance is always
+         visible without taking a row away from the primary CTAs. The
+         list is the same .jp-settings-card shape so the visual
+         rhythm stays coherent as the user toggles between the
+         Fyll-i-nu / Compose / Errors panels. -->
+    <section
+      class="jp-errors"
+      id="jp-errors"
+      hidden
+      aria-labelledby="jp-errors-btn"
+    >
+      <button
+        type="button"
+        class="jp-errors-btn"
+        id="jp-errors-btn"
+        data-testid="jp-errors-btn"
+        aria-expanded="false"
+        aria-controls="jp-errors-list"
+      >
+        <span class="jp-errors-btn-icon" aria-hidden="true">⚠</span>
+        <span class="jp-errors-btn-label">
+          <span id="jp-errors-count">0</span>
+          <span>&nbsp;fel</span>
+        </span>
+        <span class="jp-errors-btn-chevron" aria-hidden="true">▾</span>
+      </button>
+      <ul
+        class="jp-errors-list"
+        id="jp-errors-list"
+        data-testid="jp-errors-list"
+        hidden
+      ></ul>
+    </section>
 
     <!-- Settings panel — collapsed by default. Rendered inline (not a
          new page) so the popup stays single-tab. Save writes to

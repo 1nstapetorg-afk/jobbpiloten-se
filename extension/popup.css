@@ -230,6 +230,105 @@ html, body {
   text-align: center;
 }
 
+/* ---- Round-72 — Errors button + collapsible list ----
+ *
+ * The button lives inside a tiny section right after the footer
+ * hint. When the FIFO buffer in chrome.storage.local under
+ * `jobbpiloten_errors` has ≥1 entry the section unhides and
+ * paints the count. The list reuses the .jp-settings-card shape
+ * (white background + slate border + rounded corners) so it
+ * reads as a peer of the existing compose / mejlutkast panels.
+ * Items show [HH:MM] source — message; truncated to 240 chars
+ * so the popup stays scannable. Click on the button expands /
+ * collapses the list. No destructive Clear button yet — once
+ * the buffer is full (20 entries) the oldest one rolls off
+ * automatically. v0.3.0
+ */
+.jp-errors {
+  margin-top: 10px;
+}
+.jp-errors-btn {
+  cursor: pointer;
+  background: rgba(239, 68, 68, 0.06);
+  border: 1px solid rgba(239, 68, 68, 0.20);
+  color: #b91c1c;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 8px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background 120ms, border-color 120ms;
+}
+.jp-errors-btn:hover {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+}
+.jp-errors-btn:focus-visible {
+  outline: 2px solid var(--jp-red);
+  outline-offset: 2px;
+}
+.jp-errors-btn[aria-expanded="true"] .jp-errors-btn-chevron {
+  transform: rotate(180deg);
+}
+.jp-errors-btn-chevron {
+  font-size: 11px;
+  transition: transform 120ms;
+}
+.jp-errors-btn-icon {
+  font-size: 14px;
+}
+.jp-errors-list {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid var(--jp-slate-200);
+  border-radius: 8px;
+  list-style: none;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--jp-slate-900);
+  max-height: 180px;
+  overflow-y: auto;
+}
+.jp-errors-list li {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--jp-slate-100);
+  word-break: break-word;
+}
+.jp-errors-list li:last-child {
+  border-bottom: none;
+}
+.jp-errors-list .jp-errors-list-source {
+  font-weight: 700;
+  color: #b91c1c;
+  margin-right: 4px;
+}
+.jp-errors-list .jp-errors-list-time {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  color: var(--jp-slate-600);
+  margin-right: 4px;
+}
+.jp-errors-list-empty {
+  font-style: italic;
+  color: var(--jp-slate-600);
+  padding: 4px 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .jp-errors-list {
+    background: #1f2937;
+    border-color: #334155;
+  }
+  .jp-errors-list li {
+    border-bottom-color: #334155;
+  }
+}
+
 /* Round-34 / Part 4 — Email-apply compose panel. Mirrors the
  * settings panel shape (rounded card + input rows) so the popup
  * visual stays coherent as the user toggles between the Fyll-i-nu

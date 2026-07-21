@@ -369,9 +369,31 @@ export async function POST(request) {
     })
   } catch (err) {
     console.error('[extension/email-body] generateEmailBody failed:', err?.message)
+    // 2026-07-21 (Round-72.2 / BUG 4) — actionable Swedish copy
+    // on AI-generation failure. Pre-fix shape returned a generic
+    // "Tillfälligt fel — försök igen om en stund." that left the
+    // user stranded on the "Förhandsvisa AI-mejl" panel with no
+    // clear retry path. The new copy:
+    //   1. Tells the user WHAT failed (AI-utkast)
+    //   2. Tells them what they CAN DO (write their own OR retry)
+    //   3. Tells them WHERE to retry ("Generera igen" button +
+    //      static template fallback)
+    // The popup's composeStaticBody() fallback path (Round-46)
+    // already handles the AI-unavailable case end-to-end; this
+    // server-side change just surfaces the action in Swedish so
+    // a CV-less user sees a usable prompt instead of a dead-end
+    // toast. Status stays 503 (Service Unavailable) so the popup
+    // can distinguish "AI failed" from "non-recoverable server
+    // error" (4xx codes).
     return NextResponse.json(
-      { error: 'Tillfälligt fel — försök igen om en stund.' },
-      { status: 500 },
+      {
+        ok: false,
+        reason: 'ai_fallback',
+        message: 'AI-utkast kunde inte genereras just nu. Du kan skriva ett eget mejl eller klicka "Generera igen" om en stund.',
+        hint: 'Klicka "Generera igen" eller kopiera mallen nedan och anpassa den manuellt.',
+        retryable: true,
+      },
+      { status: 503 },
     )
   }
 }

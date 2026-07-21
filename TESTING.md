@@ -283,6 +283,156 @@ följande automatiska tester (se `tests/e2e/`):
 - `dashboard-ansokningsdatum.spec.js` — PDF-datumkolumnen
 - `cv-magic-bytes.spec.js` — CV-upload med magic-bytes-validering
 - `ai-hjalp-toggle.spec.js` — AI-hjälp-reglaget
-- `settings-cv-upload.spec.js` — CV-upload lyckad / misslyckad väg
+- `settings-cv-upload.spec.js` — CV-upload lyckad / misslyckad vägKör alla: `yarn test:e2e`.
 
-Kör alla: `yarn test:e2e`.
+---
+
+## Round-72.2 manuell smoke-test — fixa-verifiering
+
+> Tre kritbuggar åtgärdade 2026-07-21 i extension v0.2.3.
+> Den här sektionen ersätter de ad-hoc PDF-skärmdumpar vi
+> samlade in under bug-triage-rundan. Kör den på **minst 3
+> riktiga arbetsgivar-formulär** (Manpower, Randstad, Platsbanken,
+> Teamtailor-instans — alla täcks av BUG 6:s nya `FIELD_PATTERNS`)
+> innan du markerar v0.2.3 klar för release.
+
+### Ladda in v0.2.3 manuellt
+
+1. Bygg extension-paketet: `yarn package:extension`.
+2. Öppna `chrome://extensions → Utvecklarläge → Load unpacked`.
+3. Välj den uppackade `extension/`-mappen.
+4. ✈-ikonen ska visa `v0.2.3` i tooltipet (synligt när
+   `?jobbpiloten_debug=1` finns på sidan).
+
+### BUG 1 — Namnduplikering (6/8 former tidigare)
+
+**Symptom innan fix:** Både *Förnamn* och *Efternamn* fylldes med
+förnamnet (t.ex. "Yahye" i båda fälten). Orsak: `getFieldMeta`
+gjorde en bred `parent.querySelector('label, legend')` som nådde
+syskonfält.
+
+**Verifiera:**
+
+| Steg | Vad du ska se |
+|---|---|
+| Öppna ett formulär med *Förnamn* + *Efternamn* i samma grid-rad. | ✈-ikonen dyker upp. |
+| Klicka ikonen → bekräfta toast → vänta på animationen. | *Förnamn* fylls med förnamnet från din profil. |
+| | *Efternamn* fylls med efternamnet från din profil. |
+| | Konturfärgen på *Förnamn* är **grön**, *Efternamn* är **grön** — INTE båda gröna med samma text. |
+
+**Former att testa:**
+- Manpower (label: `Förnamn` / `Efternamn` i samma rad)
+- Randstad (`First Name` / `Last Name` engelska)
+- Platsbanken-egen-formulär (`Förnamn` / `Efternamn`)
+
+### BUG 3 — Adressöverfyll (Hjällbogårdet-fallet)
+
+**Symptom innan fix:** Hela adresssträngen dumpades i alla adressfält
+(street, zip, city, country). Orsak: `parseAddressComponents`
+fanns men inget `street`-/`country`-`FIELD_PATTERNS` ledde dit.
+
+**Verifiera:**
+
+Ange följande i din JobbPiloten-profil under
+[`/settings → Adress`](/settings):
+
+```
+Gata:        Hjällbogårdet 30
+Postnummer:  424 36
+Ort:         Angered
+Land:        Sverige
+```
+
+Öppna ett formulär med fyra adressfält. Klicka ✈-ikonen.
+
+| Fält | Vad du ska se |
+|---|---|
+| Gatuadress / Address line 1 | `Hjällbogårdet 30` (inte hela strängen) |
+| Postnummer / Zip | `424 36` |
+| Ort / City | `Angered` |
+| Land / Country | `Sverige` |
+
+**Edge case —> wrapping `<legend>` utan `<fieldset>`:**
+Vissa mobile-first ATS:er (Holidu-arbetsgivare, Quinyx vissa
+fall) använder strukturen `<legend>Fråga</legend><input/>`.
+Den här formen täcks av Round-72.2 / Followup-3:
+`getFieldMeta`'s `else if (parent.tagName === 'LEGEND' && hops === 0)`-gren
+samlar in legend-texten som meta. Verifiera genom att hitta
+/devtools/inspect → leta efter en `<legend>` som omsluter ett
+`<input>` direkt (utan fieldset-parent) — kors-träds-cirkus
+UNDVIKS via `hops === 0`-grinden.
+
+### BUG 4 — Boolean Ja/Nej-radio (7/8 former tidigare)
+
+**Symptom innan fix:** Klick på Ja-radio + klick på Nej-radio i
+samma fråga — den andra klicket **avaktiverade** den första
+(Bootstrap/Teamtailor-toggle-mönster). Resultat: frågan fick ingen
+markering trots att profilen hade ett värde.
+
+**Verifiera:**
+
+Sätt följande i din JobbPiloten-profil under
+[`/settings → Booleans`](/settings):
+
+```
+Körkort:        true   (Ja)
+Truckkort:      false  (Nej)
+Skiftarbete:    true   (Ja)
+```
+
+Öppna ett formulär med 3 stycken Ja/Nej-frågor. Klicka ✈-ikonen
+**en gång**.
+
+| Fråga | Vad du ska se |
+|---|---|
+| *Har du körkort?* | **Ja**-knappen är markerad. |
+| *Har du truckkort?* | **Nej**-knappen är markerad. |
+| *Kan du jobba skift?* | **Ja**-knappen är markerad. |
+
+Kritiskt: varje fråga har exakt **en** markering, INTE noll
+(toggle avaktiverad) och INTE båda (over-fill).
+
+**Edge case —> Bootstrap radio-knappar:**
+Bootstrap-formulär använder `<button>`-element (inte native
+radio-input) med `aria-pressed`-attribut. Verifiera att
+`extension/content.js`'s `clickBooleanOption` läser
+`aria-pressed` och toggle respektive knapp — sätt
+`profile.hasBootstrapLicense = true` och testa.
+
+### Regressionstester att köra EFTER smoke-testet
+
+```bash
+cd jobbpiloten-source
+node --check extension/popup.js
+node --check extension/content.js
+node --check extension/background.js
+node --check extension/content-email.js
+node -e "JSON.parse(require('fs').readFileSync('extension/manifest.json','utf8'))"
+node scripts/lint-field-patterns.mjs
+node --test tests/unit/bug-name-boolean.test.mjs \
+            tests/unit/bug235-address-consent.test.mjs \
+            tests/unit/bug789-dashboard-prompt.test.mjs \
+            tests/unit/bug-flow-7-errors-channel.test.mjs \
+            tests/unit/bug-12-tdz-csp.test.mjs \
+            tests/unit/round-72.2-multi-bugs.test.mjs
+```
+
+Förväntat: **49 tester passerar / 0 fail**, **55 `FIELD_PATTERNS` /
+52 `profileKeys`**, **manifest valid JSON**, **alla filer
+syntax-kontrollerar**.
+
+### Rapportera smoke-test-resultat
+
+Efter varje testrad, fyll i detta i release-notes-utkastet:
+
+```
+- [ ] BUG 1 namnduplikering - pass / fail (formulär-URL):
+- [ ] BUG 3 adresssplit   - pass / fail (formulär-URL):
+- [ ] BUG 4 booleans      - pass / fail (formulär-URL):
+- [ ] Regression suite    - pass / fail (49/0):
+```
+
+Om något FAIL: spara devtools-konsolen + en skärmbild + URL →
+skicka till `hej@jobbpiloten.se` med ämnesraden
+`[v0.2.3 smoke] FAIL <BUG N>`.
+

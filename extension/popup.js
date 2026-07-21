@@ -15,6 +15,25 @@
  * the user connects. We just read + react.
  */
 
+// 2026-07-21 / Round-72.2 (BUG 1 fix, persistent) — declare the
+// `connected` module-binding with `var` (hoisted with initialiser) at the
+// absolute top of the module, BEFORE any imports / window listeners /
+// IIFEs / promise microtasks, so the binding is observable to ANY
+// closure that fires before line 109 (where `let connected` previously
+// sat). `var` is hoisted across the entire module body; the assignment
+// runs synchronously as part of the top-level init, BEFORE the first
+// microtask resolves. This eliminates the TDZ ReferenceError that the
+// prior mid-file `let` declaration (the `connected` symbol, line ~2137) AND the post-Round-72
+// hoist (line ~109) BOTH failed to prevent for the loadAndPaint() Promise.
+// race catch block at line ~3186 — that block can close over ANY closure
+// path that fires pre-init, and `var` is the only declaration form that
+// guarantees no TDZ. `var` does NOT shadow any inner `const connected`
+// (line 3110 area in loadAndPaint body) because those are block-scoped.
+// Locked by tests/unit/bug-12-tdz-csp.test.mjs — the file MUST have
+// exactly ONE `let-or-var connected` declaration, and it must precede
+// `async function setStatus`.
+var connected = false
+
 // SECURITY: identical to the constants in extension/content.js —
 // drift between the two is a silent DNS-rebinding vector. See
 // the SECURITY comment in section 3 of content.js for rationale
@@ -66,6 +85,17 @@ const STORAGE_KEYS = {
   // having to do its own API round-trip. Missing-key + older-than-
   // 60s both fall through to the disconnected state.
   pingAt: 'jobbpiloten_pingAt',
+  // 2026-07-21 (Step 7 of the no-email-on-page trace) — error
+  // buffer. Holds at most `ERROR_BUFFER_MAX` most-recent errors
+  // captured by background / popup / content scripts. The popup
+  // surfaces a "⚠ N fel" affordance when the buffer is non-empty
+  // so the user has a single place to review what went wrong on
+  // the last few handlings. Privacy: local-only (we never ship
+  // these entries to the server). FIFO eviction: oldest entry
+  // dropped when limit is hit. Each entry is capped to 80 chars
+  // of message + 32 chars of source so the whole buffer stays
+  // well under the 100 KB chrome.storage.local quota.
+  errors: 'jobbpiloten_errors',
 }
 const BUILD_CONFIG_FILE = 'build-config.json'
 const VERSION = '0.2.3'
@@ -75,6 +105,18 @@ const ACTIVE_MODE_FORMULAR = 'formular'
 const ACTIVE_MODE_MEJLUTKAST = 'mejlutkast'
 const MEJLUTKAST_CACHE_TTL_MS = 10 * 60 * 1000 // 10 min
 const HEARTBEAT_STALE_MS = 60 * 1000 // 60s = "disconnected"
+// 2026-07-21 (Step 7) — Errors buffer cap. 10 most-recent entries;
+// each entry capped to 80 chars of message + 32 chars of source.
+// Worst-case size: 10 * (80 + 32 + ~16) ≈ 1.3 KB. Well under quota.
+const ERROR_BUFFER_MAX = 10
+const ERROR_MSG_MAX = 80
+const ERROR_SOURCE_MAX = 32  // 2026-07-21 (BUG 1 fix, persistent as of Round-72.2) — `connected`
+  // is declared at the VERY TOP of the module with `var` (hoisted
+  // across the entire module body). The duplicate `let` here would
+  // be a SyntaxError; the binding lives at the top of the file
+  // (search for the hoisted decl block above the imports).
+  // Late assignments such as `connected = tokenConnected` still
+  // mutate that hoisted binding.
 
 // v0.2.1 refactor: 4-tier dashboard-URL resolution is delegated to
 // a pure module. extension/lib/dashboard-url-resolver.js accepts the
@@ -231,6 +273,54 @@ async function resolveEnvAuthBaseUrl() {
         // succeeds on chrome:// URLs (they have an "origin" field)
         // but the host_permissions check naturally excludes them.
         tabOrigin = ''
+      }
+      // 2026-07-21 (BUG 9 fix) — localhost dev heuristic. If the
+      // active tab is on localhost/127.0.0.1, the user is testing
+      // the dashboard locally and the "Anslut till profil" button
+      // should NOT fall through to PROD_BASE_URL_DEFAULT
+      // ("https://jobbpiloten.se"), which loads a 404/error page
+      // on a dev machine that has no DNS route to prod. Returning
+      // the localhost origin short-circuits Tier A and keeps the
+      // popup in sync with the user's local dev environment.
+      //
+      // Limit (documented 2026-07-21): the heuristic ONLY fires
+      // when the ACTIVE tab (chrome.tabs.query active:true,
+      // currentWindow:true) is on a loopback hostname. In the
+      // common dev workflow where the user is on a real Swedish
+      // job form (host = arbetsformedlingen.se / teamtailor.com)
+      // with localhost running in a background tab, the heuristic
+      // is unreached and Tier 1 (chrome.storage.sync.dashboardUrl)
+      // takes over. Post-connect dev users always see localhost via
+      // that Tier-1 path because the auth handshake writes
+      // `data.origin` (= http://localhost:<port>) into the same
+      // key. The active-tab scan is therefore only the FIRST-TIME
+      // connect path; once a token is minted the sync storage
+      // mirrors the user's chosen dashboard origin.
+      //
+      // SECURITY-FOR-LATER (2026-07-21 review): This shortcut
+      // bypasses the normal `host_permissions` allow-list that
+      // gates every other Tier-A return. Today the popup's
+      // downstream gates (assertOriginAllowed for fetch,
+      // postMessage origin check for the auth window, the
+      // safeStorageGet/safeTabsSendMessage wrappers for chrome.*)
+      // still enforce trust on the resulting URL. A FUTURE call
+      // site that uses `resolveEnvAuthBaseUrl()` and calls
+      // `fetch(new URL(baseUrl + path))` or `chrome.tabs.create`
+      // WITHOUT consulting `assertOriginAllowed` first would
+      // silently accept an attacker-controlled localhost origin.
+      // Any new caller of this resolver MUST call
+      // `assertOriginAllowed(url)` before using the URL.
+      if (tabOrigin) {
+        try {
+          const u = new URL(tabOrigin)
+          if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
+            // Mirror the port the user is already on (or 3000 if
+            // the bare hostname is used) so the auth-window /
+            // Dashboard-redirect lands on the same dev port.
+            const port = u.port || '3000'
+            return `http://localhost:${port}`
+          }
+        } catch (_) { /* ignore — fall through to allowlist check */ }
       }
       if (tabOrigin && isOriginInHostAllowlist(tabOrigin)) {
         return tabOrigin
@@ -477,6 +567,128 @@ async function setStatus({ connected, profile, detected, error }) {
 // `{ __safeStorageGetThrow: true }` and the resolve-via-null case
 // via `{}` (defensive empty-coalesce so a null data arg doesn't
 // crash the destructuring on `data[STORAGE_KEYS.token]`).
+// 2026-07-21 (Step 7) — append an error entry to the popup's
+// error buffer. FIFO eviction at ERROR_BUFFER_MAX. Each entry is
+// capped at ERROR_MSG_MAX / ERROR_SOURCE_MAX so a malicious or
+// runaway caller cannot blow the chrome.storage.local quota.
+// Privacy: writes are local-only; we never ship entries anywhere.
+// Logging failures (e.g. quota exceeded) are themselves swallowed
+// so the calling path can complete without cascading errors —
+// losing one error entry is acceptable, losing the popup is not.
+// 2026-07-21 (Round-72 review #1) — DELEGATE the FIFO write to
+// background so the service worker is the SINGLE R-M-W authority on
+// the jobbpiloten_errors buffer. Pre-fix shape wrote locally HERE as
+// well, which combined with background's JOBBPILOTEN_LOG_ERROR
+// handler to produce an R-M-W race on near-simultaneous emits:
+// both callers read [] then both push, losing one entry. Routing
+// through safeRuntimeSend lets the SW auto-wake on the receive and
+// the handler's async return true makes this `await` complete only
+// AFTER background commits the write. The popup's
+// chrome.storage.onChanged listener (wired in wire()) re-paints the
+// badge from the SW's write.
+//
+// SW dead / context invalidated -> safeRuntimeSend returns a
+// { ok: false, ... } sentinel; we drop the entry. Pre-fix race that
+// lost one was worse than a deliberate drop.
+async function logError(source, message) {
+  try {
+    await safeRuntimeSend({
+      type: 'JOBBPILOTEN_LOG_ERROR',
+      source: String(source || 'unknown').slice(0, ERROR_SOURCE_MAX),
+      message: String(message || '').slice(0, ERROR_MSG_MAX),
+    })
+  } catch (_) {
+    /* SW dead / context invalidated — drop silently */
+  }
+}
+
+// 2026-07-21 (Step 7) — render the "⚠ N fel" affordance + the
+// inline list when the user clicks "Visa fel". Idempotent paint
+// so a chrome.storage.onChanged tick re-renders without losing
+// user state. The list is hidden by default; clicking the
+// jp-errors-btn toggles jp-errors-list visibility. The most-recent
+// error is rendered first (array.reverse slice) so the user sees
+// what just happened at the top.
+function renderErrors(errors, forceRepaint = false) {
+  const btn = $('jp-errors-btn')
+  const count = $('jp-errors-count')
+  const list = $('jp-errors-list')
+  if (!btn || !count || !list) return
+  const arr = Array.isArray(errors) ? errors : (Array.isArray(getCurrentErrors()) ? getCurrentErrors() : [])
+  if (arr.length === 0) {
+    btn.hidden = true
+    if (!list.hidden) list.hidden = true
+    // Cache last render so the toggle-handler repaint path has data.
+    lastRenderedErrors = arr
+    return
+  }
+  btn.hidden = false
+  count.textContent = String(arr.length)
+  if (list.hidden && !forceRepaint) {
+    lastRenderedErrors = arr
+    return
+  }
+  list.innerHTML = ''
+  // 2026-07-21 (Round-72 review #3) — paint an explicit empty-state
+  // placeholder when the buffer races to empty mid-open. Without
+  // this the user sees a blank white card with no feedback. CSS
+  // (.jp-errors-list-empty) styles the placeholder; aria-live is
+  // implicit via aria-live="polite" on the parent section for
+  // screen-reader users. The placeholder uses .jp-errors-list-empty
+  // so the CSS italic / muted color reads distinctly from a real
+  // entry. v0.3.0
+  if (arr.length === 0) {
+    const empty = document.createElement('li')
+    empty.setAttribute('data-testid', 'jp-error-empty')
+    empty.className = 'jp-errors-list-empty'
+    empty.textContent = 'Inga fel just nu.'
+    list.appendChild(empty)
+    lastRenderedErrors = arr
+    return
+  }
+  arr
+    .slice()
+    .reverse()
+    .forEach((entry) => {
+      const li = document.createElement('li')
+      li.setAttribute('data-testid', 'jp-error-entry')
+      try {
+        const ts = new Date(entry.ts).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
+        li.textContent = `[${ts}] [${entry.source}] ${entry.message}`
+      } catch (_) {
+        li.textContent = `[${entry.source}] ${entry.message}`
+      }
+      list.appendChild(li)
+    })
+  lastRenderedErrors = arr
+}
+
+// Module-level cache for the last-rendered errors array. The
+// toggle-handler repaint path reads this when the user clicks
+// "Visa fel" — avoids a re-fetch from chrome.storage.local.
+let lastRenderedErrors = []
+function getCurrentErrors() { return lastRenderedErrors }
+
+// 2026-07-21 (Step 7) — toggle handler for the errors-btn.
+// No eventListener is wired in setStatus() / renderErrors() because
+// chrome popups can lose their DOM on re-open; this is a single
+// delegated click that we re-bind in setupOnLoad() — see wire().
+function setupErrorsToggle() {
+  const btn = $('jp-errors-btn')
+  const list = $('jp-errors-list')
+  if (!btn || !list) return
+  if (btn.dataset.jpErrorsBound === '1') return
+  btn.dataset.jpErrorsBound = '1'
+  btn.addEventListener('click', () => {
+    list.hidden = !list.hidden
+    if (!list.hidden) {
+      // When the user opens the list, force a repaint so the
+      // maybe-stale array lands in the DOM.
+      renderErrors(undefined, /*forceRepaint=*/ true)
+    }
+  })
+}
+
 async function loadStorage() {
   const data = await safeStorageGet([
     STORAGE_KEYS.token,
@@ -968,6 +1180,20 @@ function setupComposePanel() {
         if (toInput && !toInput.value) toInput.value = activeSignal.email
         if (toInput) toInput.placeholder = activeSignal.email
       }
+      // 2026-07-21 (BUG 8 fix) — hoist pageTitle + titleSlug to
+      // outer scope so the AI-fetch fallback path below can
+      // reuse them. The pre-fix shape computed the slug inline
+      // only when the subject field was empty, so on a user
+      // who had already typed a subject the body block would
+      // ReferenceError on `titleSlug` and never rebuild the
+      // static fallback with the parsed job context. The lint
+      // catches the implicit-block-scoped access via V8 TDZ at
+      // runtime — the BUG 8 symptom in the field was the
+      // generic "för tjänsten" body, but the BUG 8 symptom in
+      // tests was a ReferenceError before the user got that
+      // far. Both are fixed by lifting the slug here.
+      const pageTitle = (data && data.jobbpiloten_pageTitle) || (activeSignal && activeSignal.label) || ''
+      const titleSlug = pageTitle.replace(/\s*[|·•-]+\s*(job[bp]\w*|(www\.)?\w+\.(se|com|nu)|careers|jobs|job\w+|annons).*$/i, '').trim() || 'tjänsten'
       // Subject — only pre-fill if the user hasn't typed anything
       // (so re-renders during editing don't wipe their draft).
       if (subjectInput && !subjectInput.value) {
@@ -975,8 +1201,6 @@ function setupComposePanel() {
         const profile = prof && prof.jobbpiloten_profile
         const firstName = (profile && profile.firstName) || ''
         const lastName = (profile && profile.lastName) || ''
-        const pageTitle = (data && data.jobbpiloten_pageTitle) || (activeSignal && activeSignal.label) || ''
-        const titleSlug = pageTitle.replace(/\s*[|·•-]+\s*(job[bp]\w*|(www\.)?\w+\.(se|com|nu)|careers|jobs|job\w+|annons).*$/i, '').trim() || 'tjänsten'
         subjectInput.value = 'Ansökan: ' + titleSlug + (firstName ? ' \u2014 ' + [firstName, lastName].filter(Boolean).join(' ') : '')
       }
       // Round-46 / Bug 1 — replace the static body template with
@@ -1018,7 +1242,17 @@ function setupComposePanel() {
         // Static fallback (used if AI fetch fails or token is missing).
         // Round-46.1 followup — calls composeStaticBody() so the
         // shape matches lib/groq.js's fallbackEmailBody() output.
-        const staticBody = composeStaticBody({ fullName })
+        // 2026-07-21 (BUG 7+8 fix) — pass `jobTitle` from the
+        // hoisted titleSlug so the fallback body is NOT "för
+        // tjänsten på företaget". The popup previously rebuilt the
+        // body with only `{ fullName }`, dropping the parsed job
+        // context. The fallback's literal text would otherwise
+        // always read as "för tjänsten" / "på ditt företag" no
+        // matter what page the user is on. We pass an EMPTY string
+        // when titleSlug falls back to 'tjänsten' so the helper
+        // itself can decide whether to omit the "för X" prefix.
+        const fallbackJobTitle = titleSlug && titleSlug !== 'tjänsten' ? titleSlug : ''
+        const staticBody = composeStaticBody({ fullName, jobTitle: fallbackJobTitle })
         bodyTextarea.value = staticBody
         if (profile) {
           // Show a "generating" indicator so the user knows an
@@ -1126,8 +1360,22 @@ function setupComposePanel() {
               setComposeButtonsDisabled(false)
               try {
                 const json = await res.json().catch(() => ({}))
-                if (json && json.error) {
-                  setComposeStatus(status, json.error.slice(0, 120), 'err')
+                // Round-72.2 / BUG 4 followup — the server now returns a
+                // structured `{ok, reason, message, hint, retryable}` shape
+                // from /api/extension/email-body. CONCATENATE message (verb)
+                // + hint (next-step) when both are present so the user sees
+                // the full actionable copy ("Kunde inte hämta AI-utkast just
+                // nu. Försök igen om en stund, eller använd standardmallen.")
+                // rather than just the verb. Falls back to either alone, then
+                // to the legacy `error` field for older server builds.
+                const errField = (typeof json?.error === 'string') ? json.error.slice(0, 120) : ''
+                const aiFailureMsg = (json && (
+                  (json.message && json.hint)
+                    ? `${json.message} ${json.hint}`
+                    : (json.message || json.hint || errField)
+                )) || ''
+                if (aiFailureMsg) {
+                  setComposeStatus(status, aiFailureMsg, 'err')
                 }
               } catch (_) { /* ignore */ }
               return
@@ -1198,6 +1446,17 @@ function setupComposePanel() {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'local' && (changes && (changes.jobbpiloten_emailSignals || changes.jobbpiloten_pageTitle))) {
         onSignalsChanged()
+      }
+      // Round-72 — Errors button channel. Listen for writes to
+      // the FIFO buffer so background-script log pushes (and
+      // another popup's writes) re-paint the badge + list
+      // immediately. The buffer key is shared with the popup's
+      // own logError() writes so all error sources funnel
+      // through one render path.
+      if (area === 'local' && changes && changes.jobbpiloten_errors) {
+        const next = changes.jobbpiloten_errors.newValue
+        if (Array.isArray(next)) renderErrors(next, /*forceRepaint=*/ true)
+        else renderErrors([])
       }
     })
   } catch (_) { /* older browsers */ }
@@ -1583,14 +1842,35 @@ async function setupMejlutkastPanel() {
       if (!res.ok) {
         recentJobs = []
         populatePicker([])
+        // Round-72 — surface the recent-jobs API failure to the
+        // "Errors" button so the user knows WHY the mejlutkast
+        // dropdown is empty (vs. the API having no rows).
+        // Without this an empty dropdown reads as "you have no
+        // recent applications" even when it's actually a 401/500.
+        try { await logError('recent-jobs', `HTTP ${res.status} från /api/applications/recent`) } catch (_) {}
         return
       }
       const json = await res.json().catch(() => ({}))
-      recentJobs = Array.isArray(json && json.applications) ? json.applications : []
+      if (!Array.isArray(json && json.applications)) {
+        recentJobs = []
+        populatePicker([])
+        // 2026-07-21 (Round-72, Step 7) — surface schema-mismatch so
+        // a future change to /api/applications/recent is visible in
+        // the Errors button. Without this the user sees an empty
+        // dropdown that reads as "no recent applications" when it's
+        // actually a server-side contract change.
+        try { await logError('recent-jobs', 'Ogiltigt svar från /api/applications/recent (förväntade { applications: [...] })') } catch (_) {}
+        return
+      }
+      recentJobs = (json.applications || []).slice(0, 20)
       populatePicker(recentJobs)
-    } catch (_) {
+    } catch (err) {
       recentJobs = []
       populatePicker([])
+      // 2026-07-21 (Round-72, Step 7) — surface any thrown error
+      // (network, CORS, JSON parse, etc) so the user can see WHY
+      // the dropdown ended up empty.
+      try { await logError('recent-jobs', String((err && err.message) || err)) } catch (_) {}
     }
   }
 
@@ -1891,8 +2171,15 @@ async function isActiveTabEmailClient() {
 // for first-time users; a value of 'mejlutkast' flips the  // flips the mode via switchMode to render the Mejlutkast panel.
 //  // `connected` is module-scope so switchMode can read it
   // without prop-drilling.
+// 2026-07-21 (BUG 1 fix) — `let connected` is now declared at the
+// top of the module (right after ERROR_SOURCE_MAX). The binding is
+// initialised before ANY code path that closes over or references
+// it — eliminates the TDZ ReferenceError that the prior mid-file
+// declaration produced when a chrome.storage.onChanged listener
+// catch block on line ~2978 fired before the declaration line was
+// reached. `connected = tokenConnected` still happens at module
+// scope to mutate the hoisted binding.
 let currentMode = ACTIVE_MODE_FORMULAR
-let connected = false
 
 function setupModeToggle() {
   const formPill = $('jp-mode-formular')
@@ -2350,6 +2637,21 @@ async function disconnect() {
 // single-line fix; every click handler it attaches is already
 // an async arrow so they stay green.
 async function wire() {
+  // Round-72 — initial Errors-button paint. Read the FIFO buffer
+  // from chrome.storage.local under `jobbpiloten_errors` and render
+  // immediately so the badge is visible on first popup open
+  // (without waiting for background-script log pushes). Per-entry
+  // timestamps are written by logError() — see that function for
+  // the FIFO + truncation rules. The chrome.storage.onChanged
+  // listener attached further down keeps the badge in sync with
+  // background-script pushes.
+  try {
+    const prev = await chrome.storage.local.get(['jobbpiloten_errors'])
+    const initial = Array.isArray(prev && prev.jobbpiloten_errors)
+      ? prev.jobbpiloten_errors
+      : []
+    renderErrors(initial)
+  } catch (_) { /* older browsers or quota gate — silent skip */ }
   $('jp-fill-btn').addEventListener('click', triggerFill)
   $('jp-refresh-btn').addEventListener('click', refreshProfile)
   $('jp-dashboard-btn').addEventListener('click', openDashboard)

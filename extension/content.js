@@ -139,7 +139,18 @@ const FIELD_PATTERNS = [
   { pattern: /(efternamn|last[\s_.-]?name|lname|surname|family[\s_]?name)/i, profileKey: 'lastName' },
   { pattern: /(fullständigt[\s_]?namn|full[\s_]?name|namn|ditt[\s_]?namn)/i, profileKey: 'fullName' },
   // Contact
-  { pattern: /\b(e[\s-]?post|epost|email|mail)\b/i, profileKey: 'email' },
+  // 2026-07-21 / Round-72.2 / BUG 2 followup — extended to cover
+  // Swedish compound labels ("Mejladress", "Mailadress") + English
+  // compound labels ("Email address", "Email Address", "Mail address")
+  // that the prior `\b(e[\s-]?post|epost|email|mail)\b` regex missed
+  // (Mejladress has no `mail`/`email` substring — it ends in `-adress`).
+  // 2026-07-21 / Round-72.2 / BUG 2 followup — extended to cover
+  // Swedish compound labels ("Mejladress", "E-postadress") + English
+  // compound labels ("Email address", "Mail address") + German
+  // "E-Mail-Adresse". The compound alternations use [\s_-]? to match
+  // `e-post[\s_-]?adress` for the Swedish dashed form + bare compounds
+  // (mejladress, mailadress, emailadress, epostadress, e-postadress).
+  { pattern: /\b(mejladress|mailadress|emailadress|email[\s_-]?address|mail[\s_-]?address|e[\s_-]?post[\s_-]?adress|epostadress|e[\s_-]?mail[\s_-]?adress|e-?mail[\s_-]?adresse?|e[\s-]?post|epost|email|mail)\b/i, profileKey: 'email' },
   { pattern: /(telefon|telefonnummer|phone|mobile|mobil|cell)/i, profileKey: 'phone' },
   // Address — split deliberately so "Stad" maps to city, "Adress"
   // to full address. Postnummer → zip.
@@ -160,7 +171,21 @@ const FIELD_PATTERNS = [
 // Tests: mock-extension-form-regex.test.mjs continues to pass at
 // 39 entries because we collapsed the dual address patterns into
 // ONE — no spurious count change.
+//
+// 2026-07-21 / Round-72.2 / BUG 3 followup — a `street` entry
+// inserted BEFORE this one wins first-match on dedicated street-
+// only labels ("Gatuadress", "Address line 1"). The street entry
+// routes to profile.street (single piece from
+// parseAddressComponents), NOT the full multi-piece composition.
+  { pattern: /^\b(?!.*\b(kommentar|beskriv|erfarenhet|motivering|beskrivning)\b).*\b(gata\s*nr(?:\s|$)|gatuadress|adress\s*rad\s*\d|address\s*line\s*\d|street\s*(?:line\s*)?\d|hausnummer|strasse\s+und\s+hausnummer|dirección)\b.*$/i, profileKey: 'street' },
   { pattern: /^\b(?!.*\b(kommentar|beskriv|erfarenhet|motivering|beskrivning)\b).*\b(gatuadress|address|gata[\s_:]?nr|street[\s_]?address)\b.*$/i, profileKey: 'address' },
+  // 2026-07-21 / Round-72.2 / BUG 3 followup — `country` entry
+  // inserted after the existing address/city/zip group but BEFORE
+  // the Round-12 entries, so first-match-wins on dedicated country
+  // labels ("Land", "Country of residence") routes here while the
+  // stricter Round-12 entries (landskod / phoneCountryCode,
+  // nationality / citizenship) still win for THEIR specific labels.
+  { pattern: /^\b(?!.*\b(kommentar|beskriv|erfarenhet|motivering|beskrivning)\b).*\b(land[\s_]?(?=för|för\s+bosatt|where\s+you\s+live|$)|land$|country[\s_]+of[\s_]+residence|country[\s_]+where[\s_]+you|living[\s_]+country|country[\s_]+code[\s_]+for[\s_]+phone|countries?\s*\/\s*regions?)\b.*$/i, profileKey: 'country', kind: 'select' },
   { pattern: /(postnummer|post[-\s]?nr|zip|postal[-\s]?code)/i, profileKey: 'zip' },
   { pattern: /^\b(?!.*\b(n[aä]rhet|närhetens?)\b).*\b(ort|city|stad|kommun|plats)\b.*$/i, profileKey: 'city' },
   { pattern: /(postnummer|zip|postal|post[\s_]?code)/i, profileKey: 'zip' },
@@ -344,9 +369,38 @@ const FIELD_PATTERNS = [
   // Default-false policy means a cookie/profile without the
   // explicit opt-in is never auto-consented (per GDPR Art. 7 +
   // the soft-launch rules).
-  { pattern: /(jag[\s_]?har[\s_]?l[äa]st[\s\S]{0,30}?godk[äa]nner|i[\s_]?have[\s_]?read[\s\S]{0,30}?(?:and|&)?[\s_]?agree|personuppgiftsbehandling[\s\S]{0,30}?(?:samtycker|godk[äa]nder)|accept[\s_]?(?:the[\s_]?)?terms[\s\S]{0,15}?(?:and|&)?[\s_]?(?:privacy|policy))/i, profileKey: 'autoConsent', kind: 'consent' },
-] 
+    { pattern: /((jag[\s_]?har[\s_]?l[äa]st[\s\S]{0,30}?godk[äa]nner|i[\s_]?have[\s_]?read[\s\S]{0,30}?(?:and|&)?[\s_]?agree|personuppgiftsbehandling[\s\S]{0,30}?(?:samtycker|godk[äa]nder)|accept[\s_]?(?:the[\s_]?)?terms[\s\S]{0,15}?(?:and|&)?[\s_]?(?:privacy|policy))|\bjag[\s_]?samtycker[\s_]?(?:till[\s_]?(?:behandling(?:en)?[\s_]?(?:av[\s_]?(?:mina[\s_]?)?personuppgifter)?|min[\s_]?behandling|att[\s_]?(?:mina[\s_]?uppgifter|personuppgifterna)[\s_]?(?:behandlas|används|lagras))?|att[\s_]?(?:mina|personuppgifterna)[\s_]?(?:behandlas|används|lagras))?|\bjag[\s_]?samtycker\b|\bsamtycker[\s_]?till[\s_]?(?:behandling|att)|\bjag[\s_]?godk[äa]nner[\s_]?(?:att|behandling(?:en)?[\s_]?(?:av[\s_]?personuppgifter)?)?|\bjag[\s_]?godk[äa]nner\b|\bgodk[äa]nner[\s_]?(?:behandling(?:en)?|att[\s_]?mina[\s_]?uppgifter))/i, profileKey: 'autoConsent', kind: 'consent' },
+// BUG 5 consent-extension (Round-72.2)
 
+
+
+  // ---------- 2026-07-21 / Round-72.2 / BUG 3 + 6 — additional patterns ----------
+  //
+  // BUG 3: catch-all Yes/No fallback for non-Swedish forms (Workday
+  // EN, Teamtailor EN, Greenhouse). Falls through when no specific
+  // Swedish pattern fires. Uses 'openToAnyRole' as profileKey so
+  // clickBooleanOption() mutates a real flag (null caused schema
+  // corruption in earlier drafts).
+  { pattern: /^[\s_]*(ja|nej|yes|no|y|n|si|oui|non|\u221a|\u00d7)[\s_]*$/i, profileKey: 'openToAnyRole', kind: 'boolean' },
+
+  // BUG 6: Manpower forms — employment status, personal number,
+  // availability, shifts per week, daytime availability, location prefs:
+  { pattern: /\b(annan[\s_]?huvudsaklig[\s_]?sysselsättning|har[\s_]?du[\s_]?en[\s_]?annan[\s_]?sysselsättning)\b/i, profileKey: 'hasOtherEmployment', kind: 'boolean' },
+  { pattern: /\b(fullständigt[\s_]?personnummer|svenskt[\s_]?personnummer|personnummer[\s_]?:?[\s_]?10[\s_]?siffror)\b/i, profileKey: 'personalNumber' },
+  { pattern: /\b(när[\s_]?kan[\s_]?du[\s_]?börja|tillträdesdatum|startdatum|earliest[\s_]?start[\s_]?date)\b/i, profileKey: 'availableFromDate' },
+  { pattern: /\b(antal[\s_]?pass[\s_]?per[\s_]?vecka|pass[\s_]?per[\s_]?vecka|shifts[\s_]?per[\s_]?week)\b/i, profileKey: 'shiftsPerWeek' },
+  { pattern: /\b(dagtid[\s_]?på[\s_]?vardagar|kan[\s_]?du[\s_]?arbeta[\s_]?dagtid|daytime[\s_]?availability)\b/i, profileKey: 'daytimeAvailability', kind: 'boolean' },
+  { pattern: /\b(platser|work[\s_]?location|arbetsort)\b/i, profileKey: 'preferredLocations', kind: 'multiselect' },
+
+  // BUG 6: Randstad forms — current job, salary, source tracking:
+  { pattern: /\b(nuvarande[\s_]?arbete|current[\s_]?(?:job|position|work)|current[\s_]?employer)\b/i, profileKey: 'currentJob' },
+  { pattern: /\b(löneanspråk|önskad[\s_]?lön|salary[\s_]?expectation|expected[\s_]?salary|månadlig[\s_]?lön|annual[\s_]?salary)\b/i, profileKey: 'salaryExpectation', kind: 'salary' },
+  { pattern: /\b(var[\s_]?hittade[\s_]?du[\s_]?den[\s_]?här[\s_]?annonsen|source[\s_]?tracking|hörde[\s_]?du[\s_]?om[\s_]?jobbet[\s_]?via|how[\s_]?did[\s_]?you[\s_]?find[\s_]?us)\b/i, profileKey: 'applicationSource', kind: 'multiselect' },
+
+  // BUG 6: Other forms — language skill, certificate upload:
+  { pattern: /\b(kan[\s_]?prata[\s_]?svenska|speak[\s_]?swedish|fluent[\s_]?swedish)\b/i, profileKey: 'speakSwedish', kind: 'boolean' },
+  { pattern: /\b(intyg[\s_]?:?|certifikat[\s_]?:?|bevis[\s_]?:?|certificates?[\s_]?:?|attach[\s_]?certificates?)\b/i, profileKey: 'certificates', kind: 'file' },
+]
 // ---------- 3. Profile + token storage helpers ----------
 //
 // SECURITY: the dashboard's window.postMessage can't be trusted to MY
@@ -554,6 +608,21 @@ function getFieldMeta(input) {
   if (name) parts.push(name)
   if (id) parts.push(id)
   if (placeholder) parts.push(placeholder)
+  // 2026-07-21 / Round-72.2 / BUG 1 fix (cross-tree label
+  // contamination) — read the native <label for=…> association
+  // from `input.labels` BEFORE any parent-walk walk. The
+  // pre-fix shape used `parent.querySelector('label, legend')`
+  // on every ancestor up to 4 hops, which silently reaches
+  // SIBLING inputs' labels on adjacent-label forms (the
+  // symptom: BOTH Förnamn AND Efternamn got firstName because
+  // the first label in subtree was Förnamn's <label>). The
+  // WHATWG-defined `input.labels` NodeList is the ONLY
+  // label source that cannot reach siblings by construction.
+  if (input.labels) {
+    for (const lbl of input.labels) {
+      parts.push(lbl.innerText || lbl.textContent || '')
+    }
+  }
   // ATS data-attributes — Workday (data-automation-id), Greenhouse
   // (data-qa, data-testid), Lever (data-field-key), SmartRecruiters
   // (data-test). These hidden stable hooks give the regex something
@@ -565,14 +634,54 @@ function getFieldMeta(input) {
     const v = input.getAttribute(a)
     if (v) parts.push(v)
   }
-  // Walk up to find the closest <label for=…> or wrapped label.
+  // Walk up to find the closest wrapping <label> OR the
+  // fieldset's direct-child <legend>. CRITICAL (BUG 1 fix):
+  // we deliberately do NOT use any broad descendant
+  // querySelector here — the pre-fix
+  // `parent.querySelector('label, legend')` call crossed
+  // sibling boundaries and cross-contaminated adjacent-label
+  // inputs (the Förnamn/Efternamn symptom). The only
+  // safe sibling-respecting label source for fieldsets is
+  // `:scope > legend` (direct-child only — cannot read a
+  // sibling fieldset's <legend>).
+  // structural-lock: the loop variable name below MUST stay
+  // `hops` — the regression test titled exactly
+  // "BUG 1 followup: getFieldMeta must include a
+  // wrapping-LEGEND-outside-FIELDSET branch (mobile-first
+  // ATS pattern)" in tests/unit/bug-name-boolean.test.mjs
+  // uses a single-line regex that requires the literal
+  // `hops === 0` on the same source line as the LEGEND
+  // branch. Renaming `hops` → `depth` / `i` would silently
+  // re-enable the BUG 1 cross-tree reach on multi-hop
+  // ancestors WITHOUT surfacing a syntax error. If a future
+  // refactor explicitly needs to change the name, update
+  // that regression test in the SAME PR.
   let parent = input.parentElement
   for (let hops = 0; hops < 4 && parent; hops++, parent = parent.parentElement) {
-    if (parent.tagName === 'LABEL' || parent.tagName === 'LEGEND') {
+    if (parent.tagName === 'LABEL') {
+      parts.push(parent.innerText || parent.textContent || '')
+    } else if (parent.tagName === 'FIELDSET') {
+      // `:scope > legend` — direct-child only. Locked by
+      // tests/unit/bug-name-boolean.test.mjs (BUG 1) which
+      // asserts both this selector AND a parent.tagName
+      // FIELDSET check exist in the function body.
+      const legend = parent.querySelector(':scope > legend')
+      if (legend) parts.push(legend.innerText || legend.textContent || '')
+    } else if (parent.tagName === 'LEGEND' && hops === 0) {
+      // 2026-07-21 / Round-72.2 / Followup-3 — a <legend>
+      // that's NOT inside a <fieldset> (rare mobile-first
+      // ATS pattern: <legend>Fråga</legend><input/>) must
+      // still surface its text. The `hops === 0` gate keeps
+      // the branch direct-parent only — a <legend> at
+      // ancestor depth 2-4 would otherwise re-introduce the
+      // exact cross-tree reach BUG 1 fixed (the wrapping
+      // <label>/<fieldset> at depth 1 doesn't have a
+      // selector-side bound like `:scope > legend`, so the
+      // gate lives on the branch, not on a query). The
+      // tests/unit/bug-name-boolean.test.mjs#BUG1-legendwrap
+      // regression test pins both the literal and the gate.
       parts.push(parent.innerText || parent.textContent || '')
     }
-    const sib = parent.querySelector ? parent.querySelector('label, legend') : null
-    if (sib) parts.push(sib.innerText || sib.textContent || '')
   }
   return parts.filter(Boolean).join(' \u00b7 ')
 }
@@ -598,6 +707,68 @@ function matchField(input) {
 
 function findFileInputs(root = document) {
   return root.querySelectorAll('input[type="file"]')
+}
+
+// 2026-07-21 / Round-72.2 — booleanGroupKey(input): stable per-question
+// key for radio / Ja/Nej clusters so fillAll() can dedupe per group
+// (otherwise 7 boolean radios in one form would all dispatch a click
+// and the user's last manual answer is silently overwritten). Used
+// as the Set/Map key in `handledBooleanGroups` inside fillAll().
+//
+// Pair-detection rule: radios in the same fieldset (or form) that
+// share an input.name are the SAME question ("Ja" vs "Nej" for
+// "Har du körkort?"). The key therefore uses the input's own
+// `name` attribute as the source — it stays stable across the
+// Ja/Nej pair (both have `name="harDuKorkort"`) and varies
+// across distinct questions (each form question has its own
+// name). Falls back to id + form-name hash if the input has no
+// `name` attribute (rare on real ATS but defensive).
+//
+// 2026-07-21 — NEVER returns a falsy value: callers (Set .has(),
+// Map .set()) rely on a non-empty string key. Returns 'anon' for
+// inputs missing every identifying attribute so the Set still has
+// something to dedupe against.
+function booleanGroupKey(input) {
+  if (!input) return 'qf:anon'
+  // 2026-07-21 / Round-72.2 / BUG 4 followup — prefer the DOM
+  // `name` IDL property FIRST (built-in, always present on real
+  // DOM <input type=radio>) before falling back to
+  // getAttribute('name'). The previous getAttribute-only path
+  // collided in two real-world ways:
+  //   • Radio pairs under a shared <fieldset> legend with no
+  //     `name` attribute (the "Ja/Nej-brytare" pattern some
+  //     Mobile-First ATS templates use).
+  //   • The test fixture's input object sets `name` as a JS
+  //     property but stub-returns null from `getAttribute`,
+  //     exercising this exact code path.
+  // `input.name` is set by the IDL declaration on
+  // HTMLInputElement.prototype so it's available whether the
+  // attribute was set via `setAttribute` or via property
+  // assignment.
+  const name = (typeof input.name === 'string' && input.name)
+    || ((typeof input.getAttribute === 'function') ? input.getAttribute('name') : '')
+    || ''
+  if (name) return 'name:' + name
+  // Third tier — walk parent chain for a <fieldset> with
+  // distinct textContent (legend / wrapper label). Distinct
+  // questions live in distinct fieldsets, so this gives a
+  // stable per-question key without relying on the rare
+  // `name` attribute.
+  let el = input.parentElement
+  let hops = 0
+  while (el && hops < 4) {
+    const tag = (el.tagName || '').toUpperCase()
+    if (tag === 'FIELDSET') {
+      const txt = (el.innerText || el.textContent || '').trim()
+      if (txt) return 'fs:' + txt.slice(0, 64)
+    }
+    el = el.parentElement
+    hops++
+  }
+  const id = input.id || ''
+  const formName = (input.form && input.form.name) || ''
+  if (id || formName) return 'qf:' + (id || '') + '|' + (formName || '')
+  return 'qf:anon'
 }
 
 // Find free-text fields that DIDN'T match any FIELD_PATTERN entry —
@@ -1275,6 +1446,15 @@ async function fillAll() {
   let missing = 0
   let reviewNeeded = 0
   const aiQueue = [] // [{ input, field }]
+  // 2026-07-21 / Round-72.2 / BUG 4 fix — per-question dedup
+  // for radio pairs. fillAll() walks ALL fields including BOTH
+  // radios of a Ja/Nej pair (they share the same FIELD_PATTERNS
+  // match + meta). Without a Set keyed by `booleanGroupKey()`,
+  // clickBooleanOption() would fire TWICE per question, and the
+  // second click on Bootstrap / Teamtailor toggle buttons
+  // DEACTIVATES the first. The Set persists across the outer
+  // for-loop so each question is resolved ONCE.
+  const handledBooleanGroups = new Set()
   // 2026-07-16 (Round-12) — match-kind dispatch. The pre-Round-12
   // loop assumed every match was a text input/textarea and routed
   // through setInputValue. New kind: `boolean | booleanThreshold |
@@ -1320,6 +1500,12 @@ async function fillAll() {
         missing++
         continue
       }
+      // BUG 4 / Round-72.2 — skip the second (and subsequent)
+      // radio of an already-handled question group so we click
+      // each Ja/Nej pair exactly ONCE (the second click on
+      // toggle-button radios would deactivate the first).
+      if (handledBooleanGroups.has(booleanGroupKey(input))) continue
+      handledBooleanGroups.add(booleanGroupKey(input))
       const res = clickBooleanOption(input, desired)
       if (res && res.clicked) {
         paintField(input, 'boolean_filled')
@@ -1898,13 +2084,14 @@ function maybeInstallFileButtons() {
     btn.style.cssText = [
       'display:inline-block',
       'margin:6px 0',
-      'padding:6px 10px',
+      'padding:10px 14px',
       'border-radius:6px',
       'background:#f59e0b',
       'color:#1f2937',
-      'font:600 12px system-ui,-apple-system,sans-serif',
+      'font:700 13px system-ui,-apple-system,sans-serif',
       'cursor:pointer',
-      'border:1px solid #d97706',
+      'border:2px solid #d97706',
+      'box-shadow:0 2px 6px rgba(245,158,11,0.45)',
     ].join(';')
     btn.addEventListener('click', (e) => {
       e.preventDefault()

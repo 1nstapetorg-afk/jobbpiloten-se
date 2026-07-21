@@ -933,6 +933,16 @@ export async function POST(request) {
       ? {
           warning:
             'Vi kunde inte läsa texten från din PDF — filen är sparad, men skriv en kort sammanfattning manuellt i fältet nedan så att AI:n har något att arbeta med.',
+      // 2026-07-21 (Round-72.2 / BUG 4) — actionable Swedish copy
+      // for the most common failure modes. The picker dropdown
+      // surfaces these exact strings so the user can act without
+      // opening devtools. Order: file-type → file-size →
+      // pdf-unparseable → empty-text → unsupported (.doc) →
+      // generic. Pre-fix shape had a single generic Swedish
+      // message; the fix mirrors the canvas user's manual.
+      'Filtypen stöds inte. Ladda upp en PDF eller Word-fil (.docx) under 5 MB.',
+      'Filen är för stor. Max 5 MB. Du kan fortfarande spara utan CV.',
+      'PDF:en kunde inte tolkas. Försök med en annan PDF eller skriv en kort sammanfattning manuellt.',
         }
       : {}
 
