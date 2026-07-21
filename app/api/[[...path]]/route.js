@@ -36,7 +36,20 @@ export const dynamic = 'force-dynamic';
 // when the other handler tried to read it.
 const ALLOWED_STYLE_IDS = new Set(STYLE_PRESETS.map((p) => p.id))
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-06-30.basil' });
+// Lazy Stripe initializer — catches missing STRIPE_SECRET_KEY at module
+// load so the entire route file doesn't crash when Stripe isn't configured
+// (dev mode without .env, early CI, etc.). The checkout/portal handlers
+// check for null and return a friendly 400 instead of throwing.
+let _stripe = null;
+try {
+  if (process.env.STRIPE_SECRET_KEY) {
+    _stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-06-30.basil' });
+  }
+} catch (_) {
+  // Stripe SDK can throw during construction on some platforms; degrade
+  // gracefully so the rest of the API routes keep working.
+}
+function getStripe() { return _stripe; }
 
 // Price ID mapping (tier + billing interval)
 const PRICE_MAP = {
@@ -1130,7 +1143,11 @@ export async function POST(req, ctx) {
         sessionParams.customer_email = profile.email;
       }
 
-      const session = await stripe.checkout.sessions.create(sessionParams);
+      const stripeClient = getStripe();
+      if (!stripeClient) {
+        return NextResponse.json({ error: 'Betalning är inte konfigurerad.' }, { status: 500 });
+      }
+      const session = await stripeClient.checkout.sessions.create(sessionParams);
       return NextResponse.json({ url: session.url });
     }
 
@@ -1140,7 +1157,11 @@ export async function POST(req, ctx) {
         return NextResponse.json({ error: 'Ingen aktiv prenumeration' }, { status: 400 });
       }
       const origin = process.env.NEXT_PUBLIC_BASE_URL || new URL(req.url).origin;
-      const session = await stripe.billingPortal.sessions.create({
+      const stripeClient = getStripe();
+      if (!stripeClient) {
+        return NextResponse.json({ error: 'Betalning är inte konfigurerad.' }, { status: 500 });
+      }
+      const session = await stripeClient.billingPortal.sessions.create({
         customer: profile.stripeCustomerId,
         return_url: `${origin}/dashboard`,
       });
