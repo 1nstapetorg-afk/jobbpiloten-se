@@ -1,7 +1,53 @@
-# Lock encoding for environment template so Windows clients can't re-corrupt
-# the em-dash on checkout (Round-74 closeout: file was previously shipped
-# with a stray cp1252 byte that caused patch-tool failures).
-*.env.template	text=utf-8	eol=lf
+# Git attributes for JobbPiloten
+# Round-74 closeout followup — tighten scope so binary assets in /public/
+# (PNGs, ICOs, SVGs, PDFs, WebP) are NOT subjected to LF line-ending
+# normalization. The earlier catch-all `* text=auto eol=lf` would have
+# corrupted binary bytes on first Windows clone.
 
-# Standard LF for all source files (matches package manager test runners).
-*	text=auto	eol=lf
+# --- 1. Source text files: lock LF on checkout (clobbers CRLF → LF) ---
+# Scope explicitly to text extensions. Adding a new source file in a
+# new extension requires editing this file; if that becomes a chore
+# we can swap to repository config (core.autocrlf=false + core.eol=lf).
+*.js		text eol=lf
+*.mjs		text eol=lf
+*.jsx		text eol=lf
+*.ts		text eol=lf
+*.tsx		text eol=lf
+*.css		text eol=lf
+*.scss		text eol=lf
+*.html		text eol=lf
+*.md		text eol=lf
+*.json		text eol=lf
+*.yml		text eol=lf
+*.yaml		text eol=lf
+*.sh		text eol=lf
+*.py		text eol=lf
+
+# --- 2. env.template: pin UTF-8 + LF (defense in depth) ---
+# This is the file most likely to trip Windows clients because of
+# the em-dash byte. Explicit text + utf-8 + eol=lf prevents any
+# round-trip mangling even if the catch-all is later expanded.
+.env.template	text=utf-8	eol=lf
+
+# --- 3. Binary assets: mark explicit so git never tries normalization ---
+# Anything NOT in the source-text list above falls through to the
+# repository default (text=auto). The list below forces git to
+# treat these as binary even if auto-detection misclassifies them.
+*.png	binary
+*.ico	binary
+*.jpg	binary
+*.jpeg	binary
+*.gif	binary
+*.webp	binary
+*.pdf	binary
+*.zip	binary
+*.gz	binary
+*.tar	binary
+*.woff	binary
+*.woff2	binary
+*.ttf	binary
+*.eot	binary
+*.otf	binary
+*.mp3	binary
+*.mp4	binary
+*.webm	binary
