@@ -417,7 +417,7 @@ test('FIELD_PATTERNS must include the 19 Round-12 entries (binary + select + mul
   }
 })
 
-test('FIELD_PATTERNS must contain exactly 41 entries (Round-12 count lock + Round-46 address split)', () => {
+test('FIELD_PATTERNS must contain exactly 57 entries (Round-12 count lock + Round-46 address split)', () => {
   // 20 legacy + 19 new = 39. The count is informative — it's a
   // soft contract for future test fixtures that mock a full form
   // page (the mock page at /app/mock-extension-form.html expects

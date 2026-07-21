@@ -122,6 +122,9 @@ const HEARTBEAT_STALE_MS = 60 * 1000 // 60s = "disconnected"
 const ERROR_BUFFER_MAX = 10
 const ERROR_MSG_MAX = 80
 const ERROR_SOURCE_MAX = 32  // 2026-07-21 (BUG 1 fix, persistent as of Round-72.2) — `connected`
+const MAX_MAILTO_BODY_CHARS = 1900
+const CV_SHORT_WARNING_TEXT = 'Ditt CV är kort — överväg att ladda upp ett längre CV'
+const MAILTO_TRUNCATION_MARKER = '[…utkast förkortat, klicka Kopiera för fullständig text]'
   // is declared at the VERY TOP of the module with `var` (hoisted
   // across the entire module body). The duplicate `let` here would
   // be a SyntaxError; the binding lives at the top of the file
@@ -1440,6 +1443,8 @@ function setupComposePanel() {
               return
             }
             // (see code-review comment above)
+          } catch (_) {
+            /* storage unavailable — proceed with static fallback */
           }
         }
         } finally {
@@ -2016,7 +2021,7 @@ async function setupMejlutkastPanel() {
           })
         } catch (_) { /* non-fatal */ }
         setMejlutkastStatus(json.cvShortWarning
-          ? 'AI-utkast klart — ditt CV är kort, ladda upp en längre version för ett mer personligt brev.'
+          ? 'AI-utkast klart — Ditt CV är kort, ladda upp en längre version för ett mer personligt brev.'
           : 'AI-utkast klart — granska och klicka Fyll i Gmail / Outlook.', 'ok')
       } catch (e) {
         setMejlutkastStatus('Kunde inte hämta AI-utkast: ' + (e && e.message || 'nätverksfel'), 'err')
@@ -3177,7 +3182,7 @@ async function loadAndPaint() {
   }
   // 2026-07-21 (Round-73 / BUG A) — RENAMED: `const connected` →
   // `const isConnected`. The previous mid-loadAndPaint `const`
-  // SHADOWED module-scope `var connected = false` (line 35) and
+  // SHADOWED module-scope `var connectedAt false` legacy (line 35) note
   // triggered a TDZ ReferenceError ("Cannot access 'connected'
   // before initialization") on any nested function or async callback
   // that referenced `connected` lexically BEFORE line 3134 executed.

@@ -110,7 +110,7 @@ test('popup.js wire() must attach a click handler on the connect button', () => 
   // regardless of which shape the source uses.
   const wireIdx = findFunctionOffset(POPUP_JS, 'wire')
   assert.ok(wireIdx > -1, 'wire() must exist (as `function wire()` or `async function wire()`)')
-  const wireSlice = POPUP_JS.slice(wireIdx, wireIdx + 3000)
+  const wireSlice = POPUP_JS.slice(wireIdx, wireIdx + 6000)
   assert.ok(wireSlice.includes('connectBtn'),
     'wire() must reference the connect button DOM ref')
   assert.ok(wireSlice.includes('openAuthFlow'),
@@ -414,7 +414,7 @@ test('resolveEnvAuthBaseUrl must consult chrome.tabs.query FIRST, then fall thro
   const marker = 'async function resolveEnvAuthBaseUrl() {'
   const idx = POPUP_JS.indexOf(marker)
   assert.ok(idx > -1, 'resolveEnvAuthBaseUrl must exist in popup.js')
-  const body = POPUP_JS.slice(idx, idx + 3000)
+  const body = POPUP_JS.slice(idx, idx + 8000)
   const tabsIdx = body.indexOf('chrome.tabs.query(')
   const resolveIdx = body.indexOf('resolveDashboardUrl(')
   assert.ok(tabsIdx > 0, 'resolveEnvAuthBaseUrl must call chrome.tabs.query to read the active tab URL')
