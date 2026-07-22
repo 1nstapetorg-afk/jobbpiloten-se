@@ -10,7 +10,22 @@ import { MongoClient } from 'mongodb';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-06-30.basil' });
+// Lazy Stripe initializer — same pattern as app/api/[[...path]]/route.js
+// (commit 7f42b60). Catches missing STRIPE_SECRET_KEY at module load so
+// the entire route file doesn't crash when Stripe isn't configured
+// (dev mode without .env, early CI, etc.). The POST handler null-guards
+// the result so the webhook surfaces a friendly 500 instead of throwing
+// on `webhooks.constructEvent`.
+let _stripe = null;
+try {
+  if (process.env.STRIPE_SECRET_KEY) {
+    _stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-06-30.basil' });
+  }
+} catch (_) {
+  // Stripe SDK can throw during construction on some platforms; degrade
+  // gracefully so the rest of the route keeps working.
+}
+function getStripe() { return _stripe; }
 
 // Reuse Mongo singleton
 let clientPromise;
@@ -41,6 +56,14 @@ export async function POST(req) {
   const body = await req.text();
   const h = await headers();
   const signature = h.get('stripe-signature');
+
+  // Lazy, null-safe Stripe lookup — works under CI / dev mode where
+  // STRIPE_SECRET_KEY is missing. Mirrors the null guard in
+  // app/api/[[...path]]/route.js so both routes share one error contract.
+  const stripe = getStripe();
+  if (!stripe) {
+    return NextResponse.json({ error: 'Betalning är inte konfigurerad.' }, { status: 500 });
+  }
 
   let event;
   try {
