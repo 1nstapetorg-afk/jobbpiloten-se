@@ -4,28 +4,17 @@
 
 import { NextResponse } from 'next/server';
 import { headers } from 'next/headers';
-import Stripe from 'stripe';
+import { getStripe } from '@/lib/stripe';
 import { MongoClient } from 'mongodb';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Lazy Stripe initializer — same pattern as app/api/[[...path]]/route.js
-// (commit 7f42b60). Catches missing STRIPE_SECRET_KEY at module load so
-// the entire route file doesn't crash when Stripe isn't configured
-// (dev mode without .env, early CI, etc.). The POST handler null-guards
-// the result so the webhook surfaces a friendly 500 instead of throwing
-// on `webhooks.constructEvent`.
-let _stripe = null;
-try {
-  if (process.env.STRIPE_SECRET_KEY) {
-    _stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-06-30.basil' });
-  }
-} catch (_) {
-  // Stripe SDK can throw during construction on some platforms; degrade
-  // gracefully so the rest of the route keeps working.
-}
-function getStripe() { return _stripe; }
+// Stripe client lives in lib/stripe.js (single source of truth — same
+// import as the catch-all route so a future "stripe.init at module
+// load" regression becomes a ONE-line change instead of a multi-
+// route copy-paste). The POST handler below null-guards the result
+// before any `stripe.webhooks.constructEvent(...)` call.
 
 // Reuse Mongo singleton
 let clientPromise;

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { MongoClient } from 'mongodb';
 import { generateCoverLetter } from '@/lib/groq';
-import Stripe from 'stripe';
+import { getStripe } from '@/lib/stripe';
 import { generateAktivitetsrapport } from '@/lib/pdf-report';
 import { randomUUID } from 'crypto';
 import { requireAuth } from '@/lib/auth';
@@ -36,20 +36,10 @@ export const dynamic = 'force-dynamic';
 // when the other handler tried to read it.
 const ALLOWED_STYLE_IDS = new Set(STYLE_PRESETS.map((p) => p.id))
 
-// Lazy Stripe initializer — catches missing STRIPE_SECRET_KEY at module
-// load so the entire route file doesn't crash when Stripe isn't configured
-// (dev mode without .env, early CI, etc.). The checkout/portal handlers
-// check for null and return a friendly 400 instead of throwing.
-let _stripe = null;
-try {
-  if (process.env.STRIPE_SECRET_KEY) {
-    _stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-06-30.basil' });
-  }
-} catch (_) {
-  // Stripe SDK can throw during construction on some platforms; degrade
-  // gracefully so the rest of the API routes keep working.
-}
-function getStripe() { return _stripe; }
+// Stripe client lives in lib/stripe.js (single source of truth — both
+// Stripe consumers in the app import `getStripe` from there so a
+// future "stripe.init at module-load" regression becomes a ONE-line
+// change instead of a multi-route copy-paste).
 
 // Price ID mapping (tier + billing interval)
 const PRICE_MAP = {
