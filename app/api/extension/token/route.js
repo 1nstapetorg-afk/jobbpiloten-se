@@ -58,7 +58,27 @@ export async function POST(request) {
     );
   }
 
-  const db = await getDb();
+  let db;
+  try {
+    db = await getDb();
+  } catch (err) {
+    // Server-side resilience: a MongoDB outage (DNS ECONNREFUSED, IP
+    // allow-list rejection, TLS handshake, ...) was surfacing as an
+    // unhandled throw → Next.js default 500 (HTML overlay in dev) →
+    // extension page's `await res.json()` exploded with
+    // "Unexpected end of JSON input". Returning a structured JSON
+    // 503 lets the page render the friendly Swedish copy and the
+    // extension popup's safe-runtime message wrapper doesn't go
+    // catastrophic. Covers POST + GET + DELETE in this file via
+    // `allowMultiple: true` — every site that touches MongoDB is
+    // now wrapped identically so a future `await getDb()` added by
+    // a junior dev can't reintroduce the same failure mode.
+    console.warn('[extension/token] database unavailable:', err?.message || err);
+    return NextResponse.json(
+      { error: 'Databasen är tillfälligt otillgänglig. Försök igen om en stund.' },
+      { status: 503 },
+    );
+  }
   // Bug 1 fix (2026-07-20): route the profile lookup through the
   // shared `requireCompleteProfile` helper so the canonical 404
   // message ("Profil hittades inte — slutför /onboarding först.")
@@ -161,7 +181,27 @@ export async function GET(request) {
   if (!clerkId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  const db = await getDb();
+  let db;
+  try {
+    db = await getDb();
+  } catch (err) {
+    // Server-side resilience: a MongoDB outage (DNS ECONNREFUSED, IP
+    // allow-list rejection, TLS handshake, ...) was surfacing as an
+    // unhandled throw → Next.js default 500 (HTML overlay in dev) →
+    // extension page's `await res.json()` exploded with
+    // "Unexpected end of JSON input". Returning a structured JSON
+    // 503 lets the page render the friendly Swedish copy and the
+    // extension popup's safe-runtime message wrapper doesn't go
+    // catastrophic. Covers POST + GET + DELETE in this file via
+    // `allowMultiple: true` — every site that touches MongoDB is
+    // now wrapped identically so a future `await getDb()` added by
+    // a junior dev can't reintroduce the same failure mode.
+    console.warn('[extension/token] database unavailable:', err?.message || err);
+    return NextResponse.json(
+      { error: 'Databasen är tillfälligt otillgänglig. Försök igen om en stund.' },
+      { status: 503 },
+    );
+  }
   const tokens = await db.collection('extension_tokens')
     .find({ clerkId })
     .project({ token: 0 })
@@ -201,7 +241,27 @@ export async function DELETE(request) {
   }
   const url = new URL(request.url);
   const single = (url.searchParams.get('token') || '').trim();
-  const db = await getDb();
+  let db;
+  try {
+    db = await getDb();
+  } catch (err) {
+    // Server-side resilience: a MongoDB outage (DNS ECONNREFUSED, IP
+    // allow-list rejection, TLS handshake, ...) was surfacing as an
+    // unhandled throw → Next.js default 500 (HTML overlay in dev) →
+    // extension page's `await res.json()` exploded with
+    // "Unexpected end of JSON input". Returning a structured JSON
+    // 503 lets the page render the friendly Swedish copy and the
+    // extension popup's safe-runtime message wrapper doesn't go
+    // catastrophic. Covers POST + GET + DELETE in this file via
+    // `allowMultiple: true` — every site that touches MongoDB is
+    // now wrapped identically so a future `await getDb()` added by
+    // a junior dev can't reintroduce the same failure mode.
+    console.warn('[extension/token] database unavailable:', err?.message || err);
+    return NextResponse.json(
+      { error: 'Databasen är tillfälligt otillgänglig. Försök igen om en stund.' },
+      { status: 503 },
+    );
+  }
   const query = single
     ? { clerkId, token: single }
     : { clerkId };

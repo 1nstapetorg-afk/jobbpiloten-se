@@ -62,9 +62,27 @@ async function resolveClerkId(request) {
   const auth = request.headers.get('authorization') || '';
   const match = /^Bearer\s+([a-f0-9]{64})$/i.exec(auth);
   if (!match) return null;
-  const token = match[1];
-
-  const db = await getDb();
+  const token = match[1];  let db;
+  try {
+    db = await getDb();
+  } catch (err) {
+    // MongoDB outage inside the bearer-token resolver. Tag the
+    // thrown error with `code: 'DB_UNAVAILABLE'` and rethrow so
+    // the outer GET handler can map it to a structured 503 JSON
+    // via its top-level catch (added below). This preserves the
+    // helper's `clerkId | null` return shape for legitimate
+    // "token row not found" results, while keeping infrastructure
+    // outages a recognisably different failure mode from a bad
+    // bearer token.
+    //
+    // Without the tag the user would see the misleading 401
+    // "Ogiltig eller saknad token — anslut tillägget från /dashboard",
+    // implying their saved Chrome extension token is bad, when
+    // the real cause is an externally-visible Atlas outage.
+    console.warn('[extension/profile] resolveClerkId: database unavailable:', err?.message || err);
+    Object.assign(err, { code: 'DB_UNAVAILABLE' });
+    throw err;
+  }
   const tokenDoc = await db.collection('extension_tokens').findOne({ token });
   if (!tokenDoc) return null;
 
@@ -107,6 +125,13 @@ async function resolveClerkId(request) {
 // the mint-time snapshot and refresh snapshots can't drift apart.
 
 export async function GET(request) {
+  // Top-level wrapper: maps the DB_UNAVAILABLE tagged error
+  // (thrown by `resolveClerkId` on a MongoDB outage) to a
+  // structured 503 JSON, and rethrows any other unhandled
+  // exception so genuine developer bugs still surface as
+  // Next.js' default 500 (which is the right behaviour — a
+  // 503-on-everything wrapper would mask real bugs).
+  try {
   const clerkId = await resolveClerkId(request);
   if (!clerkId) {
     return NextResponse.json(
@@ -115,7 +140,24 @@ export async function GET(request) {
     );
   }
 
-  const db = await getDb();
+  let db;
+  try {
+    db = await getDb();
+  } catch (err) {
+    // MongoDB outage reaching the GET handler's own lookup path.
+    // `resolveClerkId` already swallowed a "db unavailable" earlier
+    // and returned null (the upstream `if (!clerkId)` would surface
+    // it as the existing 401), so this branch only fires when the
+    // SECOND db.connect fails (token was valid, profile lookup
+    // can't connect) — a separate transient failure mode. Either
+    // way, return a structured 503 JSON so the page can render the
+    // friendly Swedish copy instead of crashing on `res.json()`.
+    console.warn('[extension/profile] GET: database unavailable:', err?.message || err);
+    return NextResponse.json(
+      { error: 'Databasen är tillfälligt otillgänglig. Försök igen om en stund.' },
+      { status: 503 },
+    );
+  }
   // Round-46 / Followup 3 (2026-07-20 Monday): same
   // isProfileComplete-aware 404 gate as email-draft. A profile
   // document that exists but has only `_id` + `clerkId`
@@ -142,4 +184,14 @@ export async function GET(request) {
   const latest = latestApplication[0] || null;
 
   return NextResponse.json(buildExtensionProfile(profile, latest));
+  } catch (err) {
+    if (err?.code === 'DB_UNAVAILABLE') {
+      console.warn('[extension/profile] GET: database unavailable (tagged):', err?.message || err);
+      return NextResponse.json(
+        { error: 'Databasen är tillfälligt otillgänglig. Försök igen om en stund.' },
+        { status: 503 },
+      );
+    }
+    throw err;
+  }
 }

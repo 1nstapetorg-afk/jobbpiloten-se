@@ -110,7 +110,23 @@ async function resolveClerkId(request) {
   const match = /^Bearer\s+([a-f0-9]{64})$/i.exec(auth)
   if (!match) return null
   const token = match[1]
-  const db = await getDb()
+  let db;
+  try {
+    db = await getDb();
+  } catch (err) {
+    // MongoDB outage resilience — same contract as the rest of
+    // /api/extension/* (Round-79 followup). Two call sites in this
+    // file get wrapped identically via `allowMultiple: true`. This
+    // route's `await res.json()` in
+    // app/extension-auth/page.js would otherwise explode with
+    // `SyntaxError: Unexpected end of JSON input` against the
+    // Next.js 500 HTML overlay.
+    console.warn('[extension/email-body] database unavailable:', err?.message || err);
+    return NextResponse.json(
+      { error: 'Databasen är tillfälligt otillgänglig. Försök igen om en stund.' },
+      { status: 503 },
+    );
+  }
   const tokenDoc = await db.collection('extension_tokens').findOne({ token })
   if (!tokenDoc) return null
   // lastUsedAt is debug-only; swallow blips so a flaky write
@@ -280,7 +296,23 @@ export async function POST(request) {
     )
   }
 
-  const db = await getDb()
+  let db;
+  try {
+    db = await getDb();
+  } catch (err) {
+    // MongoDB outage resilience — same contract as the rest of
+    // /api/extension/* (Round-79 followup). Two call sites in this
+    // file get wrapped identically via `allowMultiple: true`. This
+    // route's `await res.json()` in
+    // app/extension-auth/page.js would otherwise explode with
+    // `SyntaxError: Unexpected end of JSON input` against the
+    // Next.js 500 HTML overlay.
+    console.warn('[extension/email-body] database unavailable:', err?.message || err);
+    return NextResponse.json(
+      { error: 'Databasen är tillfälligt otillgänglig. Försök igen om en stund.' },
+      { status: 503 },
+    );
+  }
   // Bug 1 fix (2026-07-20): route the profile lookup through the
   // shared `requireCompleteProfile` helper so the canonical 404
   // message is shared across /api/email-preview, cv-pdf,

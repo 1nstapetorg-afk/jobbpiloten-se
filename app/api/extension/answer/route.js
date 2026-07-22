@@ -88,7 +88,24 @@ async function resolveClerkId(request) {
   if (!match) return null;
   const token = match[1];
 
-  const db = await getDb();
+  let db;
+  try {
+    db = await getDb();
+  } catch (err) {
+    // MongoDB outage resilience — same contract as
+    // /api/extension/token + /api/extension/profile (Round-79
+    // followup). Without this the throw escapes to Next.js'
+    // default 500 HTML overlay and breaks the extension's
+    // `await res.json()` with `SyntaxError: Unexpected end of JSON
+    // input`. Two call sites in this file (POST handler's profile
+    // lookup + the application-record lookup) get wrapped by
+    // `allowMultiple: true`.
+    console.warn('[extension/answer] database unavailable:', err?.message || err);
+    return NextResponse.json(
+      { error: 'Databasen är tillfälligt otillgänglig. Försök igen om en stund.' },
+      { status: 503 },
+    );
+  }
   const tokenDoc = await db.collection('extension_tokens').findOne({ token });
   if (!tokenDoc) return null;
 
@@ -153,7 +170,24 @@ export async function POST(request) {
     );
   }
 
-  const db = await getDb();
+  let db;
+  try {
+    db = await getDb();
+  } catch (err) {
+    // MongoDB outage resilience — same contract as
+    // /api/extension/token + /api/extension/profile (Round-79
+    // followup). Without this the throw escapes to Next.js'
+    // default 500 HTML overlay and breaks the extension's
+    // `await res.json()` with `SyntaxError: Unexpected end of JSON
+    // input`. Two call sites in this file (POST handler's profile
+    // lookup + the application-record lookup) get wrapped by
+    // `allowMultiple: true`.
+    console.warn('[extension/answer] database unavailable:', err?.message || err);
+    return NextResponse.json(
+      { error: 'Databasen är tillfälligt otillgänglig. Försök igen om en stund.' },
+      { status: 503 },
+    );
+  }
   // Bug 1 fix (2026-07-20): see lib/profile-check.js. The helper
   // makes the "complete enough for AI" decision (fullName OR email
   // set) once, instead of each endpoint deciding whether an empty

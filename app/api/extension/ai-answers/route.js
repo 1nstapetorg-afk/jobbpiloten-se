@@ -116,7 +116,22 @@ async function resolveClerkId(request) {
   const match = /^Bearer\s+([a-f0-9]{64})$/i.exec(auth);
   if (!match) return null;
   const token = match[1];
-  const db = await getDb();
+  let db;
+  try {
+    db = await getDb();
+  } catch (err) {
+    // MongoDB outage resilience — same contract as the rest of
+    // /api/extension/* (Round-79 followup). Two call sites in this
+    // file get wrapped identically via `allowMultiple: true`.
+    // Without this wrap the extension bug-reporter flow breaks
+    // with the same "Unexpected end of JSON input" symptom that
+    // /api/extension/token used to hit.
+    console.warn('[extension/ai-answers] database unavailable:', err?.message || err);
+    return NextResponse.json(
+      { error: 'Databasen är tillfälligt otillgänglig. Försök igen om en stund.' },
+      { status: 503 },
+    );
+  }
   const tokenDoc = await db.collection('extension_tokens').findOne({ token });
   if (!tokenDoc) return null;
   // lastUsedAt is debug-only; non-fatal so a flaky audit-write never
@@ -234,7 +249,22 @@ export async function POST(request) {
     });
   }
 
-  const db = await getDb();
+  let db;
+  try {
+    db = await getDb();
+  } catch (err) {
+    // MongoDB outage resilience — same contract as the rest of
+    // /api/extension/* (Round-79 followup). Two call sites in this
+    // file get wrapped identically via `allowMultiple: true`.
+    // Without this wrap the extension bug-reporter flow breaks
+    // with the same "Unexpected end of JSON input" symptom that
+    // /api/extension/token used to hit.
+    console.warn('[extension/ai-answers] database unavailable:', err?.message || err);
+    return NextResponse.json(
+      { error: 'Databasen är tillfälligt otillgänglig. Försök igen om en stund.' },
+      { status: 503 },
+    );
+  }
   // Bug 1 fix (2026-07-20): see lib/profile-check.js. The helper
   // makes the "complete enough for AI" decision (fullName OR email
   // set) once, instead of each endpoint deciding whether an empty
