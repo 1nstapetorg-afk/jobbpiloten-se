@@ -19,8 +19,12 @@
 // the helper generalises cleanly so we don't ship a per-spec duplicate
 // the next time a contract test needs a body.
 //
-// Returns `{ status, body, contentType }` so the assertion layer can
-// branch on HTTP code without re-parsing.
+// Returns `{ status, ok, body, contentType }` so the assertion layer can
+// branch on HTTP code without re-parsing. `ok` mirrors the browser
+// Fetch Response contract (true for 2xx) — Playwright's APIResponse
+// exposes `ok()` as a METHOD, and callers doing `if (!res.ok)` (e.g.
+// mintExtensionToken in mejlutkast-api.spec.js) previously saw
+// `undefined` and threw even on a successful 200. Round-80 followup.
 
 export async function apiFetch(page, path, init = {}) {
   // Map standard-fetch `init` (method / headers / body) into
@@ -82,6 +86,7 @@ export async function apiFetch(page, path, init = {}) {
   // miss in test output.
   return {
     status: res.status(),
+    ok: res.ok(),
     body,
     contentType: res.headers()['content-type'] || '',
   }

@@ -80,9 +80,13 @@ test('Round-45: Groq provider (priority 1) keeps baseURL + model unchanged', () 
     SRC.includes("baseURL: 'https://api.groq.com/openai/v1'"),
     'Groq baseURL must stay https://api.groq.com/openai/v1',
   )
+  // Round-80 followup (2026-08-02): primary swapped from
+  // llama-3.3-70b-versatile (shuts down 2026-08-16 per Groq's
+  // published schedule) to qwen/qwen3.6-27b — live-verified with
+  // this key via the OCR smoke.
   assert.ok(
-    SRC.includes("model: 'llama-3.3-70b-versatile'"),
-    'Groq default model must stay llama-3.3-70b-versatile',
+    SRC.includes("model: 'qwen/qwen3.6-27b'"),
+    'Groq default model must stay qwen/qwen3.6-27b (swapped 2026-08-02 after llama-3.3-70b-versatile shutdown 2026-08-16)',
   )
 })
 
@@ -230,13 +234,38 @@ test('Round-45: provider-startup log line uses provider.name + provider.model', 
 test('Round-80: TEXT_MODELS is an ordered fallback chain with the primary first', async () => {
   const { textModelChainForProvider } = await import('../../lib/groq.js')
   const groq = textModelChainForProvider('groq', 'x')
-  assert.equal(groq[0], 'llama-3.3-70b-versatile')
+  // Round-80 followup (2026-08-02): primary is now qwen/qwen3.6-27b.
+  // llama-3.3-70b-versatile is NOT in the chain at all — it shuts down
+  // 2026-08-16, so keeping it as the fallback would waste the retry on
+  // a dead model.
+  assert.equal(groq[0], 'qwen/qwen3.6-27b')
   assert.ok(
     groq.length >= 2,
-    'Groq text chain must carry a secondary model for decommission resilience (llama-3.3-70b-versatile shuts down 2026-08-16)',
+    'Groq text chain must carry a secondary model for decommission resilience (qwen primary + llama-4-maverick secondary)',
+  )
+  assert.ok(
+    !groq.includes('llama-3.3-70b-versatile'),
+    'llama-3.3-70b-versatile must NOT appear in the chain (shuts down 2026-08-16)',
   )
   assert.equal(textModelChainForProvider('openai', 'x')[0], 'gpt-4o-mini')
   assert.deepEqual(textModelChainForProvider('unknown-vendor', 'fb'), ['fb'])
+})
+
+test('Round-80: daysUntilDecommission returns days-left for scheduled models and null otherwise', async () => {
+  const { daysUntilDecommission } = await import('../../lib/groq.js')
+  // llama-3.3-70b-versatile shuts down 2026-08-16 (Groq schedule).
+  // Compute the EXPECTED value from the known date instead of a
+  // hardcoded constant so the test stays deterministic for ANY run
+  // date — before the shutdown (14 days on 2026-08-02) and after it
+  // (negative) alike. A pure `days <= 30` assertion would silently
+  // lose its meaning once the date passes.
+  const expectedDays = Math.ceil((new Date('2026-08-16T00:00:00Z').getTime() - Date.now()) / 86_400_000)
+  const days = daysUntilDecommission('llama-3.3-70b-versatile')
+  assert.equal(days, expectedDays, 'day-count arithmetic must match the known decommission date — got ' + days)
+  // Models without a known schedule are silent (null), not a crash.
+  assert.equal(daysUntilDecommission('qwen/qwen3.6-27b'), null)
+  assert.equal(daysUntilDecommission('gpt-4o-mini'), null)
+  assert.equal(daysUntilDecommission('no-such-model'), null)
 })
 
 test('Round-80: every LLM call site routes through createChatWithFallback, not raw client calls', () => {

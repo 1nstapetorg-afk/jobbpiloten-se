@@ -12,7 +12,7 @@
 - **Toasts:** [Sonner](https://sonner.emilkowal.ski/) via shadcn wrapper (`components/ui/sonner.jsx`), mounted in `app/providers.js`
 - **Backend:** Next.js API routes (Node runtime), native MongoDB driver
 - **Databas:** MongoDB 6+
-- **AI / LLM:** [Groq](https://console.groq.com) `llama-3.3-70b-versatile` (OpenAI-kompatibelt SDK)
+- **AI / LLM:** [Groq](https://console.groq.com) `qwen/qwen3.6-27b` (OpenAI-kompatibelt SDK; 2026-08-02 swap — `llama-3.3-70b-versatile` shuts down 2026-08-16)
 - **Auth:** Clerk 6 med Google OAuth + demo-fallback (om `pk_/sk_xxx` keys saknas)
 - **Betalning:** Stripe test-läge — se `app/api/[[...path]]/route.js` och `app/api/webhooks/stripe/route.js`
 - **PDF:** `pdf-lib` (server-side)

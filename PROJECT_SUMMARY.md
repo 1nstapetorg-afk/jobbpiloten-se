@@ -84,7 +84,7 @@ The user always reviews and sends the application themselves. JobbPiloten never 
 | Theme | next-themes (ThemeProvider i providers.js) |
 | Backend | Next.js API routes (Node runtime), native `mongodb` driver |
 | Databas | MongoDB 6+ (lokalt eller Atlas) |
-| AI / LLM | Groq `llama-3.3-70b-versatile` (OpenAI-kompatibelt SDK) |
+| AI / LLM | Groq `qwen/qwen3.6-27b` (OpenAI-kompatibelt SDK; 2026-08-02 swap) |
 | PDF | `pdf-lib` (server-side) |
 | Auth | Clerk 6 + demo-fallback |
 | Betalning | Stripe (test-läge) |

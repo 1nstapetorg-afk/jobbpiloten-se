@@ -700,7 +700,15 @@ export async function POST(req, ctx) {
         // (default true). Read by /api/extension/ai-answers so the user
         // can opt out of Groq-generated answers on unmatched form
         // fields without breaking the local extension fill loop.
-        'aiFallbackEnabled',
+        // 2026-08-02 (Round-80 followup): aiEmailBodyEnabled was
+        // MISSING from ALLOWED — /settings' AI-mejl toggle POST was
+        // silently dropped, so the email-draft/email-body/email-preview
+        // routes never saw the opt-out and always returned source=
+        // 'generated'/'fallback' instead of 'disabled'. The E2E spec
+        // (mejlutkast-api.spec.js:181) locked the contract; the gap
+        // was masked by the pre-fix apiFetch helper bug that killed the
+        // describe block at the token-mint step.
+        'aiFallbackEnabled', 'aiEmailBodyEnabled',
         // Profile picture — stored as `{ type: 'upload' | 'avatar', value }`.
         // `value` for `upload` is a `data:image/...;base64,...` URL (capped
         // at 2 MB on the client, then re-validated server-side below).
@@ -802,6 +810,15 @@ export async function POST(req, ctx) {
       if (Object.prototype.hasOwnProperty.call($set, 'aiFallbackEnabled') && typeof $set.aiFallbackEnabled !== 'boolean') {
         console.warn('[profile-update] rejected non-boolean aiFallbackEnabled payload (clerkId=' + clerkId + ')')
         delete $set.aiFallbackEnabled
+      }
+      // AI-email toggle — same boolean guard as aiFallbackEnabled.
+      // Read by /api/email-draft + /api/extension/email-body +
+      // /api/email-preview as `profile.aiEmailBodyEnabled === false`
+      // (the "AI-mejl avstängt" chip). Round-80 followup: field added
+      // to ALLOWED above; non-boolean payloads are rejected here.
+      if (Object.prototype.hasOwnProperty.call($set, 'aiEmailBodyEnabled') && typeof $set.aiEmailBodyEnabled !== 'boolean') {
+        console.warn('[profile-update] rejected non-boolean aiEmailBodyEnabled payload (clerkId=' + clerkId + ')')
+        delete $set.aiEmailBodyEnabled
       }
       // Server-side guard for `profilePicture`. The client's settings
       // page already validates before submit (2 MB max, JPG/PNG/WebP only,
@@ -985,13 +1002,22 @@ export async function POST(req, ctx) {
           // not touched. Same construction as line ~615's insert
           // path so both write entry points produce an
           // equivalent-shaped doc.
+          // Round-80 followup (2026-08-02): aiEmailBodyEnabled /
+          // aiFallbackEnabled / stylePreference were REMOVED from
+          // $setOnInsert. They are ALLOWED-list fields, so a partial
+          // update that carries them lands in `$set` — and MongoDB
+          // rejects the whole update at parse time with "would
+          // create a conflict" when the same path appears in both
+          // $set and $setOnInsert. That made EVERY ai-hjalp toggle
+          // (aiFallbackEnabled:false) and AI-mejl toggle
+          // (aiEmailBodyEnabled:false) 500 for brand-new users
+          // whose first save was the toggle itself. Absence is
+          // behaviourally identical: all three readers treat
+          // `undefined` as the default (enabled / 'lagom').
           $setOnInsert: {
             createdAt: new Date(),
             tier: 'Basic',
-            aiEmailBodyEnabled: true,
-            aiFallbackEnabled: true,
             aiAnswersEnabled: true,
-            stylePreference: 'lagom',
             onboardingCompleted: true,
             // jobTitles / locations deliberately OMITTED from
             // $setOnInsert (Round-46 review-flag #B from the 2026-

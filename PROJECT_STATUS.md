@@ -26,7 +26,7 @@ Aktivitetsrapport PDF for Arbetsförmedlingen included.
 | Toasts | Sonner (`richColors position="top-right"`) inside `next-themes` ThemeProvider |
 | Auth | Clerk 6 (with demo fallback when keys are placeholder) |
 | Payments | Stripe (test mode only — verified no `sk_live_` / `pk_live_` anywhere) |
-| AI | Groq (`llama-3.3-70b-versatile`) |
+| AI | Groq (`qwen/qwen3.6-27b` — 2026-08-02 swap, llama-3.3-70b-versatile shuts down 2026-08-16) |
 | PDF | pdf-lib |
 | Push | `web-push` + VAPID, custom service worker at `public/service-worker.js` |
 | Cron | Vercel Cron via `vercel.json` — twice-daily (`0 7 * * *` + `0 13 * * *` UTC = 09:00 + 15:00 Stockholm time during CEST) |

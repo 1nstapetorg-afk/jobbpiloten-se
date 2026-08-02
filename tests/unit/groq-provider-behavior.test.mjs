@@ -79,7 +79,9 @@ test('Round-46 behaviour: GROQ_API_KEY wins over EMERGENT_LLM_KEY (precedence lo
     EMERGENT_LLM_KEY: 'fake-emergent-key',
   })
   assert.match(log, /provider=groq/, 'GROQ must take precedence over EMERGENT — actual log: ' + JSON.stringify(log))
-  assert.match(log, /llama-3\.3-70b-versatile/, 'must use the GROQ default model llama-3.3-70b-versatile — actual log: ' + JSON.stringify(log))
+  // Round-80 followup (2026-08-02): GROQ default model is now
+  // qwen/qwen3.6-27b (llama-3.3-70b-versatile shuts down 2026-08-16).
+  assert.match(log, /qwen\/qwen3\.6-27b/, 'must use the GROQ default model qwen/qwen3.6-27b — actual log: ' + JSON.stringify(log))
   // Negative lock: ensure EMERGENT did NOT leak alongside GROQ.
   // .includes() over count-match: a future debug log that incidentally
   // mentions provider=emergent once still fails the lock (count-based
@@ -130,7 +132,9 @@ test('Round-46 behaviour: all three providers in env — GROQ wins (full precede
     EMERGENT_LLM_KEY: 'fake-emergent-key',
   })
   assert.match(log, /provider=groq/, 'GROQ must beat OPENAI and EMERGENT in the precedence chain — actual log: ' + JSON.stringify(log))
-  assert.match(log, /llama-3\.3-70b-versatile/, 'must use the GROQ default model llama-3.3-70b-versatile — actual log: ' + JSON.stringify(log))
+  // Round-80 followup (2026-08-02): GROQ default model is now
+  // qwen/qwen3.6-27b (llama-3.3-70b-versatile shuts down 2026-08-16).
+  assert.match(log, /qwen\/qwen3\.6-27b/, 'must use the GROQ default model qwen/qwen3.6-27b — actual log: ' + JSON.stringify(log))
   assert.ok(!log.includes('provider=openai'), 'OPENAI must NOT be mentioned — actual log: ' + JSON.stringify(log))
   assert.ok(!log.includes('provider=emergent'), 'EMERGENT must NOT be mentioned — actual log: ' + JSON.stringify(log))
 })

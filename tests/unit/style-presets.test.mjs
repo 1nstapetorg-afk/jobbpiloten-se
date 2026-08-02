@@ -242,6 +242,47 @@ test('/api/[[...path]]/route.js ALLOWED list includes stylePreference', () => {
   )
 })
 
+test('/api/[[...path]]/route.js profile-update: aiEmailBodyEnabled is ALLOWED and NOT in $setOnInsert (Round-80 conflict fix)', () => {
+  // Round-80 followup (2026-08-02): aiEmailBodyEnabled is a
+  // settings toggle read by the email-draft/email-body/email-preview
+  // routes (`profile.aiEmailBodyEnabled === false` → source:
+  // 'disabled'). Two half-bugs masked each other:
+  //   (a) the field was missing from the ALLOWED list, so the
+  //       /settings AI-mejl toggle POST was silently dropped;
+  //   (b) once added to ALLOWED, it collided with the same path in
+  //       $setOnInsert — MongoDB rejects the WHOLE update at parse
+  //       time ("would create a conflict"), 500-ing every toggle for
+  //       any user whose save carries it.
+  // Lock BOTH directions: the field must be in ALLOWED, and absent
+  // from the $setOnInsert literal (a future re-add of the default
+  // re-introduces the parse-time conflict).
+  const src = readFileSync(
+    new URL('../../app/api/[[...path]]/route.js', import.meta.url),
+    'utf8',
+  )
+  assert.match(
+    src,
+    /ALLOWED[\s\S]{0,2500}?['"]aiEmailBodyEnabled['"]/,
+    'profile-update ALLOWED list must include "aiEmailBodyEnabled"',
+  )
+  // The $setOnInsert block: aiEmailBodyEnabled / aiFallbackEnabled /
+  // stylePreference must NOT be written there (all three are ALLOWED
+  // fields that can land in $set — a duplicate path is a Mongo
+  // parse-time conflict). aiAnswersEnabled / tier / onboardingCompleted
+  // are NOT in ALLOWED, so they stay safe as insert defaults.
+  // The profile-update path is the SECOND $setOnInsert in the file
+  // (the full-profile insert path at line ~682 has only createdAt).
+  // Anchor on the block that carries aiAnswersEnabled — the
+  // distinguishing default of the partial-update path.
+  const setOnInsertBlock = src.match(/\$setOnInsert:\s*\{[\s\S]{0,3000}?aiAnswersEnabled[\s\S]{0,1200}?\n\s*\}/)
+  assert.ok(setOnInsertBlock, 'profile-update must have a $setOnInsert block carrying aiAnswersEnabled')
+  const block = setOnInsertBlock[0]
+  assert.ok(!block.includes('aiEmailBodyEnabled'), '$setOnInsert must NOT contain aiEmailBodyEnabled (Mongo conflict with $set)')
+  assert.ok(!block.includes('aiFallbackEnabled'), '$setOnInsert must NOT contain aiFallbackEnabled (Mongo conflict with $set)')
+  assert.ok(!block.includes("stylePreference: 'lagom'"), '$setOnInsert must NOT contain stylePreference (Mongo conflict with $set)')
+  assert.ok(block.includes('aiAnswersEnabled'), '$setOnInsert keeps aiAnswersEnabled (not in ALLOWED, safe default)')
+})
+
 test('/api/[[...path]]/route.js validates stylePreference via the canonical STYLE_PRESETS import', () => {
   // Round-35 (Part 3 — Answer Diversity) follows the canonical-source-
   // of-truth pattern: the route imports `STYLE_PRESETS` from

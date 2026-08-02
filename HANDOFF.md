@@ -89,7 +89,7 @@ Connection pattern: **one shared, self-healing singleton** in `lib/mongo.js` —
 | Package | Version | Notes |
 |---|---|---|
 | `openai` | ^6.45.0 | Used as an OpenAI-compatible client. |
-| **Provider:** Groq | via env `GROQ_API_KEY` | Model: `llama-3.3-70b-versatile`. Client instantiated in `lib/groq.js` with `baseURL: 'https://api.groq.com/openai/v1'`. |
+| **Provider:** Groq | via env `GROQ_API_KEY` | Model: `qwen/qwen3.6-27b` (2026-08-02 swap; llama-3.3-70b-versatile shuts down 2026-08-16). Client instantiated in `lib/groq.js` with `baseURL: 'https://api.groq.com/openai/v1'`. |
 
 `lib/groq.js#generateCoverLetter(profile, job, options)` is the single entry point. It has fallbacks for Emergent LLM proxy (`EMERGENT_LLM_KEY`), OpenAI (`OPENAI_API_KEY`), and OpenRouter (`OPENROUTER_API_KEY`, Round-72). Rule-based fallback ("normaliseProfile" template) if all providers fail.
 
@@ -624,7 +624,7 @@ Fired on `dashboard.connectExtension()`. Read by `extension/content.js#handleDas
 Use these in every import.
 
 ### 5.10. AI Provider Order (`lib/groq.js#pickProvider`)
-1. `GROQ_API_KEY` → Groq (`llama-3.3-70b-versatile`)
+1. `GROQ_API_KEY` → Groq (`qwen/qwen3.6-27b`)
 2. else `EMERGENT_LLM_KEY` → Emergent proxy (OpenAI-compatible)
 3. else `OPENAI_API_KEY` → OpenAI direct
 4. else `OPENROUTER_API_KEY` → OpenRouter proxy (Round-72; default `anthropic/claude-3.5-sonnet`, override via `OPENROUTER_MODEL`)
@@ -907,7 +907,7 @@ PORT=3001 yarn test:e2e       # in another
 **Package manager:** `yarn` (never npm)
 **Dev URL:** `http://localhost:3000`
 **MongoDB:** `mongodb://localhost:27017/jobbpiloten`
-**LLM provider:** Groq (`llama-3.3-70b-versatile`) via OpenAI-compatible SDK
+**LLM provider:** Groq (`qwen/qwen3.6-27b`) via OpenAI-compatible SDK
 **Cron schedule:** `0 7 * * *` + `0 13 * * *` UTC
 **Test command:** `yarn test:unit && yarn test:e2e`
 **Build command:** `yarn build`

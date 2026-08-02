@@ -87,7 +87,7 @@ export default function PrivacyPage() {
           <Section icon={Bot} title="3. AI-behandling av personuppgifter">
             <p>
               För att skriva personliga brev använder vi språkmodeller hos <strong>Groq</strong> med
-              modellen <code className="text-[12px] bg-slate-100 px-1.5 py-0.5 rounded">llama-3.3-70b-versatile</code>.
+              modellen <code className="text-[12px] bg-slate-100 px-1.5 py-0.5 rounded">qwen/qwen3.6-27b</code>.
               När du klickar <em>Fyll i med AI</em> skickar vi (jobbets titel + beskrivning + din
               profil­sammanfattning) till Groq, som returnerar ett färdigt brev.
             </p>

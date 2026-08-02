@@ -56,7 +56,12 @@ test('/privacy includes the new AI-behandling section (Part 9 spec)', () => {
   const src = readFileSync(resolve(ROOT, 'app/privacy/page.js'), 'utf8')
   assert.match(src, /AI-behandling/, 'Missing "AI-behandling" section title')
   assert.match(src, /Groq/, 'Missing Groq mention in AI-behandling section')
-  assert.match(src, /llama-3\.3-70b/, 'Missing llama-3.3 model reference (specific model = more accountable claim)')
+  // Round-80 followup (2026-08-02): the disclosed model is now
+  // qwen/qwen3.6-27b — the privacy page must name the ACTUAL model
+  // the app uses (llama-3.3-70b-versatile was swapped out before its
+  // 2026-08-16 shutdown; an outdated model name in a GDPR disclosure
+  // is itself a false-claim regression).
+  assert.match(src, /qwen\/qwen3\.6-27b/, 'Missing qwen/qwen3.6-27b model reference (specific model = more accountable claim)')
   assert.match(src, /används inte för att träna/, 'Missing "not used for training" disclaimer')
   // Round-34.2: claim is now "OUTSIDE EU/EES", not "within". A future
   // maintainer reverting to the original EU/EES hosting claim would
