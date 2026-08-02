@@ -2407,7 +2407,7 @@ function startObserver() {
  * (currently: AI-adaptive fills).
  */
 function getExtensionVersion() {
-  return '0.2.1'
+  return '0.2.4'
 }
 
 window.addEventListener('message', (ev) => {

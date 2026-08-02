@@ -250,12 +250,16 @@ yarn test:e2e
 inline comments tagged with a release version, e.g.
 `// v0.2.2 — Anslut din profil primary CTA`. **These comments mark the
 release that INTRODUCED the feature, not the current release.** The
-current release is `const VERSION = '0.2.3'` (mirrored as the
-`"version"` field in `extension/manifest.json`). A v0.2.4 release that
-touchs the same code should leave the v0.2.2 historical markers alone
-— they describe lineage, not state. If the convention ever flips,
-search the repo for `v(MAJOR).(MINOR)` and bump all matching comments
-in one commit to keep the diff atomic.
+current release is `const VERSION = '0.2.4'` (mirrored as the
+`"version"` field in `extension/manifest.json`, plus
+`JOBBPILOTEN_EXTENSION_VERSION` in background.js and
+`getExtensionVersion()` in content.js — keep ALL FOUR in sync when
+bumping). v0.2.4 (2026-08-02) carries the Chromebook blank-tab fix
+(popup only adopts JobbPiloten app origins for the dashboard URL).
+A later release that touches the same code should leave the v0.2.x
+historical markers alone — they describe lineage, not state. If the
+convention ever flips, search the repo for `v(MAJOR).(MINOR)` and
+bump all matching comments in one commit to keep the diff atomic.
 
 ### Adding a new field pattern
 

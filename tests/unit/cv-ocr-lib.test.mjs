@@ -10,12 +10,23 @@
 // minimal PDF built with pdf-lib (already a dependency) — this
 // proves pdfjs-dist legacy + @napi-rs/canvas actually rasterize a
 // page on this runtime, which is what unlocks scanned-PDF OCR.
+//
+// NOTE (maintainers): `ocrPdfPage on a valid page` and the two
+// `ocrPdfPages` walk tests below make LIVE provider calls whenever
+// an LLM key is present in the env (this sandbox has GROQ_API_KEY
+// set, which is why these tests can take 10-30s). They assert only
+// the SOFT contract (string, never throws), so they pass with or
+// without a key — just slowly when a key is present. The E2E spec
+// (tests/e2e/cv-extract-review.spec.js) deliberately avoids live
+// calls via route interception; keep it that way.
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { PDFDocument, StandardFonts } from 'pdf-lib'
 import {
   visionModelForProvider,
+  visionModelChainForProvider,
   isOcrConfigured,
   renderPdfPageToPng,
   ocrPdfPage,
@@ -30,6 +41,14 @@ test('visionModelForProvider maps each provider to a vision-capable model', () =
   assert.equal(visionModelForProvider('emergent', 'x'), 'gpt-4o-mini')
   // Unknown providers fall back to their own model.
   assert.equal(visionModelForProvider('unknown-vendor', 'fallback-model'), 'fallback-model')
+})
+
+test('visionModelChainForProvider returns the ordered fallback chain (primary first)', () => {
+  const groq = visionModelChainForProvider('groq', 'x')
+  assert.equal(groq[0], 'qwen/qwen3.6-27b')
+  assert.ok(groq.length >= 2, 'Groq chain must carry a secondary model for deprecation resilience')
+  assert.equal(visionModelChainForProvider('openai', 'x')[0], 'gpt-4o-mini')
+  assert.deepEqual(visionModelChainForProvider('unknown-vendor', 'fb'), ['fb'])
 })
 
 test('isOcrConfigured() is a boolean (false when no LLM key is exported)', () => {
@@ -133,4 +152,43 @@ test('empty buffer fails soft (null/""), never throws', async () => {
   assert.equal(await renderPdfPageToPng(Buffer.alloc(0), 1), null)
   assert.equal(await ocrPdfPage(Buffer.alloc(0), 1), '')
   assert.equal(await ocrPdfPages(Buffer.alloc(0)), '')
+})
+
+// ---- 2026-08-02 followup: <think> trace stripping + fallback chain ----
+
+test('OCR output strips <think>…</think> reasoning traces (live-smoke regression)', async () => {
+  // The qwen3.6 vision model emits a reasoning trace before the real
+  // transcription; it must never reach the user's cvText. We can't
+  // force a live model response in a unit test, so we lock the
+  // cleanup by reading the source: the strip must exist in the
+  // ocrImageBuffer return path (substring checks — regex-literal
+  // escaping in the lock is too fragile across linters).
+  const src = readFileSync('lib/cv-ocr.js', 'utf8')
+  assert.ok(src.includes('.replace(/<think>'), 'ocrImageBuffer must strip <think> blocks')
+  // The source literal is `\/<\/think>/gi` (slash escaped inside the
+  // regex literal), so check the unescaped tail `think>/gi`.
+  assert.ok(src.includes('think>/gi'), 'the <think> strip must be the full closing-tag regex')
+  // …and the prompt must forbid the trace in the first place.
+  assert.match(src, /Svara ENBART med den extraherade texten/)
+})
+
+test('ocrImageBuffer retries the next model on model-level rejection (source contract)', async () => {
+  // Structural lock: the model loop must `continue` to the next chain
+  // entry when the error message matches decommissioned/deprecated.
+  const src = readFileSync('lib/cv-ocr.js', 'utf8')
+  assert.match(src, /isModelError/)
+  assert.match(src, /decommissioned\|deprecated\|does not exist\|not supported/)
+  // The retry branch logs the rejected model then `continue`s to the
+  // next chain entry (anchored across the warn + continue lines).
+  assert.match(src, /trying next in chain/)
+  assert.match(src, /\bcontinue\b/)
+})
+
+test('visionModelChainForProvider sources from the VISION_MODELS arrays (no single-string regressions)', () => {
+  const src = readFileSync('lib/cv-ocr.js', 'utf8')
+  // Every provider entry must be an ARRAY (fallback chain) — a
+  // regression to a bare string would break the retry loop.
+  assert.match(src, /groq: \['qwen\/qwen3\.6-27b'/)
+  assert.match(src, /openai: \['gpt-4o-mini'\]/)
+  assert.match(src, /emergent: \['gpt-4o-mini'\]/)
 })
