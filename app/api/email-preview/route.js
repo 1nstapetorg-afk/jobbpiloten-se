@@ -48,7 +48,7 @@
 import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/mongo'
 import { z } from 'zod'
-import { generateEmailBody } from '@/lib/groq'
+import { generateEmailBody, fallbackEmailBody } from '@/lib/groq'
 import {
   getCurrentCount,
   incrementUsage,
@@ -170,10 +170,24 @@ export async function POST(request) {
   // who hits the cap on the extension can't bypass it via
   // onboarding. Documents intent: extension + onboarding share
   // the same monthly AI-spend pool.
+  //
+  // Round-80 / Bug 3 followup: the bookkeeping calls below were
+  // previously OUTSIDE the try — a Mongo hiccup in getCurrentCount
+  // escaped as an unhandled HTML 500, which the onboarding preview's
+  // `.json()` read as "Unexpected end of JSON input" (the same
+  // bug-2 class this bundle fixes). The cap check stays here (it
+  // must reject BEFORE burning tokens), but getCurrentCount is now
+  // wrapped so a transient DB error degrades to the soft-fail
+  // fallback body instead of an unhandled throw.
   const tier = profile.tier || 'Basic'
   const limit = getMonthlyLimitFor(tier)
   const m = monthKey()
-  const currentCount = await getCurrentCount(db, auth.userId, m)
+  let currentCount = 0
+  try {
+    currentCount = await getCurrentCount(db, auth.userId, m)
+  } catch (usageErr) {
+    console.error('[email-preview] getCurrentCount failed (degrading to fallback):', usageErr?.message || usageErr)
+  }
   const requestSize = 1
   if (!isWithinLimit(currentCount, requestSize, limit)) {
     const remaining = limit === Infinity ? null : Math.max(0, limit - currentCount)
@@ -236,11 +250,30 @@ export async function POST(request) {
       monthKey: m,
     })
   } catch (err) {
-    console.error('[email-preview] generateEmailBody failed:', err?.message)
-    return NextResponse.json(
-      { error: 'Tillfälligt fel — försök igen om en stund.' },
-      { status: 500 },
-    )
+    // Round-80 / Bug 3 fix — detailed error logging. The onboarding
+    // Step-4 "Förhandsvisa AI-mejl" button surfaced the generic
+    // "Tillfälligt fel" with no trail: log the stack + the profile
+    // state so a recurrence is diagnosable from the server log
+    // (was: only `err?.message`, no stack, no context).
+    console.error('[email-preview] generateEmailBody failed:', {
+      message: err?.message || String(err),
+      stack: err?.stack || '(no stack)',
+      profileComplete: !!profile,
+      profileKeys: profile ? Object.keys(profile).length : 0,
+      jobTitle,
+      company,
+    })
+    // Soft-fail to the rule-based template instead of a bare 500:
+    // the user still gets a usable preview body to read while
+    // reviewing onboarding Step 4, and the source discriminator
+    // tells the UI it was not AI-generated.
+    return NextResponse.json({
+      body: fallbackEmailBody({ jobTitle, company, profile }),
+      source: 'fallback',
+      cvShortWarning: !profile || !profile.cvSummary || String(profile.cvSummary).length < 500,
+      remaining: limit === Infinity ? null : Math.max(0, limit - currentCount),
+      monthKey: m,
+    })
   }
 }
 

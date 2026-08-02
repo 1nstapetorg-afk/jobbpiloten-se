@@ -85,6 +85,23 @@ export default async function middleware(req) {
 
   const clerkMw = clerkMiddleware(async (auth, req) => {
     if (isProtectedRoute(req)) {
+      // Round-80 / Bug 2 fix: API fetches must get a JSON 401, never
+      // an HTML /sign-in redirect. The dashboard's
+      // `fetch('/api/stats').then(r => r.json())` followed Clerk's
+      // sign-in redirect and then tried to parse the HTML login page
+      // as JSON — the "Failed to execute 'json' on 'Response':
+      // Unexpected end of JSON input" toast. Keep every /api
+      // consumer on a JSON contract (the catch-all route already
+      // 401s JSON with the same `{ error: 'Unauthorized' }` shape).
+      const url = new URL(req.url);
+      if (url.pathname.startsWith('/api/')) {
+        if (!auth.userId) {
+          return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+        // Authenticated API request — pass through; the route's own
+        // requireAuth (demo-cookie OR Clerk session) does the final gate.
+        return;
+      }
       await auth.protect();
     }
   });
@@ -114,6 +131,18 @@ export default async function middleware(req) {
     // markup (the pre-refinement NextResponse.next() leaked protected
     // HTML to anyone). For public routes, next() is fine.
     if (isProtectedRoute(req)) {
+      // Round-80 / Bug 2 fix: API fetches must get JSON 401, not an
+      // HTML /sign-in redirect. The dashboard's
+      // `fetch('/api/stats').then(r => r.json())` call followed the
+      // redirect to the sign-in page and then tried to parse HTML as
+      // JSON — the "Failed to execute 'json' on 'Response': Unexpected
+      // end of JSON input" toast. Returning `{ error: 'Unauthorized' }`
+      // keeps every /api consumer on a JSON contract (the catch-all
+      // route already 401s JSON for the same shape).
+      const url = new URL(req.url);
+      if (url.pathname.startsWith('/api/')) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
       const signInUrl = new URL('/sign-in', req.url);
       return NextResponse.redirect(signInUrl);
     }

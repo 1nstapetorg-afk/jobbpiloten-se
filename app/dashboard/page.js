@@ -39,6 +39,31 @@ import { locationsToLänCodes, doesJobMatchUserLocation } from '@/lib/swedishLoc
 import ProfileAvatar from '@/components/ProfileAvatar'
 
 /**
+ * Round-80 / Bug 2 fix — JSON parse guard. The dashboard fetches a
+ * handful of API endpoints on mount; if ANY of them returns a
+ * non-JSON body (an HTML /sign-in redirect page from Clerk middleware,
+ * a proxy error page, an empty 500 body), the raw `r.json()` throws
+ * "Failed to execute 'json' on 'Response': Unexpected end of JSON
+ * input" and the whole Promise.all rejects — blanking every tile.
+ * This helper reads the body defensively and returns `{}` on any
+ * parse failure so callers never crash on a misbehaving route.
+ */
+async function readJsonSafely(res) {
+  try {
+    if (!res) return {}
+    // Only attempt JSON when the response actually claims JSON — an
+    // HTML error page / redirect target would fail the parse anyway.
+    const contentType = String(res.headers?.get?.('content-type') || '')
+    if (contentType && !/application\/json|text\/json/i.test(contentType)) {
+      return {}
+    }
+    return await res.json()
+  } catch {
+    return {}
+  }
+}
+
+/**
  * Read the best e-postadress from a Clerk-or-demo `user` object.
  * Mirrors the helper in app/onboarding/page.js so the two paths stay
  * aligned if either changes.
@@ -806,12 +831,16 @@ function DashboardContent() {
 
   const load = async () => {
     try {
+      // Round-80 / Bug 2 fix: read each response through the JSON
+      // guard so one non-JSON response (HTML redirect, proxy error
+      // page) can never crash the whole tile row with "Unexpected
+      // end of JSON input".
       const [s, a, p, sub, push] = await Promise.all([
-        fetch('/api/stats').then(r => r.json()),
-        fetch('/api/applications').then(r => r.json()),
-        fetch('/api/profile').then(r => r.json()),
-        fetch('/api/subscription').then(r => r.json()),
-        fetch('/api/push-status').then(r => r.json()),
+        fetch('/api/stats').then(readJsonSafely),
+        fetch('/api/applications').then(readJsonSafely),
+        fetch('/api/profile').then(readJsonSafely),
+        fetch('/api/subscription').then(readJsonSafely),
+        fetch('/api/push-status').then(readJsonSafely),
       ])
       // 401 on /api/profile means the demo cookie is missing or has
       // expired (the cookie carries a 30-day TTL; if the user wipes
@@ -866,7 +895,8 @@ function DashboardContent() {
       const flag = override ? '&allSweden=1' : ''
       const pageParam = page > 0 ? `&page=${page}` : ''
       const res = await fetch(`/api/jobs-available?query=${encodeURIComponent(query)}&location=${encodeURIComponent(location)}${flag}${pageParam}`)
-      const json = await res.json()
+      // Round-80 / Bug 2: guard — a non-JSON response must not crash the page.
+      const json = await readJsonSafely(res)
       const newJobs = json.jobs || []
       setAvailableJobs(append ? [...availableJobs, ...newJobs] : newJobs)
       setSearchMode(json.searchMode || 'strict')
@@ -916,12 +946,12 @@ function DashboardContent() {
       const flag = forceAllSweden ? '&allSweden=1' : ''
       const res = await fetch(`/api/jobs-available?query=${encodeURIComponent(query)}&location=${encodeURIComponent(location)}${flag}&page=${nextPage}`)
       if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}))
+        const errJson = await readJsonSafely(res)
         const msg = (errJson?.error || `Servern returnerade ${res.status}`).toString().slice(0, 120)
         toast.error('Kunde inte hämta fler jobb: ' + msg)
         return
       }
-      const json = await res.json()
+      const json = await readJsonSafely(res)
       const newJobs = Array.isArray(json?.jobs) ? json.jobs : []
       if (newJobs.length === 0 && !json?.hasMore) {
         // Server signalled end-of-stream with an empty page — make
@@ -1002,7 +1032,8 @@ function DashboardContent() {
           externalId: job.externalId != null ? String(job.externalId) : null,
         }),
       })
-      const json = await res.json()
+      // Round-80 / Bug 2: guard — a non-JSON response must not crash.
+      const json = await readJsonSafely(res)
       if (json.ok) {
         setPrepApplication(json.application)
         // Bug #4 — merge Clerk user data into the profile shown in the
@@ -1097,7 +1128,8 @@ function DashboardContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ applicationId }),
       })
-      const json = await res.json()
+      // Round-80 / Bug 2: guard — a non-JSON response must not crash.
+      const json = await readJsonSafely(res)
       if (json.ok) {
         // Show success state in the modal instead of auto-closing it.
         // The "Mark as applied" button transforms to a disabled ✓ state.
@@ -1122,7 +1154,8 @@ function DashboardContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ applicationId, employerResponse }),
       })
-      const json = await res.json()
+      // Round-80 / Bug 2: guard — a non-JSON response must not crash.
+      const json = await readJsonSafely(res)
       if (json.ok) {
         await load()
         toast.success('Markerad som bekräftad!')
@@ -1254,7 +1287,9 @@ function DashboardContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ applicationId: prepApplication.id }),
       })
-      const json = await res.json()
+      // Round-80 / Bug 2: guard — a non-JSON response must surface the
+      // server's status, never a "Failed to execute 'json'" toast.
+      const json = await readJsonSafely(res)
       if (res.ok && json.ok && json.coverLetter) {
         setPrepApplication(prev => prev ? { ...prev, coverLetter: json.coverLetter } : prev)
         toast.success('Nytt brev skrivet!')
@@ -1271,7 +1306,8 @@ function DashboardContent() {
     setApplying(true)
     try {
       const res = await fetch('/api/apply-now', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
-      const json = await res.json()
+      // Round-80 / Bug 2: guard — a non-JSON response must not crash.
+      const json = await readJsonSafely(res)
       if (json.ok) {
         setPrepApplication(json.application)
         // Bug #4 — same merge as in openPrepModal: pulls Clerk email/name
@@ -1296,7 +1332,8 @@ function DashboardContent() {
   const loadCronLogs = async () => {
     try {
       const res = await fetch('/api/cron')
-      const json = await res.json()
+      // Round-80 / Bug 2: guard — a non-JSON response must not crash.
+      const json = await readJsonSafely(res)
       setCronLogs(json.logs || [])
     } catch (e) {
       console.error('loadCronLogs err', e)
@@ -1384,7 +1421,8 @@ function DashboardContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       })
-      const json = await res.json()
+      // Round-80 / Bug 2: guard — a non-JSON response must not crash.
+      const json = await readJsonSafely(res)
       if (json.ok) {
         toast.success(`Cron kördes! ${json.results?.length || 0} prenumeranter behandlades.`)
         await loadCronLogs()

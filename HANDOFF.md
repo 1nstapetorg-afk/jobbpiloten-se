@@ -814,6 +814,30 @@ curl -X POST http://localhost:3000/api/cron | jq
 
 # Staging/prod (with CRON_SECRET):
 curl -X POST -H "x-cron-secret: $CRON_SECRET" https://jobbpiloten.se/api/cron | jq
+
+### ⚠️ 2026-08-02 — Production domain SSL broken (ERR_SSL_PROTOCOL_ERROR)
+
+`https://jobbpiloten.se` resolves via DNS to **217.160.0.75** — a 1&1
+IONOS host, NOT Vercel. The IONOS server answers TLS with an
+"internal error" alert (mismatched cert), so browsers show
+ERR_SSL_PROTOCOL_ERROR on /dashboard while the Codespaces preview
+works fine.
+
+**Root cause:** the domain's DNS A/AAAA records point at the old
+registrar host instead of Vercel.
+
+**Fix (DNS registrar, ~5 min, no code deploy):**
+1. Add `jobbpiloten.se` (+ `www.jobbpiloten.se`) in Vercel →
+   Project → Settings → Domains.
+2. Point the apex A record at `76.76.21.21` (Vercel's anycast IP)
+   and/or CNAME `www` → `cname.vercel-dns.com`.
+3. Wait for Vercel to auto-issue the cert (~1 h) — status shows
+   "Valid" in the Domains tab.
+4. Verify: `curl -sv https://jobbpiloten.se/dashboard` should show
+   a Vercel cert chain + 200.
+
+Verify DNS before/after with: `dig +short jobbpiloten.se` (expected
+`76.76.21.21`) — currently returns `217.160.0.75` (IONOS).
 ```
 Expected: `{ ok: true, cron: "ran", results: [ { clerkId, status: "success", newCount: N } ] }`
 Verify `cron_logs` collection: rows with `action: "cron_run"` and `pushNotification.sent > 0`.

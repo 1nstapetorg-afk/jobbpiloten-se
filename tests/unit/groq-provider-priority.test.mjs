@@ -313,3 +313,38 @@ test('Round-80: isModelLevelError matches decommissioned models but NOT rate lim
   )
   assert.equal(isModelLevelError('ECONNRESET read ECONNRESET'), false)
 })
+
+// ---- Round-80 / Bug 4: <think> reasoning-trace strip ----
+
+test('Round-80 Bug 4: stripReasoningTraces removes closed <think> blocks + truncated traces', async () => {
+  const { stripReasoningTraces } = await import('../../lib/groq.js')
+  // Closed block mid-text (the qwen live pattern from the OCR smoke).
+  assert.equal(
+    stripReasoningTraces('Hej Volvo,<think>Jag borde nämna min React-erfarenhet här.</think> jag har erfarenhet av React.'),
+    'Hej Volvo, jag har erfarenhet av React.',
+  )
+  // Leading truncated trace (unclosed <think> cut by max_tokens) —
+  // stripped up to the first blank line.
+  assert.equal(
+    stripReasoningTraces('<think>Här börjar resonemanget som avbröts\n\nHej Volvo, jag skriver brevet.'),
+    'Hej Volvo, jag skriver brevet.',
+  )
+  // Clean output passes through untouched.
+  const clean = 'Hej Volvo, det var med stort intresse jag såg annonsen.'
+  assert.equal(stripReasoningTraces(clean), clean)
+  // Non-string input is a no-op.
+  assert.equal(stripReasoningTraces(null), null)
+  assert.equal(stripReasoningTraces(undefined), undefined)
+})
+
+test('Round-80 Bug 4: every LLM text-output path calls stripReasoningTraces before returning', () => {
+  // The five generation paths (cover letter, answer, adaptive answer,
+  // email body, generateText) must ALL strip reasoning traces — a
+  // future refactor that re-introduces a raw `.content` return would
+  // leak <think> into the dashboard modal again. Count executable
+  // strip calls (comments may reference the helper for docs).
+  const stripCalls = SRC.split('\n').filter(
+    (l) => l.includes('stripReasoningTraces(text)') || l.includes('stripReasoningTraces(text\n') || l.includes('stripReasoningTraces(String(text)'),
+  )
+  assert.ok(stripCalls.length >= 5, `all 5 generation paths must strip reasoning traces — found ${stripCalls.length} call sites`)
+})
