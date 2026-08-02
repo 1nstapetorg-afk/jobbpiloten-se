@@ -22,7 +22,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { MongoClient } from 'mongodb';
+import { getDb } from '@/lib/mongo';
 import { buildExtensionProfile } from '@/lib/extension-profile';
 // Round-46 / Followup 3 (2026-07-20 Monday): central profile-
 // completeness predicate. See lib/profile-check.js for the canonical
@@ -37,18 +37,7 @@ import { isProfileComplete } from '@/lib/profile-check';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// ---- Mongo singleton ----
-let clientPromise;
-if (!global._mongoClientPromise) {
-  const client = new MongoClient(process.env.MONGO_URL || 'mongodb://localhost:27017/jobbpiloten');
-  global._mongoClientPromise = client.connect();
-}
-clientPromise = global._mongoClientPromise;
-
-async function getDb() {
-  const client = await clientPromise;
-  return client.db(process.env.DB_NAME);
-}
+// ---- Mongo singleton — shared self-healing helper (lib/mongo.js) ----
 
 /**
  * Resolve `clerkId` from the bearer token. We never accept the raw

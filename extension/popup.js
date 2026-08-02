@@ -334,7 +334,7 @@ async function resolveEnvAuthBaseUrl() {
           }
         } catch (_) { /* ignore — fall through to allowlist check */ }
       }
-      if (tabOrigin && isOriginInHostAllowlist(tabOrigin)) {
+      if (tabOrigin && isJobbPilotenAppOrigin(tabOrigin)) {
         return tabOrigin
       }
     }
@@ -390,24 +390,96 @@ function hostPatternToRegex(pattern) {
   return new RegExp('^' + body + '(?:/.*)?$')
 }
 
-function isOriginInHostAllowlist(origin) {
+// 2026-08-02 (Chromebook blank-tab fix) — JobbPiloten APP-origin
+// allowlist. DISTINCT from the manifest host_permissions list: the
+// manifest legitimately includes webmail + job-board hosts
+// (mail.google.com, outlook.*, arbetsformedlingen.se, blocket.se)
+// because the content scripts fetch FROM them (email-compose AI,
+// job scraper). Those hosts must NEVER be adopted as the dashboard
+// origin — doing so made "Anslut din profil" open
+// `https://www.arbetsformedlingen.se/extension-auth` (a completely
+// blank page on the job board's server) whenever the user clicked
+// connect while browsing a job site — exactly the Chromebook report.
+// Only JobbPiloten deployment origins may host /extension-auth.
+// NOTE (2026-08-02): `https://*.vercel.app/*` matches ANY Vercel
+// deployment, including attacker-controlled ones — Tier A would
+// adopt `https://evil.vercel.app` as the base URL if a user visited
+// it. Deliberately kept: the JobbPiloten preview branches live on
+// Vercel, and the downstream gates (openAuthFlow's fail-closed
+// check, the handshake origin gate, the server's own token mint)
+// still require a real session to produce a usable token. Same
+// accepted surface as the pre-existing manifest host_permissions
+// wildcard — narrowing this further would break previews.
+const JOBBPILOTEN_APP_ORIGIN_PATTERNS = [
+  'https://jobbpiloten.se/*',
+  'https://*.vercel.app/*',
+  'https://*.preview.emergentagent.com/*',
+  'https://*.preview.app.github.dev/*',
+  'http://localhost:*/*',
+  'http://127.0.0.1:*/*',
+]
+
+function isJobbPilotenAppOrigin(origin) {
   try {
-    const manifest = chrome.runtime.getManifest()
-    const hostPerms = Array.isArray(manifest?.host_permissions) ? manifest.host_permissions : []
-    for (const pattern of hostPerms) {
-      if (!pattern || typeof pattern !== 'string') continue
+    for (const pattern of JOBBPILOTEN_APP_ORIGIN_PATTERNS) {
       const re = hostPatternToRegex(pattern)
       // The trailing-`/*`-strip in hostPatternToRegex makes the
       // bare-origin test work, so a single re.test(origin) call
-      // matches both "https://x.com" and "https://x.com/anything".
+      // matches both "https://jobbpiloten.se" and
+      // "https://jobbpiloten.se/anything".
       if (re && re.test(origin)) return true
     }
   } catch (_) {
-    // chrome.runtime.getManifest unavailable in test/headless
-    // contexts — the gate is "fail closed" then; resolveEnvAuthBaseUrl
-    // falls through to Tier B which doesn't consult the manifest.
+    // hostPatternToRegex only throws on malformed patterns — all
+    // entries above are static and valid, so this is unreachable
+    // unless a future edit corrupts the list. Fail closed.
   }
   return false
+}
+
+// 2026-08-02 (Chromebook blank-tab fix) — ChromeOS detection. On
+// Chrome OS `chrome.windows.create({ type: 'popup' })` is unreliable:
+// in tablet mode and on managed Chromebooks the popup window can
+// open BLANK or be refused outright, while `chrome.tabs.create` (a
+// regular tab) always renders. We prefer the tab on ChromeOS and
+// keep the popup-window ladder everywhere else.
+function detectChromeOS() {
+  try {
+    const uaData = navigator.userAgentData
+    if (uaData && typeof uaData.platform === 'string') {
+      return /CrOS|ChromeOS|Chrome OS/i.test(uaData.platform)
+    }
+  } catch (_) { /* fall through to UA sniffing */ }
+  try {
+    return /CrOS|Chrome OS|X11; CrOS/i.test(navigator.userAgent || '')
+  } catch (_) {
+    return false
+  }
+}
+
+// 2026-08-02 (Chromebook blank-tab fix) — auth-flow debug trail.
+// Every step of the popup→callback→token→storage journey appends a
+// short record to chrome.storage.local (jobbpiloten_auth_debug) so a
+// tester on a device where the flow fails (e.g. a Chromebook) can
+// open the service-worker console / popup devtools and see EXACTLY
+// which step broke. Records are capped; tokens are never logged.
+//
+// Consts live directly ABOVE the function (not at the bottom of the
+// file like AUTH_HANDSHAKE_TIMEOUT_MS) — this file has a documented
+// TDZ-crash history (Round-72.2 / Round-73), and keeping the keys in
+// the same module region as their consumer removes any chance a
+// future synchronous call before the consts' line is reached throws
+// a ReferenceError at runtime.
+const AUTH_DEBUG_KEY = 'jobbpiloten_auth_debug'
+const AUTH_DEBUG_MAX = 20
+async function pushAuthDebug(step, detail) {
+  try {
+    const prev = await chrome.storage.local.get(AUTH_DEBUG_KEY)
+    const buf = Array.isArray(prev[AUTH_DEBUG_KEY]) ? prev[AUTH_DEBUG_KEY] : []
+    buf.push({ step, ts: new Date().toISOString(), ...(detail || {}) })
+    while (buf.length > AUTH_DEBUG_MAX) buf.shift()
+    await chrome.storage.local.set({ [AUTH_DEBUG_KEY]: buf })
+  } catch (_) { /* non-fatal — debugging aid only */ }
 }
 
 async function loadAllowedOrigins() {
@@ -822,6 +894,17 @@ async function handleAuthHandshake(ev) {
     console.warn('[jobbpiloten popup] rejecting handshake from untrusted origin:', origin)
     return
   }
+  // 2026-08-02 (Chromebook blank-tab fix) — additional app-origin
+  // gate. openAuthFlow only ever opens the auth window on a
+  // JobbPiloten app origin (Tier A + fail-closed guard above), so a
+  // handshake from anywhere else is spoofing — reject before parsing
+  // the payload even though loadAllowedOrigins (which is also the
+  // fetch origin allowlist, legitimately including webmail/job-board
+  // hosts) would have admitted it.
+  if (!isJobbPilotenAppOrigin(normalizedOrigin)) {
+    console.warn('[jobbpiloten popup] rejecting handshake from non-JobbPiloten app origin:', normalizedOrigin)
+    return
+  }
   if (data.ok !== true) {
     setStatus({ error: data.error || 'Anslutningen misslyckades — försök igen.' })
     return
@@ -831,6 +914,10 @@ async function handleAuthHandshake(ev) {
     setStatus({ error: 'Anslutningen returnerade en ogiltig token — försök igen.' })
     return
   }
+  // AUTH-DEBUG step 4 — the auth window delivered a handshake with
+  // a valid-shaped token. Step 5 (storage) is logged after the write
+  // below. Token is never logged — only its origin + presence.
+  await pushAuthDebug('step4-handshake', { origin: normalizedOrigin })
   const profile = (data.profile && typeof data.profile === 'object') ? data.profile : null
   if (!profile) {
     setStatus({ error: 'Anslutningen returnerade en tom profil — logga in på nytt.' })
@@ -855,9 +942,13 @@ async function handleAuthHandshake(ev) {
       ...(data.expiresAt ? { [STORAGE_KEYS.expiresAt]: data.expiresAt } : {}),
     })
   } catch (e) {
+    await pushAuthDebug('step5-storage-error', { error: String(e?.message || e).slice(0, 200) })
     setStatus({ error: 'Kunde inte spara token lokalt: ' + (e?.message || String(e)) })
     return
   }
+  // AUTH-DEBUG step 5 — token + profile persisted to storage.local
+  // (the read-priority store for popup + content scripts).
+  await pushAuthDebug('step5-stored', { profileKeys: Object.keys(profile).length })
   try {
     await chrome.storage.sync.set({
       [STORAGE_KEYS.token]: token,
@@ -901,12 +992,23 @@ async function openAuthFlow() {
     btn.textContent = 'Öppnar anslutningsfönster…'
   }
   setStatus({ connected: false, profile: null, error: undefined })
+  // AUTH-DEBUG step 1 — user clicked the connect button.
+  await pushAuthDebug('step1-clicked', {})
   try {
     // v0.2.3 — use the env-aware wrapper so a popup opened while
     // on a JobbPiloten preview branch opens the auth window on
     // THAT branch (not the hard-coded production origin). Active
     // tab is gated against `host_permissions` (incl. wildcards) so
     // a DNS-rebinding origin can't smuggle past the resolver.
+    //
+    // 2026-08-02 (Chromebook blank-tab fix): Tier A now gates on
+    // isJobbPilotenAppOrigin (JobbPiloten deployment origins only)
+    // instead of isOriginInHostAllowlist (the manifest host_permissions
+    // list, which legitimately includes webmail + job-board hosts for
+    // the content-script fetch paths). The old gate made "Anslut din
+    // profil" open `https://www.arbetsformedlingen.se/extension-auth`
+    // (blank page) whenever the active tab was a job board — the
+    // Chromebook report.
     const dashboardOrigin = await resolveEnvAuthBaseUrl()
     const baseUrl = dashboardOrigin
     // 2026-07-12 — prefer chrome.windows.create with a small popup
@@ -918,47 +1020,91 @@ async function openAuthFlow() {
     // path; on the rarest popup-blocked configurations it leaves
     // the URL in the auth-button hint copy.
     const url = `${baseUrl.replace(/\/$/, '')}/extension-auth`
-    let opened = false
-    try {
-      // chrome.windows expects width / height in pixels; the popup
-      // window is small enough to feel like a native dialog.
-      const win = await chrome.windows.create({
-        url,
-        type: 'popup',
-        width: 480,
-        height: 720,
-        focused: true,
+    // AUTH-DEBUG step 2 — the exact URL that will be opened.
+    await pushAuthDebug('step2-url', { url })
+    // 2026-08-02 (Chromebook blank-tab fix) — FAIL-CLOSED origin
+    // guard. If the resolver ever returns a non-JobbPiloten origin
+    // (stale storage, manifest drift, a future Tier-A regression)
+    // we refuse to open a window at all — a blank/404 page on a
+    // third-party host is worse than an inline error.
+    let authOrigin = ''
+    try { authOrigin = new URL(url).origin } catch (_) { /* fall through */ }
+    if (!authOrigin || !isJobbPilotenAppOrigin(authOrigin)) {
+      console.error('[jobbpiloten popup] refusing to open auth URL on non-JobbPiloten origin:', url)
+      await pushAuthDebug('step2-refused', { url })
+      // The offending URL is included in the user-facing error so a
+      // Chromebook user can relay it to support without opening
+      // devtools (the URL is safe to display — it's a JobbPiloten
+      // or third-party origin, never a secret).
+      setStatus({
+        error: `Kunde inte öppna anslutningssidan (ogiltig adress: ${url}). Öppna jobbpiloten.se och försök igen.`,
       })
-      authHandshakeState.windowId = win && win.id != null ? win.id : null
-      authHandshakeState.received = false
-      opened = true
-      // Watch for the window being closed without delivering the
-      // handshake (user cancelled, popup-blocked, auth API errored).
-      // 30 s is generous — the mint + delivery round-trip is sub-second.
-      authHandshakeState.timer = setTimeout(() => {
-        if (!authHandshakeState.received) {
-          setStatus({
-            error: 'Anslutningen tog för länge — försök igen eller öppna Dashboard manuellt.',
-          })
-          authHandshakeState.timer = null
-        }
-      }, AUTH_HANDSHAKE_TIMEOUT_MS)
+      if (btn) {
+        btn.disabled = false
+        btn.textContent = 'Anslut din profil'
+      }
+      return
+    }
+    let opened = false
+    // 2026-08-02 (Chromebook blank-tab fix) — ChromeOS tab-first.
+    // On Chrome OS, chrome.windows.create({ type: 'popup' }) can open
+    // a BLANK window (esp. tablet mode / managed Chromebooks); a
+    // regular tab via chrome.tabs.create always renders. We skip the
+    // popup-window rung on ChromeOS and let the ladder start at
+    // tabs.create. On every other platform the popup window stays the
+    // preferred path.
+    const isChromeOS = detectChromeOS()
+    try {
+      if (!isChromeOS) {
+        // chrome.windows expects width / height in pixels; the popup
+        // window is small enough to feel like a native dialog.
+        const win = await chrome.windows.create({
+          url,
+          type: 'popup',
+          width: 480,
+          height: 720,
+          focused: true,
+        })
+        authHandshakeState.windowId = win && win.id != null ? win.id : null
+        authHandshakeState.received = false
+        opened = true
+        // Watch for the window being closed without delivering the
+        // handshake (user cancelled, popup-blocked, auth API errored).
+        // 30 s is generous — the mint + delivery round-trip is sub-second.
+        authHandshakeState.timer = setTimeout(() => {
+          if (!authHandshakeState.received) {
+            setStatus({
+              error: 'Anslutningen tog för länge — försök igen eller öppna Dashboard manuellt.',
+            })
+            authHandshakeState.timer = null
+          }
+        }, AUTH_HANDSHAKE_TIMEOUT_MS)
+        await pushAuthDebug('step3-opened-window', { url, windowId: authHandshakeState.windowId })
+      } else {
+        console.info('[jobbpiloten popup] ChromeOS detected — using tabs.create (popup windows can render blank on Chromebook)')
+        await pushAuthDebug('step3-chromeos-tab', { url })
+      }
     } catch (e) {
       console.warn('[jobbpiloten popup] windows.create failed, trying tabs.create:', e?.message || e)
+    }
+    if (!opened) {
       try {
         await chrome.tabs.create({ url })
         opened = true
+        await pushAuthDebug('step3-opened-tab', { url })
       } catch (e2) {
         console.warn('[jobbpiloten popup] tabs.create failed, trying window.open:', e2?.message || e2)
         try {
           const win = window.open(url, '_blank', 'width=480,height=720,noopener')
           opened = !!win
+          if (opened) await pushAuthDebug('step3-opened-window-open', { url })
         } catch (e3) {
           console.error('[jobbpiloten popup] all auth-window strategies failed:', e3?.message || e3)
         }
       }
     }
     if (!opened) {
+      await pushAuthDebug('step3-failed-all', { url })
       setStatus({
         error: 'Kunde inte öppna anslutningsfönster. Tillåt popup-fönster eller öppna Dashboard manuellt.',
       })
@@ -972,6 +1118,8 @@ async function openAuthFlow() {
     // button in its "loading" state while the round-trip is live so
     // a double-click can't open two auth windows.
   } catch (e) {
+    console.error('[jobbpiloten popup] openAuthFlow threw:', e?.message || e)
+    await pushAuthDebug('step1-error', { error: String(e?.message || e).slice(0, 200) })
     if (btn) {
       btn.disabled = false
       btn.textContent = 'Anslut din profil'

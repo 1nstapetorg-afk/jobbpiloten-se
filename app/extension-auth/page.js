@@ -291,9 +291,28 @@ export default function ExtensionAuthPage() {
   // flips to { user: null } when there's no Clerk session OR a
   // demo cookie. We re-render to the SIGN_IN state in that case.
   useEffect(() => {
-    if (!isLoaded) return
-    if (user) mintAndDeliver()
-    else setPhase(PHASE.SIGN_IN)
+    // 2026-08-02 (Chromebook blank-tab fix) — step-log the callback
+    // page's own lifecycle so a tester can confirm the page LOADED
+    // (vs a blank tab) and where the session check landed. These
+    // console.info lines mirror the AUTH-DEBUG trail in
+    // extension/popup.js — grep `[extension-auth]` in the auth
+    // window's devtools to reconstruct the flow.
+    console.info('[extension-auth] step a: page loaded', {
+      origin: window.location.origin,
+      href: window.location.href.slice(0, 120),
+      hasOpener: !!window.opener,
+    })
+    if (!isLoaded) {
+      console.info('[extension-auth] step b: session still loading…')
+      return
+    }
+    if (user) {
+      console.info('[extension-auth] step b: signed in — minting token')
+      mintAndDeliver()
+    } else {
+      console.info('[extension-auth] step b: not signed in — rendering SignIn widget')
+      setPhase(PHASE.SIGN_IN)
+    }
   }, [isLoaded, user, mintAndDeliver])
 
   // ---- Renders ----

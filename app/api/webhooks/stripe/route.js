@@ -5,7 +5,7 @@
 import { NextResponse } from 'next/server';
 import { headers } from 'next/headers';
 import { getStripe } from '@/lib/stripe';
-import { MongoClient } from 'mongodb';
+import { getDb } from '@/lib/mongo';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,18 +16,10 @@ export const dynamic = 'force-dynamic';
 // route copy-paste). The POST handler below null-guards the result
 // before any `stripe.webhooks.constructEvent(...)` call.
 
-// Reuse Mongo singleton
-let clientPromise;
-if (!global._mongoClientPromise) {
-  const client = new MongoClient(process.env.MONGO_URL || 'mongodb://localhost:27017/jobbpiloten');
-  global._mongoClientPromise = client.connect();
-}
-clientPromise = global._mongoClientPromise;
-
-async function getDb() {
-  const c = await clientPromise;
-  return c.db(process.env.DB_NAME);
-}
+// DB access uses the shared self-healing Mongo singleton from
+// lib/mongo.js (Round-80) — fail-fast server selection (Round-84)
+// so a DB outage surfaces as a fast, friendly error, never a 30s
+// hang or a raw connection-string leak.
 
 function tierFromPriceId(priceId) {
   const map = {

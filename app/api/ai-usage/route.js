@@ -20,26 +20,14 @@
  */
 
 import { NextResponse } from 'next/server';
-import { MongoClient } from 'mongodb';
+import { getDb } from '@/lib/mongo';
 import { requireAuth } from '@/lib/auth';
 import { getUsageSnapshot } from '@/lib/ai-usage';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// ---- Mongo singleton (mirror lib/groq.js & extension routes so we
-// don't open new pools per request in serverless deployment) ----
-let clientPromise;
-if (!global._mongoClientPromise) {
-  const client = new MongoClient(process.env.MONGO_URL || 'mongodb://localhost:27017/jobbpiloten');
-  global._mongoClientPromise = client.connect();
-}
-clientPromise = global._mongoClientPromise;
-
-async function getDb() {
-  const client = await clientPromise;
-  return client.db(process.env.DB_NAME);
-}
+// ---- Mongo singleton — shared self-healing helper (lib/mongo.js) ----
 
 // Auth gate uses the canonical helper from `@/lib/auth` so the
 // 401 message contract (`'Unauthorized' / 'Unauthorized — logga

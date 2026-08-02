@@ -83,7 +83,7 @@ Six env-driven price IDs. `PRICE_MAP` in `app/api/[[...path]]/route.js` maps `Ti
 |---|---|---|
 | `mongodb` | **6.6.0** | Native driver. **NO Prisma. NO Mongoose.** |
 
-Connection pattern: singleton on `global._mongoClientPromise` in every route that touches DB (see `app/api/[[...path]]/route.js` around line 55).
+Connection pattern: **one shared, self-healing singleton** in `lib/mongo.js` — `getDb()` lazily creates + connects the client on first use and clears the cached connect-promise on rejection so a transient Mongo outage can't poison every later request (Round-80; the old per-route `global._mongoClientPromise = client.connect()` copy had a poisoned-promise bug). All 18 routes that touch DB import `getDb` from `@/lib/mongo`. Client held on `global._jobbpilotenMongoClient` for dev-mode hot-reload safety.
 
 ### AI / LLM
 | Package | Version | Notes |
@@ -110,7 +110,7 @@ Connection pattern: singleton on `global._mongoClientPromise` in every route tha
 | Package | Version | Notes |
 |---|---|---|
 | `@playwright/test` | ^1.61.1 | E2E specs in `tests/e2e/`. Config: `playwright.config.js`. |
-| **Unit tests** | `node --test` via `find tests/unit -name '*.test.mjs'` | 78 unit test files as of 2026-07-14. |
+| **Unit tests** | `node --test` via `node scripts/run-unit-tests.mjs` | 109 unit test files as of 2026-08-02 (1190 tests pass / 0 fail). |
 | `acorn` | ^8.17.0 | Used by unit tests for AST-level structural locks. |
 | `globals` | 16.2.0 | |
 
@@ -164,7 +164,7 @@ Connection pattern: singleton on `global._mongoClientPromise` in every route tha
 │   │
 │   ├── onboarding/page.js           (572 lines) 4-step form: career, personal, preferences, CV summary. Pre-fills from Clerk user. Redirects to /dashboard if profile exists.
 │   ├── dashboard/page.js            (2899 lines) THE main app. Stats, jobs-available, applications table with filter tabs, star toggle, AI regenerate, PDF download, cron manual trigger, push toggle, extension install banner, upgrade banner. Has a `.bak-final` file next to it — safe to delete (see §7).
-│   ├── settings/page.js             (2758 lines) Profile edit, CV upload (PDF/DOCX), subscription management (Customer Portal), notification preferences, push toggle, avatar picker (16 avatars, 5 rarity tiers), extension setup, GDPR export/delete, style-presets picker.
+│   ├── settings/page.js             (2758 lines) Profile edit, CV upload (PDF/DOCX/image via OCR), subscription management (Customer Portal), notification preferences, push toggle, avatar picker (16 avatars, 5 rarity tiers), extension setup, GDPR export/delete, style-presets picker.
 │   │
 │   ├── extension-auth/page.js       Chrome extension OAuth bridge — receives token from popup, syncs to chrome.storage.
 │   ├── extension-install/page.js    Static install guide for the extension.
@@ -191,7 +191,7 @@ Connection pattern: singleton on `global._mongoClientPromise` in every route tha
 │       │   ├── email/route.js       Standalone endpoint for email-based application drafts.
 │       │   └── recent/route.js      Feed of the user's most recent applications.
 │       ├── cv-enhance/route.js      Groq-powered CV rewrite.
-│       ├── cv-ocr/route.js          STUBBED: returns 501. Real OCR (tesseract.js + swe+eng) deferred to v0.4.0.
+│       ├── cv-ocr/route.js          STUBBED: returns 501 (API-contract stub kept). Real OCR moved to `lib/cv-ocr.js` + `lib/cv-extract.js` (Round-80, LLM vision).
 │       ├── cv-pdf/route.js          Render user's CV as PDF preview.
 │       ├── email-draft/route.js     Groq draft for the "email application" flow.
 │       ├── email-preview/route.js   Preview handler for the same.
@@ -199,7 +199,7 @@ Connection pattern: singleton on `global._mongoClientPromise` in every route tha
 │       ├── saved-answers/[id]/route.js  DELETE handler for saved answers.
 │       ├── saved-jobs/route.js      List saved jobs (star toggle back-end).
 │       ├── track/route.js           Analytics beacon.
-│       ├── upload-cv/route.js       Multipart CV upload (PDF/DOCX → text via pdf-parse/mammoth → Groq summary).
+│       ├── upload-cv/route.js       Multipart CV upload. PDF/DOCX → text via pdfjs-dist/mammoth; PNG/JPG/WebP → LLM-vision OCR (lib/cv-ocr.js); scanned PDFs OCR'd before IMAGE_ONLY_PDF; structured fields via lib/cv-extract.js → `aiExtracted` for the review panel. Upserts so an onboarding pre-profile upload survives.
 │       └── extension/               Chrome extension backend (bearer-token authenticated, NOT Clerk):
 │           ├── token/route.js       Mint short-lived bearer token from Clerk session.
 │           ├── profile/route.js     Fetch user profile via bearer token.
@@ -211,7 +211,7 @@ Connection pattern: singleton on `global._mongoClientPromise` in every route tha
 ├── components/                      React components (all .jsx)
 │   ├── avatars.jsx                  16 avatar SVGs (Piloten, Navigatören, Strategen, ..., Visionären, Mystikern).
 │   ├── ProfileAvatar.jsx            Client-side avatar renderer.
-│   ├── CVFileUpload.jsx             Drag+drop CV upload with progress.
+│   ├── CVFileUpload.jsx             Drag+drop CV upload with progress + editable "AI-extraherade uppgifter från CV:t" review panel (skills/experience/education/summary → Spara till profil via /api/profile-update).
 │   ├── CookieConsent.jsx            Cookie banner (respects Cookies policy).
 │   ├── DemoBanner.jsx               "You are in demo mode" banner (hidden when Clerk configured).
 │   ├── ErrorBoundary.jsx            React error boundary wrapper.
@@ -229,7 +229,10 @@ Connection pattern: singleton on `global._mongoClientPromise` in every route tha
 │   ├── auth.js                      requireAuth(request), resolveClerkId, getDemoUserId. See §5.2.
 │   ├── auth-cookie.js               Demo session cookie set/get + localStorage bootstrap.
 │   ├── clerk-config.js              isClerkConfiguredServer() / isClerkConfiguredClient() — the CANONICAL "is Clerk on?" check.
-│   ├── groq.js                      (937 lines) LLM entry point: generateCoverLetter, generateEmailBody, style-preset injection, industry-mismatch guard, transferable-skills builder. Falls back to rule-based template if no provider key.
+│   ├── groq.js                      (937 lines) LLM entry point: generateCoverLetter, generateEmailBody, style-preset injection, industry-mismatch guard, transferable-skills builder. Falls back to rule-based template if no provider key. Also exports `getProviderInfo()` (Round-80, reused by lib/cv-ocr.js) and `generateText()` (used by lib/cv-extract.js).
+│   ├── mongo.js                     (Round-80) Shared self-healing Mongo singleton: `getDb()` lazily connects on first use, clears the cached connect-promise on rejection so a transient outage can't poison the process. Imported by all 18 DB-touching routes.
+│   ├── cv-ocr.js                    (Round-80) LLM-vision OCR: `ocrImageBuffer()` (PNG/JPG/WebP → text via provider vision model), `renderPdfPageToPng()` (pdfjs-dist legacy + @napi-rs/canvas), `ocrPdfPages()` (multi-page, capped at 5). Soft — never throws, returns '' on failure.
+│   ├── cv-extract.js                (Round-80) Structured CV→profile field extraction: `extractCvFields(cvText)` (LLM STRICT-JSON prompt) + pure `parseExtractedFields()` sanitizer (skills ≤50×100 chars, experience Junior|Medior|Senior, years 0..60, summary ≤1500).
 │   ├── jobScraper.js                (531 lines) Multi-source waterfall: Arbetsförmedlingen OpenAPI (primary), Blocket Jobb JSON-LD scrape, Ledigajobb.se HTML scrape. Dedupe by URL then (company|title|location). Emits `evt=multiSource.metric` JSON line per call for log aggregation.
 │   ├── scrapers/
 │   │   ├── blocket.js               Blocket Jobb JSON-LD parser (soft-block tolerant).
@@ -287,7 +290,7 @@ Connection pattern: singleton on `global._mongoClientPromise` in every route tha
 │
 ├── tests/
 │   ├── SETUP.md                     Playwright + MongoDB + PORT fallback recipe.
-│   ├── unit/                        78 .test.mjs files (node --test). Structural locks + behavioral tests.
+│   ├── unit/                        109 .test.mjs files (node --test via `yarn test:unit`). Structural locks + behavioral tests. 1190 tests green as of Round-80.
 │   ├── e2e/                         Playwright specs (~15 files) — auth-contract, dashboard-*, ai-hjalp-toggle, cv-magic-bytes, ...
 │   └── e2e/_fixtures/               Auth fixture (per-TEST clerkId, addInitScript arg passthrough, cookie-name lock).
 │
@@ -673,8 +676,8 @@ Never throws — always returns a Swedish cover letter of some quality.
 ### Settings (`/settings`)
 - [x] Profile edit (all onboarding fields + LinkedIn URL)
 - [x] Avatar picker — 16 avatars, 5 rarity tiers (common/uncommon/rare/epic/legendary)
-- [x] CV upload — PDF via pdf-parse, DOCX via mammoth. Groq re-summarises `cvSummary` field on upload.
-- [x] CV OCR — **stubbed 501** (deferred to v0.4.0). Settings UI reads the 501 and surfaces the gap honestly.
+- [x] CV upload — PDF via pdfjs-dist, DOCX via mammoth, images (PNG/JPG/WebP) via LLM-vision OCR. Groq re-summarises `cvSummary` field on upload.
+- [x] CV OCR — **implemented (Round-80)** via LLM vision in `lib/cv-ocr.js` (scanned PDFs + image uploads). The old `/api/cv-ocr` stub keeps returning 501 as an API contract.
 - [x] Style preference picker (formell / personlig / driven / kort / kreativ)
 - [x] Notification preferences (email, push, weekly digest)
 - [x] Extension setup section
@@ -721,7 +724,7 @@ Never throws — always returns a Swedish cover letter of some quality.
 - [x] Cookie consent banner (`CookieConsent.jsx`)
 
 ### Testing
-- [x] 78 unit test files (`node --test` via `yarn test:unit`)
+- [x] 109 unit test files / 1190 tests (`node --test` via `yarn test:unit`)
 - [x] Playwright E2E specs (`yarn test:e2e`) — ~15 specs including auth-contract, dashboard filter tabs, saved-star toggle, extension env-aware URL contract
 - [x] `tests/SETUP.md` recipes for fresh-shell prerequisites (Chromium install, MongoDB reachability, PORT fallback)
 
@@ -737,7 +740,7 @@ Never throws — always returns a Swedish cover letter of some quality.
 - [ ] Send invites (max ~30 people).
 
 ### Intentional non-features (do NOT "fix" these)
-- **OCR deferred to v0.4.0.** `/api/cv-ocr/route.js` returns HTTP 501 by design. Scanned/image-only PDFs route to manual-summary UX. Reason: ~15-25 MB tesseract.js bundle isn't worth it for the ~1% of uploads it would unblock during soft launch.
+- **tesseract.js OCR rejected (now LLM-vision OCR instead, Round-80).** `/api/cv-ocr/route.js` still returns HTTP 501 by design (the stub endpoint was kept for API-contract reasons). Real OCR now lives in `lib/cv-ocr.js` + `lib/cv-extract.js` using LLM vision (same provider chain as everything else — no tesseract.js bundle). See Round-80 section in `PROJECT_STATUS.md`.
 - **Ledigajobb.se → pre-filled URL, not scraped.** Their `robots.txt` blocks automated crawling. `buildLedigaJobbSearchUrl` in `lib/scrapers/urlBuilders.js` gives an honest search URL instead. Same for Jobbsafari. Blocket IS scraped (JSON-LD, public).
 - **Cron in UTC, not Stockholm.** Vercel Cron only accepts UTC. `0 7` runs at 09:00 CEST (summer) / 08:00 CET (winter). Accepted for soft launch.
 - **`hashShort` is NOT a privacy primitive.** JSDoc in `lib/utils.js` warns future devs: FNV-1a 32-bit is brute-forceable in <1ms against ~290 Swedish kommun names. Log lines use inline `truncate(value, 40)` instead.

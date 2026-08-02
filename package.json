@@ -27,6 +27,7 @@
         "lint:scope": "node scripts/lint-scope.mjs"
     },
     "dependencies": {
+        "@napi-rs/canvas": "^0.1.80",
         "@clerk/nextjs": "^7.5.13",
         "@hookform/resolvers": "5.1.1",
         "@radix-ui/react-accordion": "1.2.11",

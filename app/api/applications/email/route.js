@@ -42,23 +42,12 @@
 
 import { NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth'
+import { getDb } from '@/lib/mongo'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// ---- Mongo singleton (mirrors app/api/saved-answers/route.js) ----
-let clientPromise
-if (!global._mongoClientPromise) {
-  const { MongoClient } = await import('mongodb')
-  const client = new MongoClient(process.env.MONGO_URL || 'mongodb://localhost:27017/jobbpiloten')
-  global._mongoClientPromise = client.connect()
-}
-clientPromise = global._mongoClientPromise
-
-async function getDb() {
-  const client = await clientPromise
-  return client.db(process.env.DB_NAME)
-}
+// ---- Mongo singleton — shared self-healing helper (lib/mongo.js) ----
 
 export async function POST(request) {
   try {

@@ -290,6 +290,32 @@ export default function OnboardingPage() {
     setPreviewBody('')
     setPreviewCvShortWarning(false)
     try {
+      // 2026-08-02 (issue fix): /api/email-preview looks the user's
+      // profile up by clerkId and 404s with "Profil hittades inte —
+      // slutför /onboarding först." when it can't find a profile with
+      // a name + email. On the Granska step the profile is ONLY
+      // persisted when "Slutför" is clicked, so previewing before
+      // saving always hit that 404 — even for users who had completed
+      // onboarding previously (a fresh session re-runs the wizard).
+      // Fix: persist the current form first (identical payload to
+      // handleSubmit), then preview. The later "Slutför" click
+      // re-submits the same upsert, so this is idempotent.
+      if (!hasDemoSessionCookie()) {
+        setDemoSessionCookie('demo-user-001')
+      }
+      const apiBody = buildApiBody(formData, user)
+      const saveRes = await fetch('/api/profile', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(apiBody),
+      })
+      if (!saveRes.ok) {
+        const saveData = await saveRes.json().catch(() => ({}))
+        setPreviewError((saveData && saveData.error) || `Kunde inte spara profilen (${saveRes.status})`)
+        return
+      }
+
       const res = await fetch('/api/email-preview', {
         method: 'POST',
         credentials: 'include',

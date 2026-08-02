@@ -29,22 +29,12 @@
  */
 
 import { NextResponse } from 'next/server'
-import { MongoClient } from 'mongodb'
+import { getDb } from '@/lib/mongo'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-let clientPromise
-if (!global._mongoClientPromise) {
-  const client = new MongoClient(process.env.MONGO_URL || 'mongodb://localhost:27017/jobbpiloten')
-  global._mongoClientPromise = client.connect()
-}
-clientPromise = global._mongoClientPromise
-
-async function getDb() {
-  const client = await clientPromise
-  return client.db(process.env.DB_NAME)
-}
+// ---- Mongo singleton — shared self-healing helper (lib/mongo.js) ----
 
 async function resolveClerkId(request) {
   const auth = request.headers.get('authorization') || ''

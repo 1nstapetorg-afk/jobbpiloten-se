@@ -53,7 +53,7 @@
  */
 
 import { NextResponse } from 'next/server'
-import { MongoClient } from 'mongodb'
+import { getDb } from '@/lib/mongo'
 import { generateEmailBody } from '@/lib/groq'
 import { ExtensionEmailBodySchema } from '@/lib/extension-profile'
 import { assertSafeExternalUrl } from '@/lib/ssrf-guard'
@@ -70,18 +70,7 @@ import { requireCompleteProfile } from '@/lib/profile-check'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// ---- Mongo singleton (mirrors /api/extension/answer/route.js) ----
-let clientPromise
-if (!global._mongoClientPromise) {
-  const client = new MongoClient(process.env.MONGO_URL || 'mongodb://localhost:27017/jobbpiloten')
-  global._mongoClientPromise = client.connect()
-}
-clientPromise = global._mongoClientPromise
-
-async function getDb() {
-  const client = await clientPromise
-  return client.db(process.env.DB_NAME)
-}
+// ---- Mongo singleton — shared self-healing helper (lib/mongo.js) ----
 
 // ---- Rate limit (in-memory, per-token sliding window) ----
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000 // 1 hour

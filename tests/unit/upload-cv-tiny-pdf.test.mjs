@@ -101,8 +101,17 @@ test('Round-58 / Bug 3: tiny-PDF guard should NOT fire on soft-failures (those k
 // ---------- 3. Distinct Swedish message ----------
 
 test('Round-58 / Bug 3: tiny-PDF error message uses distinct Swedish copy', () => {
-  const tinyPdfSection = SRC.match(/code:\s*['"]TINY_PDF['"][\s\S]{0,400}/)
-  assert.ok(tinyPdfSection, 'TINY_PDF block must be present')
+  // 2026-08-02: re-anchored on the TINY_PDF error MESSAGE itself
+  // (the same pattern the Round-59 hazard-guard below uses) instead
+  // of the 400 chars AFTER `code: "TINY_PDF"`. The old anchor relied
+  // on the IMAGE_ONLY_PDF error string being textually adjacent to
+  // the TINY_PDF return block; the 2026-08-02 scanned-PDF OCR
+  // recovery (ocrPdfPage) now sits between them, so the window no
+  // longer reaches the image-only message. Anchoring on the message
+  // is the correct, robust lock for "the TINY_PDF message mentions
+  // liten/tom + a manual hint".
+  const tinyPdfSection = SRC.match(/error:\s*['"]PDF:en verkar vara för liten[\s\S]{0,200}/)
+  assert.ok(tinyPdfSection, 'TINY_PDF error message must be present')
   // Must mention "liten" (small) or "tom" (empty) so the user understands
   // it's not a scanned-PDF problem.
   assert.match(

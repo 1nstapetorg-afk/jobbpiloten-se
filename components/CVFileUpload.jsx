@@ -3,15 +3,19 @@
 import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
-  FileUp, FileText, X, ChevronDown, ChevronUp, Loader2, AlertTriangle, Check,
+  FileUp, FileText, X, ChevronDown, ChevronUp, Loader2, AlertTriangle, Check, Sparkles,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 // Mirror app/api/upload-cv/route.js so the UI rejects oversized files
 // before the network round-trip. Hoisted to module scope so allocating
 // once is enough on every render.
+// 2026-08-02: image uploads (PNG/JPG/WebP) are accepted too — the
+// server OCRs them via LLM vision (lib/cv-ocr.js).
 const CV_MAX_FILE_BYTES = 5 * 1024 * 1024 // 5 MB
-const CV_ACCEPTED_EXTS = ['pdf', 'docx']
+const CV_ACCEPTED_EXTS = ['pdf', 'docx', 'png', 'jpg', 'jpeg', 'webp']
 const CV_PREVIEW_LIMIT = 500
 
 /** Compact Swedish date formatter used in the file card. Kept locally
@@ -85,6 +89,15 @@ export default function CVFileUpload({ profile, onChanged, onFallbackRequired })
   // parent's SWR refetch typically lands 1-3 frames later than the
   // XHR's onload event.
   const [optimisticCharCount, setOptimisticCharCount] = useState(null)
+  // 2026-08-02 — AI-extracted structured fields (skills, experience,
+  // education, summary…). Returned by /api/upload-cv as `aiExtracted`
+  // and rendered as an EDITABLE review panel below the file card.
+  // `extractDraft` is the user-editable copy; nothing is written to
+  // the profile until "Spara till profil" is clicked (POST
+  // /api/profile-update).
+  const [aiExtracted, setAiExtracted] = useState(null)
+  const [extractDraft, setExtractDraft] = useState(null)
+  const [savingExtract, setSavingExtract] = useState(false)
 
   const fileName = profile?.cvFileName || ''
   const fileSize = Number(profile?.cvFileSize) || 0
@@ -213,9 +226,16 @@ export default function CVFileUpload({ profile, onChanged, onFallbackRequired })
    *  manual summary box (or redirect to /settings on onboarding). */
   const handleFile = async (file) => {
     setError('')
+    // 2026-08-02 — clear any stale extraction panel from a PREVIOUS
+    // upload at the START of a new one. Otherwise a re-upload whose
+    // extraction yields no aiExtracted (soft failure, short text, no
+    // LLM key) would leave the old panel + draft on screen and the
+    // user could save stale data.
+    setAiExtracted(null)
+    setExtractDraft(null)
     const ext = String(file.name).split('.').pop()?.toLowerCase() || ''
     if (!CV_ACCEPTED_EXTS.includes(ext)) {
-      setError('Endast PDF och DOCX stöds.')
+      setError('Endast PDF, DOCX och bilder (PNG/JPG/WebP) stöds.')
       return
     }
     if (file.size > CV_MAX_FILE_BYTES) {
@@ -253,6 +273,20 @@ export default function CVFileUpload({ profile, onChanged, onFallbackRequired })
         // (warning + needsManualFallback) result in charCount === 0,
         // which is correctly hidden by the `> 0` predicate below.
         setOptimisticCharCount(charCount)
+        // Seed the editable review panel when the server extracted
+        // structured fields from the CV text.
+        if (json.aiExtracted && typeof json.aiExtracted === 'object') {
+          setAiExtracted(json.aiExtracted)
+          setExtractDraft({
+            skills: Array.isArray(json.aiExtracted.skills) ? json.aiExtracted.skills.join(', ') : '',
+            experience: json.aiExtracted.experience || '',
+            currentJobTitle: json.aiExtracted.currentJobTitle || '',
+            currentOrganization: json.aiExtracted.currentOrganization || '',
+            yearsExperience: json.aiExtracted.yearsExperience != null ? String(json.aiExtracted.yearsExperience) : '',
+            education: json.aiExtracted.education || '',
+            summary: json.aiExtracted.summary || '',
+          })
+        }
         const needsFallback = !!json.needsManualFallback
         // 2026-07-12 (Round-10 polish, Round-14 refined): the
         // soft-failure path (PDF parser threw a categorised error
@@ -371,6 +405,9 @@ export default function CVFileUpload({ profile, onChanged, onFallbackRequired })
       // upload starts fresh (without latent stale state from a
       // previous successful upload).
       setOptimisticCharCount(null)
+      // 2026-08-02 — clear the extraction review panel alongside.
+      setAiExtracted(null)
+      setExtractDraft(null)
       onChanged?.()
     } catch (err) {
       const msg = 'Något gick fel: ' + err.message
@@ -408,12 +445,66 @@ export default function CVFileUpload({ profile, onChanged, onFallbackRequired })
     fileInputRef.current?.click()
   }
 
+  /**
+   * 2026-08-02 — save the edited AI-extracted fields to the profile
+   * via the partial-update endpoint (ALLOW list already covers every
+   * key: skills, experience, currentJobTitle, currentOrganization,
+   * yearsExperience, education, cvSummary). The user explicitly opts
+   * in by clicking "Spara till profil" — nothing is auto-written.
+   */
+  const handleSaveExtracted = async () => {
+    if (!extractDraft || savingExtract) return
+    setSavingExtract(true)
+    try {
+      const payload = {
+        skills: String(extractDraft.skills || '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .slice(0, 50),
+        experience: String(extractDraft.experience || ''),
+        currentJobTitle: String(extractDraft.currentJobTitle || '').trim(),
+        currentOrganization: String(extractDraft.currentOrganization || '').trim(),
+        yearsExperience:
+          extractDraft.yearsExperience != null && String(extractDraft.yearsExperience).trim() !== ''
+            ? Number(extractDraft.yearsExperience)
+            : undefined,
+        education: String(extractDraft.education || '').trim(),
+        cvSummary: String(extractDraft.summary || '').trim(),
+      }
+      for (const k of Object.keys(payload)) {
+        if (payload[k] === undefined) delete payload[k]
+      }
+      const res = await fetch('/api/profile-update', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || !json.ok) {
+        toast.error(json.error || 'Kunde inte spara uppgifterna.')
+        return
+      }
+      toast.success('Profiluppgifter sparade från CV:t ✓')
+      // Collapse the panel — the parent's refetch (onChanged) picks
+      // up the freshly saved skills/education/summary.
+      setAiExtracted(null)
+      setExtractDraft(null)
+      onChanged?.()
+    } catch (err) {
+      toast.error('Något gick fel: ' + (err?.message || 'försök igen'))
+    } finally {
+      setSavingExtract(false)
+    }
+  }
+
   // Shared file input — rendered once inside whichever state we're in.
   const fileInputEl = (
     <input
       ref={fileInputRef}
       type="file"
-      accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      accept=".pdf,.docx,.png,.jpg,.jpeg,.webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp"
       className="hidden"
       onChange={onFileInputChange}
       data-testid="settings-cv-fileinput"
@@ -480,7 +571,7 @@ export default function CVFileUpload({ profile, onChanged, onFallbackRequired })
               </p>
               <div className="flex items-center justify-center gap-2 mt-2">
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide bg-white border border-slate-200 text-slate-600">
-                  PDF, DOCX
+                  PDF, DOCX, Bild
                 </span>
                 <span className="text-[11px] text-slate-500">Max 5 MB</span>
               </div>
@@ -642,6 +733,118 @@ export default function CVFileUpload({ profile, onChanged, onFallbackRequired })
             skannad bild-PDF). Skriv en kort sammanfattning nedan så AI:n
             kan använda den i dina personliga brev.
           </span>
+        </div>
+      )}
+
+      {/* 2026-08-02 — Editable review panel for AI-extracted profile
+          fields. Renders after a successful upload when the server
+          returned `aiExtracted` (skills, experience, education,
+          summary…). The user reviews + edits, then explicitly saves
+          via /api/profile-update — nothing is auto-written. */}
+      {aiExtracted && extractDraft && (
+        <div
+          className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-3 space-y-3"
+          data-testid="cv-extract-review"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-indigo-900 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-indigo-500" aria-hidden="true" />
+                AI-extraherade uppgifter från CV:t
+              </p>
+              <p className="text-[11px] text-indigo-700 mt-0.5">
+                Granska och justera — inget sparas förrän du klickar &quot;Spara till profil&quot;.
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="sm:col-span-2">
+              <Label className="text-[11px] font-medium text-indigo-900">Kompetenser (komma-separerade)</Label>
+              <Input
+                className="mt-1 bg-white"
+                value={extractDraft.skills || ''}
+                onChange={(e) => setExtractDraft({ ...extractDraft, skills: e.target.value })}
+                data-testid="cv-extract-skills"
+              />
+            </div>
+            <div>
+              <Label className="text-[11px] font-medium text-indigo-900">Erfarenhetsnivå</Label>
+              <select
+                className="mt-1 w-full h-9 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                value={extractDraft.experience || ''}
+                onChange={(e) => setExtractDraft({ ...extractDraft, experience: e.target.value })}
+                data-testid="cv-extract-experience"
+              >
+                <option value="">Välj nivå</option>
+                <option value="Junior">Junior (0-2 år)</option>
+                <option value="Medior">Medior (3-5 år)</option>
+                <option value="Senior">Senior (5+ år)</option>
+              </select>
+            </div>
+            <div>
+              <Label className="text-[11px] font-medium text-indigo-900">Års erfarenhet</Label>
+              <Input
+                type="number"
+                min={0}
+                max={60}
+                className="mt-1 bg-white"
+                value={extractDraft.yearsExperience || ''}
+                onChange={(e) => setExtractDraft({ ...extractDraft, yearsExperience: e.target.value })}
+                data-testid="cv-extract-years"
+              />
+            </div>
+            <div>
+              <Label className="text-[11px] font-medium text-indigo-900">Nuvarande/senaste titel</Label>
+              <Input
+                className="mt-1 bg-white"
+                value={extractDraft.currentJobTitle || ''}
+                onChange={(e) => setExtractDraft({ ...extractDraft, currentJobTitle: e.target.value })}
+                data-testid="cv-extract-jobtitle"
+              />
+            </div>
+            <div>
+              <Label className="text-[11px] font-medium text-indigo-900">Arbetsgivare</Label>
+              <Input
+                className="mt-1 bg-white"
+                value={extractDraft.currentOrganization || ''}
+                onChange={(e) => setExtractDraft({ ...extractDraft, currentOrganization: e.target.value })}
+                data-testid="cv-extract-org"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <Label className="text-[11px] font-medium text-indigo-900">Utbildning</Label>
+              <Input
+                className="mt-1 bg-white"
+                value={extractDraft.education || ''}
+                onChange={(e) => setExtractDraft({ ...extractDraft, education: e.target.value })}
+                data-testid="cv-extract-education"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <Label className="text-[11px] font-medium text-indigo-900">Sammanfattning</Label>
+              <textarea
+                rows={4}
+                className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-y"
+                value={extractDraft.summary || ''}
+                onChange={(e) => setExtractDraft({ ...extractDraft, summary: e.target.value })}
+                data-testid="cv-extract-summary"
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={handleSaveExtracted}
+              disabled={savingExtract}
+              className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white"
+              data-testid="cv-extract-save"
+            >
+              {savingExtract ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Sparar…</> : 'Spara till profil'}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => { setAiExtracted(null); setExtractDraft(null) }}>
+              Avbryt
+            </Button>
+          </div>
         </div>
       )}
     </div>

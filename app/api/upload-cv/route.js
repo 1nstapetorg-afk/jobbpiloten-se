@@ -35,7 +35,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { MongoClient } from 'mongodb';
+import { getDb } from '@/lib/mongo';
 import { requireAuth } from '@/lib/auth';
 // Bug-3 polish (2026-07-17): single source of truth for LLM
 // availability, defined alongside the provider-order precedence
@@ -43,23 +43,17 @@ import { requireAuth } from '@/lib/auth';
 // only touches one file. Mirror of getProvider() ordering at
 // lib/groq.js (GROQ → OPENAI → EMERGENT).
 import { isLlmAvailable } from '@/lib/groq';
+// 2026-08-02: OCR for scanned PDFs + direct image uploads (LLM
+// vision) and structured field extraction for the editable review
+// panel. Both are "soft" — they never hard-fail an upload; on
+// failure the existing manual-summary fallback UX takes over.
+import { ocrImageBuffer, ocrPdfPages } from '@/lib/cv-ocr';
+import { extractCvFields } from '@/lib/cv-extract';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// ---- Mongo singleton (mirrors the catch-all route to avoid duplicate
-// connection pools) ----
-let clientPromise;
-if (!global._mongoClientPromise) {
-  const client = new MongoClient(process.env.MONGO_URL || 'mongodb://localhost:27017/jobbpiloten');
-  global._mongoClientPromise = client.connect();
-}
-clientPromise = global._mongoClientPromise;
-
-async function getDb() {
-  const client = await clientPromise;
-  return client.db(process.env.DB_NAME);
-}
+// ---- Mongo singleton — shared self-healing helper (lib/mongo.js) ----
 
 // ---- Limits ----
 const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5MB
@@ -108,11 +102,17 @@ const MIN_VALID_CV_TEXT_CHARS = 50
 // clear "contact admin" toast right after upload.
 const HAS_ANY_LLM_KEY = isLlmAvailable()
 
+// 2026-08-02: image uploads (PNG/JPG/WebP) are now first-class — a
+// photographed or exported CV image goes through the same extraction
+// pipeline via LLM-vision OCR (lib/cv-ocr.js).
 const ALLOWED_MIME = new Set([
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+  'image/png',
+  'image/jpeg',
+  'image/webp',
 ]);
-const ALLOWED_EXT = new Set(['pdf', 'docx']);
+const ALLOWED_EXT = new Set(['pdf', 'docx', 'png', 'jpg', 'jpeg', 'webp']);
 
 // ---- Magic-byte signatures (file header validation) ----
 // Issue 5 (2026-07-10): validate the first bytes of the buffer
@@ -136,6 +136,10 @@ const ALLOWED_EXT = new Set(['pdf', 'docx']);
 const MAGIC_BYTES = {
   pdf: [0x25, 0x50, 0x44, 0x46, 0x2D], // %PDF-
   docx: [0x50, 0x4B, 0x03, 0x04],      // PK\x03\x04
+  png: [0x89, 0x50, 0x4E, 0x47],       // \x89PNG
+  jpg: [0xFF, 0xD8, 0xFF],             // \xFF\xD8\xFF
+  jpeg: [0xFF, 0xD8, 0xFF],
+  webp: [0x52, 0x49, 0x46, 0x46],      // RIFF….WEBP (full sig checked below)
 }
 
 // ---- Auth (shared via @/lib/auth — see the consolidated
@@ -168,9 +172,15 @@ function getExtension(name) {
  */
 function validateMagicBytes(buffer, extension) {
   const sig = MAGIC_BYTES[extension];
-  if (!sig) return 'Filformatet stöds inte. Använd PDF eller DOCX.';
+  if (!sig) return 'Filformatet stöds inte. Använd PDF, DOCX eller bild (PNG/JPG/WebP).';
   if (buffer.length < sig.length) {
-    return 'Filen är för kort för att vara en giltig PDF/DOCX.';
+    return 'Filen är för kort för att vara en giltig PDF/DOCX/bild.';
+  }
+  // WebP's signature is RIFF at byte 0 + 'WEBP' at bytes 8-11 — the
+  // prefix check alone would accept any RIFF container (WAV, AVI…).
+  if (extension === 'webp') {
+    const tag = String.fromCharCode(buffer[8] || 0, buffer[9] || 0, buffer[10] || 0, buffer[11] || 0)
+    if (tag !== 'WEBP') return 'Filen är inte en giltig WebP-bild. Använd PNG eller JPG istället.';
   }
   for (let i = 0; i < sig.length; i++) {
     if (buffer[i] !== sig[i]) {
@@ -603,7 +613,14 @@ async function extractText(buffer, extension, mime) {
       throw err
     }
   }
-  throw new Error('Filformatet stöds inte. Använd PDF eller DOCX.');
+  // 2026-08-02: direct image upload → LLM-vision OCR. Soft by design:
+  // a failed/empty OCR returns '' and the POST handler falls through
+  // to the manual-summary UX (never a hard 400).
+  if (['png', 'jpg', 'jpeg', 'webp'].includes(extension) || /^image\//.test(mime)) {
+    const text = await ocrImageBuffer(buffer, mime || 'image/png')
+    return { text, hasText: text.trim().length >= 50, isImageOnly: false, pageCount: 1 }
+  }
+  throw new Error('Filformatet stöds inte. Använd PDF, DOCX eller bild (PNG/JPG/WebP).');
 }
 
 export async function POST(request) {
@@ -645,8 +662,10 @@ export async function POST(request) {
       const hint = extension === 'doc'
         ? ' DOC-format stöds inte — konvertera till DOCX eller PDF.'
         : '';
+      // 2026-08-02: copy updated — images (PNG/JPG/WebP) are now
+      // accepted and OCR'd server-side.
       return NextResponse.json(
-        { error: `Endast PDF- och DOCX-filer accepteras.${hint}` },
+        { error: `Endast PDF-, DOCX- och bildfiler (PNG/JPG/WebP) accepteras.${hint}` },
         { status: 400 },
       );
     }
@@ -849,15 +868,35 @@ export async function POST(request) {
     }
 
     if (extracted.length < MIN_VALID_CV_TEXT_CHARS && extension === 'pdf' && extractResult.isImageOnly) {
-      return NextResponse.json(
-        {
-          error: 'PDF:en verkar vara inskannad och saknar textlager. Skriv en kort sammanfattning manuellt i fältet nedan — AI:n använder den i dina personliga brev.\n\nTips: Öppna PDF:en i Acrobat eller Preview och "Spara som" igen — många skanningsverktyg kan lägga till ett dolt textlager vid omsparning.',
-          needsManualFallback: true,
-          reason: 'image_only_pdf',
-          code: 'IMAGE_ONLY_PDF',
-        },
-        { status: 400 },
-      )
+      // 2026-08-02 (OCR): a scanned PDF is no longer a dead end —
+      // rasterize every page (capped at 5) and run LLM-vision OCR.
+      // Only when OCR also yields nothing do we fall back to the
+      // manual summary.
+      const ocrText = await ocrPdfPages(buffer).catch(() => '')
+      const ocrTrimmed = String(ocrText || '').trim()
+      if (ocrTrimmed.length >= MIN_VALID_CV_TEXT_CHARS) {
+        extracted = ocrTrimmed
+          .replace(/\r\n/g, '\n')
+          .replace(/[ \t]+\n/g, '\n')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim()
+        if (extracted.length > MAX_CV_TEXT_CHARS) {
+          extracted = extracted.slice(0, MAX_CV_TEXT_CHARS)
+        }
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`[upload-cv] OCR recovered scanned PDF (TEXT_LEN=${extracted.length} clerkId=${clerkId})`)
+        }
+      } else {
+        return NextResponse.json(
+          {
+            error: 'PDF:en verkar vara inskannad och saknar textlager. Skriv en kort sammanfattning manuellt i fältet nedan — AI:n använder den i dina personliga brev.\n\nTips: Öppna PDF:en i Acrobat eller Preview och "Spara som" igen — många skanningsverktyg kan lägga till ett dolt textlager vid omsparning.',
+            needsManualFallback: true,
+            reason: 'image_only_pdf',
+            code: 'IMAGE_ONLY_PDF',
+          },
+          { status: 400 },
+        )
+      }
     }
 
     // 2026-07-12 (soft-launch polish #d): only overwrite the
@@ -903,6 +942,16 @@ export async function POST(request) {
     const isFirstTimeUpload = existingCvText.trim().length === 0 && existingCvSummary.trim().length === 0;
     const shouldOverwriteCvText = isFirstTimeUpload || extracted.length >= MIN_VALID_CV_TEXT_CHARS
 
+    // 2026-08-02: structured field extraction for the editable review
+    // panel (skills, experience, education, summary…). Runs only when
+    // the extracted text is above the validity floor AND an LLM key
+    // exists; null otherwise (the panel simply doesn't render and the
+    // raw cvText is still saved for the cover-letter prompts).
+    let aiExtracted = null
+    if (extracted.length >= MIN_VALID_CV_TEXT_CHARS && HAS_ANY_LLM_KEY) {
+      aiExtracted = await extractCvFields(extracted).catch(() => null)
+    }
+
     await db.collection('profiles').updateOne(
       { clerkId },
       {
@@ -919,6 +968,13 @@ export async function POST(request) {
           updatedAt: new Date(),
         },
       },
+      // 2026-08-02 (upsert): an onboarding user who uploads a CV on
+      // the Granska step does so BEFORE the profile doc exists (the
+      // doc is created by the "Slutför" POST /api/profile). Without
+      // upsert, updateOne matched zero rows and the extracted text
+      // silently vanished — the toast said "lästes in" but the CV
+      // never reached the profile.
+      { upsert: true },
     );
 
     // 2026-07-12 (Round-10 critical fix): when extraction
@@ -973,6 +1029,11 @@ export async function POST(request) {
       cvFileName: file.name,
       cvFileSize: file.size,
       cvTextChars: extracted.length,
+      // 2026-08-02: structured fields for the editable review panel.
+      // The client shows them as pre-filled, editable inputs and the
+      // user explicitly saves via /api/profile-update — nothing is
+      // written to the profile automatically.
+      ...(aiExtracted ? { aiExtracted } : {}),
       // Bug-3 fix (2026-07-17): so the user sees a clear toast
       // when their PDF upload succeeds but the downstream AI
       // cover-letter / email-body generation will fall back to

@@ -421,3 +421,174 @@ branch (line 1348). So real requests 401 while the source-grep test
 passes. Fix is a one-line structural change (move the public/stats
 early-return above the requireAuth call) but lives outside the user’s
 4-followup scope — flagged in followups.
+
+## Round-80 (2026-08-02, this session) — CV OCR, shared Mongo singleton, location hard-filter
+
+Round-80 landed the biggest CV-upload upgrade since Round-10, a
+cross-cutting Mongo singleton refactor, a strict location hard-filter
+for the job feed, and three small-but-sharp bug fixes (Chromebook
+blank tab, onboarding preview 404, cvSummary clobbering). Net test
+tally: **1190 passed / 0 failed** (`yarn test:unit`), +7 new test
+files (+11 tests: 6 cv-extract edge cases + 5 cv-ocr edge cases).
+
+### A. CV OCR — scanned PDFs + image uploads are no longer a dead end
+
+Previously an image-only (scanned) PDF or a direct image upload always
+fell through to the manual-summary UX: the route only knew pdfjs-dist
+(text layers) and mammoth (DOCX). Round-80 adds two new pure-I/O
+modules:
+
+- **`lib/cv-ocr.js`** — LLM-vision OCR. `ocrImageBuffer()` sends the
+  image as a base64 data-URL to the SAME provider chain as every
+  other LLM call (`getProviderInfo()` in `lib/groq.js`: GROQ →
+  OPENAI → EMERGENT → OPENROUTER), mapping each provider's text
+  model to a vision-capable model (groq → `qwen/qwen3.6-27b`,
+  openai/emergent → `gpt-4o-mini`, openrouter → `claude-3.5-sonnet`).
+  NOTE (2026-08-02): the original `llama-3.2-90b-vision-preview` was
+  DECOMMISSIONED by Groq on 2025-04-14 — requests 400'd, breaking
+  OCR — caught by the OCR integration test + swapped to Groq's
+  current featured multimodal model.
+  `renderPdfPageToPng()` rasterizes a PDF page via pdfjs-dist legacy
+  + `@napi-rs/canvas` (already a transitive dep), and `ocrPdfPages()`
+  walks ALL pages (capped at 5 to bound cost). OCR is a SOFT
+  extraction — any failure returns `''` and the route falls through
+  to the existing manual-summary UX; it never hard-fails an upload.
+  tesseract.js was explicitly rejected (bundle size + cold start +
+  poor Swedish accuracy — see the `/api/cv-ocr` stub for the original
+  rationale).
+- **`lib/cv-extract.js`** — structured field extraction. After raw
+  text is extracted, `extractCvFields()` asks the LLM (via
+  `generateText`, same provider priority) for STRICT JSON mapping
+  the CV onto the canonical profile field set (skills, experience
+  level, yearsExperience, currentJobTitle, currentOrganization,
+  education, summary). `parseExtractedFields()` is a pure, never-
+  throws sanitizer: strips markdown fences, falls back to brace-block
+  extraction then a regex sweep, dedupes/caps skills (50 × 100 chars),
+  normalizes experience to Junior | Medior | Senior, clamps
+  yearsExperience to 0..60, caps short strings at 300 chars and the
+  summary at 1500 (the settings cvSummary cap).
+- **`app/api/upload-cv/route.js`** now accepts PNG/JPG/WebP uploads
+  (magic-byte validated) and runs OCR on image-only scanned PDFs
+  before declaring IMAGE_ONLY_PDF. `aiExtracted` is returned in the
+  response for the editable review panel.
+- **`components/CVFileUpload.jsx`** renders an editable
+  "AI-extraherade uppgifter från CV:t" review panel (skills,
+  experience level, years, job title, employer, education, summary).
+  Nothing is written to the profile until "Spara till profil" is
+  clicked → POST `/api/profile-update` (ALLOW list covers every key).
+  `education` was added to the profile-update ALLOWED list + a 300-
+  char validator mirrors the cv-extract cap. Stale extraction panels
+  are cleared on every new upload so a soft-failure re-upload can't
+  leave old data on screen.
+
+### B. Shared self-healing Mongo singleton (`lib/mongo.js`)
+
+Every API route previously carried its own copy of the
+`global._mongoClientPromise = client.connect()` pattern, which had two
+real bugs:
+
+1. **Poisoned-promise** — the connect promise was cached on `global`
+   at module load. If Mongo was down at that moment, the rejection
+   was cached forever: every later request 500'd instantly even after
+   Mongo recovered (observed live: `/api/health` went from a
+   legitimate Mongo-down 500 to an instant 0.08s 500 for the rest of
+   the process lifetime).
+2. **Per-route client leak in dev** — all 18 route files ran
+   `new MongoClient(...).connect()` at module load; only the first
+   promise was ever awaited, the other 17 clients connected and were
+   dropped without `close()`.
+
+`lib/mongo.js` fixes both: `getDb()` lazily creates + connects on
+first use, and the cached connect-promise clears itself on rejection
+so the next request transparently retries. The client is still held on
+`global` (dev-mode hot-reload safety — see HANDOFF §7). All 18 route
+files now import `getDb` from `@/lib/mongo` (catch-all, cron, ai-usage,
+applications/email, applications/recent, cv-pdf, email-draft,
+email-preview, extension/ai-answers, extension/answer,
+extension/email-body, extension/profile, extension/token, saved-answers,
+saved-answers/[id], saved-jobs, upload-cv, webhooks/stripe). The cron
+route wraps the shared helper to also ensure its `push_subscriptions`
+compound index. Locked by `tests/unit/mongo-singleton.test.mjs`.
+
+### C. Location is a HARD filter (no silent nationwide fallback)
+
+The reported bug: a user with "Göteborg" preferred still saw
+Skellefteå/Stockholm jobs because `/api/jobs-available` silently
+fell back from the strict Län-filter pass to a NATIONWIDE pass (and
+Blocket jobs ignore the AF region filter entirely). Round-80 makes
+location a hard gate:
+
+- The nationwide / no-query fallback branches in the location-filter
+  path are removed — a user with preferred (non-remote) locations
+  gets an empty list ("Inga lediga jobb hittades just nu") rather
+  than out-of-area jobs.
+- A final `doesJobMatchUserLocation` pass drops anything out of area
+  (Blocket jobs + mismatched AF region codes) — Göteborg → Göteborg
+  + commuting area only.
+- The ONLY escape hatch is the explicit `allSweden=1` override (the
+  dashboard's blue banner explains the trade-off).
+- The "AI-assistenten" CTA sample-job fallback also prefers in-area
+  samples before any-sample last resort.
+
+Locked by `tests/unit/jobs-location-hard-filter.test.mjs`.
+
+### D. Small bug fixes (2026-08-02)
+
+- **Chromebook blank-tab fix** (`extension/popup.js` +
+  `app/extension-auth/page.js`): Tier A of the dashboard-URL resolver
+  adopted the ACTIVE TAB's origin whenever it matched the manifest
+  host_permissions list — which legitimately includes job boards /
+  webmail for the content-script fetch paths. Clicking "Anslut din
+  profil" while on arbetsformedlingen.se opened
+  `https://www.arbetsformedlingen.se/extension-auth` — a completely
+  blank page on the job board's server. Fix: Tier A now gates on a
+  dedicated `JOBBPILOTEN_APP_ORIGIN_PATTERNS` allowlist (JobbPiloten
+  deployment origins only) and `openAuthFlow()` has a fail-closed
+  origin guard. The auth page also step-logs its lifecycle
+  (`[extension-auth] step a/b`) so the Chromebook report is
+  diagnosable without devtools on the remote device.
+- **Onboarding preview-save-first** (`app/onboarding/page.js`):
+  "Förhandsvisa AI-mejl" on the Granska step 404'd with "Profil
+  hittades inte" because the profile only exists after "Slutför".
+  The preview handler now persists the form first (identical payload
+  to handleSubmit — idempotent upsert) then previews.
+- **cvSummary no longer clobbered** (`app/api/[[...path]]/route.js`):
+  POST /api/profile wrote `cvSummary: source.cvSummary || ''`
+  unconditionally, so an onboarding re-submit that omitted the field
+  silently wiped a summary saved via settings. Now it's a
+  hasOwnProperty-conditional merge, like cvText.
+- **upload-cv upsert** (`app/api/upload-cv/route.js`): an onboarding
+  user uploading a CV on the Granska step does so before the profile
+  doc exists; `updateOne` without `upsert: true` matched zero rows and
+  the extracted text silently vanished. Now upserts.
+- **Social-provider render** (verified, no code change needed): the
+  "Google login missing" report traced to the blocklisted broken key
+  (`pk_test_ZXRlcm5hbC1waWthLTY0`, see lib/clerk-config.js) which
+  degraded the app to DEMO mode → the demo card replaced Clerk's
+  SignIn → no Google button. With the real key inlined the stock
+  `<SignIn />` renders the Google button. Locked by
+  `tests/unit/social-provider-render.test.mjs`.
+
+### E. New test files (+7)
+
+| File | Locks |
+|---|---|
+| `tests/unit/cv-extract.test.mjs` | parseExtractedFields sanitizer + extractCvFields prompt contract |
+| `tests/unit/cv-ocr-lib.test.mjs` | vision model mapping, real-PDF rasterization (PNG magic bytes), soft-failure contracts |
+| `tests/unit/mongo-singleton.test.mjs` | lib/mongo.js shape + self-healing (poisoned-promise regression) |
+| `tests/unit/jobs-location-hard-filter.test.mjs` | no nationwide fallback + hard location gate + allSweden escape hatch |
+| `tests/unit/extension-auth-chromebook.test.mjs` | JobbPiloten-only origin allowlist + fail-closed openAuthFlow |
+| `tests/unit/onboarding-preview-save-first.test.mjs` | preview persists before previewing + cvSummary/education merge locks |
+| `tests/unit/social-provider-render.test.mjs` | Clerk SignIn renders social buttons with a real key |
+
+`tests/unit/popup-handshake.test.mjs` and
+`tests/unit/upload-cv-tiny-pdf.test.mjs` were also touched.
+
+### F. Net test count
+
+| Round | Tests | Delta |
+|---|---|---|
+| Pre-Round-80 | ~1172 | — |
+| **Round-80 final** | **1190** | **+7 files / +11 tests** |
+
+All run via `yarn test:unit` (node --test, ~28s); 0 failures.

@@ -17,24 +17,18 @@
  */
 
 import { NextResponse } from 'next/server';
-import { MongoClient } from 'mongodb';
+import { getDb as getSharedDb } from '@/lib/mongo';
 import { multiSourceSearchJobs } from '@/lib/jobScraper';
 import { buildBatchMatchPayload, sendPushToUser } from '@/lib/push';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// ---- Mongo singleton ----
-let clientPromise;
-if (!global._mongoClientPromise) {
-  const client = new MongoClient(process.env.MONGO_URL || 'mongodb://localhost:27017/jobbpiloten');
-  global._mongoClientPromise = client.connect();
-}
-clientPromise = global._mongoClientPromise;
-
+// ---- Mongo singleton — shared self-healing helper (lib/mongo.js) ----
+// The local getDb wraps the shared helper only to ensure the
+// push_subscriptions compound index on the hot cron path.
 async function getDb() {
-  const client = await clientPromise;
-  const db = client.db(process.env.DB_NAME);
+  const db = await getSharedDb();
   // Idempotent compound index for the hot cron path:
   //   push_subscriptions.findOne({ clerkId, active: true })
   // Set the cache flag ONLY on success so a transient drop (network blip,

@@ -394,15 +394,32 @@ test('popup.js must declare hostPatternToRegex helper for wildcard manifest matc
   )
 })
 
-test('popup.js must declare isOriginInHostAllowlist helper for active-tab gate', () => {
-  // Companion to hostPatternToRegex — the actual allow-list check
-  // for the active-tab origin. If the function name or the
-  // contract drifts (e.g. someone renames it to `isOriginAllowed`),
-  // resolveEnvAuthBaseUrl() would silently never gate the active
-  // tab — silent DNS-rebinding surface.
+test('popup.js must declare isJobbPilotenAppOrigin helper for the active-tab gate (Chromebook blank-tab fix)', () => {
+  // 2026-08-02 (Chromebook blank-tab fix): the active-tab gate was
+  // REPLACED — Tier A previously adopted ANY manifest
+  // host_permissions origin (which legitimately includes webmail +
+  // job-board hosts for content-script fetch paths), so clicking
+  // "Anslut din profil" while on arbetsformedlingen.se / mail.google.com
+  // opened `<jobsite>/extension-auth` → a blank tab. The gate must
+  // be the narrower isJobbPilotenAppOrigin (JobbPiloten deployment
+  // origins only). If the function name or contract drifts,
+  // resolveEnvAuthBaseUrl() would silently widen the gate again.
   assert.ok(
-    POPUP_JS.includes('function isOriginInHostAllowlist'),
-    'popup.js must declare `isOriginInHostAllowlist` so resolveEnvAuthBaseUrl can gate the active-tab origin against manifest host_permissions',
+    POPUP_JS.includes('function isJobbPilotenAppOrigin'),
+    'popup.js must declare `isJobbPilotenAppOrigin` so resolveEnvAuthBaseUrl gates the active-tab origin against JobbPiloten app origins only',
+  )
+  // The old `isOriginInHostAllowlist` gate (matching mail/job-board
+  // host_permissions) must not be used for the ACTIVE-TAB adoption —
+  // that was the blank-tab regression. We assert non-use in Tier A
+  // (not non-existence) so a future legitimate fetch-origin-gate
+  // reuse of the helper isn't blocked by this test.
+  const marker = 'async function resolveEnvAuthBaseUrl() {'
+  const idx = POPUP_JS.indexOf(marker)
+  assert.ok(idx > -1, 'resolveEnvAuthBaseUrl must exist')
+  const body = POPUP_JS.slice(idx, idx + 8000)
+  assert.ok(
+    !body.includes('isOriginInHostAllowlist'),
+    'Tier A must NOT use the old `isOriginInHostAllowlist` — it matched mail/job-board host_permissions and caused the blank-tab regression',
   )
 })
 

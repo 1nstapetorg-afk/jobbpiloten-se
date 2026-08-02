@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { MongoClient } from 'mongodb';
+import { getDb } from '@/lib/mongo';
 import { generateCoverLetter } from '@/lib/groq';
 import { getStripe } from '@/lib/stripe';
 import { generateAktivitetsrapport } from '@/lib/pdf-report';
@@ -61,18 +61,7 @@ function tierFromPriceId(priceId) {
   return { tier: 'Unknown', interval: null };
 }
 
-// ---- Mongo singleton ----
-let clientPromise;
-if (!global._mongoClientPromise) {
-  const client = new MongoClient(process.env.MONGO_URL || 'mongodb://localhost:27017/jobbpiloten');
-  global._mongoClientPromise = client.connect();
-}
-clientPromise = global._mongoClientPromise;
-
-async function getDb() {
-  const client = await clientPromise;
-  return client.db(process.env.DB_NAME);
-}
+// ---- Mongo singleton — shared self-healing helper (lib/mongo.js) ----
 
 // ---- Sample Swedish jobs pool for demo ----
 const SAMPLE_JOBS = [
@@ -110,9 +99,12 @@ export async function GET(req, ctx) {
   const params = await ctx.params;
   const p = params?.path || [];
   const path = p.join('/');
-  const db = await getDb();
 
   try {
+    // Round-80: `db` is resolved inside the try so a Mongo outage
+    // surfaces as a JSON 500 (`{ error }`) instead of an unhandled
+    // throw outside the handler's error path.
+    const db = await getDb();
     // Public endpoints
     if (path === '' || path === 'health') {
       return NextResponse.json({ ok: true, service: 'JobbPiloten API' });
@@ -453,24 +445,16 @@ export async function GET(req, ctx) {
           if (textAvailable.length > 0) {
             available = textAvailable;
             locationFilterMode = 'text-only';
-          } else {
-            // Nationwide fallback so we're never stuck on a literal
-            // "Inga lediga jobb hittades just nu" empty state.
-            const { jobs: nationwide, hasMore: hm3 } = await multiSourceSearchJobs({ query: searchQuery, location: '', region: '', limit: PAGE_SIZE, offset: page * PAGE_SIZE, employmentTypes: profileEmploymentTypes });
-            const nationwideAvailable = nationwide.filter((j) => !usedKeys.has(`${j.company}|${j.title}`));
-            if (nationwideAvailable.length > 0) {
-              available = nationwideAvailable;
-              serverHasMore = hm3
-              searchMode = 'loose';
-              locationFilterMode = 'fallback-nationwide';
-            } else {
-              // Try once more with no query at all (text + region both off)
-              const { jobs: looseOnly, hasMore: hm4 } = await multiSourceSearchJobs({ query: '', location: '', limit: PAGE_SIZE, offset: page * PAGE_SIZE, employmentTypes: profileEmploymentTypes });
-              available = looseOnly.filter((j) => !usedKeys.has(`${j.company}|${j.title}`));
-              serverHasMore = hm4
-              searchMode = 'loose';
-            }
           }
+          // 2026-08-02 (location HARD-filter fix): NO nationwide /
+          // no-query fallback in this branch. The user's preferred
+          // locations are a hard filter, not a soft suggestion — if
+          // neither the strict Län pass nor the text-only pass found
+          // jobs, the endpoint returns an empty list (the dashboard
+          // shows "Inga lediga jobb hittades just nu") instead of
+          // silently surfacing out-of-area jobs. The user can opt
+          // into the nationwide view explicitly via allSweden=1
+          // (the dashboard's toggle + blue banner).
         }
       } else {
         // No locations OR all are remote-friendly. Treat as search-only.
@@ -497,6 +481,27 @@ export async function GET(req, ctx) {
             // `forceAllSweden` path, so flag it identically.
             locationFilterMode = 'fallback-nationwide';
           }
+        }
+      }
+
+      // If the location gate leaves nothing, the pagination cursor
+      // must not claim more pages exist.
+      if (available.length === 0) serverHasMore = false
+
+      // 2026-08-02 (location HARD-filter fix): every job returned to a
+      // user with preferred (non-remote) locations MUST match one of
+      // them. The AF region filter is the primary gate, but Blocket
+      // jobs in the multi-source pool ignore region codes entirely and
+      // some AF ads carry a mismatched region_code — so this final
+      // doesJobMatchUserLocation pass drops anything out of area.
+      // "Göteborg" → only Göteborg + commuting-area jobs. No exceptions.
+      // The ONLY escape hatch is the explicit allSweden=1 override
+      // (the dashboard's blue banner explains the trade-off).
+      if (userLocations.length > 0 && !forceAllSweden) {
+        const before = available.length;
+        available = available.filter((j) => doesJobMatchUserLocation(j, userLocations));
+        if (available.length !== before) {
+          console.log(`[jobs-available] hard location gate dropped ${before - available.length}/${before} out-of-area job(s) for ${userLocations.join(', ')}`);
         }
       }
 
@@ -546,9 +551,10 @@ export async function POST(req, ctx) {
   const params = await ctx.params;
   const p = params?.path || [];
   const path = p.join('/');
-  const db = await getDb();
 
   try {
+    // Round-80: resolved inside the try (see GET above).
+    const db = await getDb();
     const authRes = await requireAuth(req);
     if (authRes.error) return authRes.error;
     const clerkId = authRes.userId;
@@ -621,7 +627,6 @@ export async function POST(req, ctx) {
         workPreference: source.workPreference || 'hybrid',
         employmentType: source.employmentType || 'heltid',
         industriesToAvoid: source.industriesToAvoid || [],
-        cvSummary: source.cvSummary || '',
         tier: source.tier || 'Professional',
         subscriptionStatus: source.subscriptionStatus || 'inactive',
         // Round-35 (Part 3 — Answer Diversity): persist the user's
@@ -652,6 +657,15 @@ export async function POST(req, ctx) {
         if (Object.prototype.hasOwnProperty.call(source, cvField)) {
           doc[cvField] = source[cvField];
         }
+      }
+      // 2026-08-02 (issue fix): cvSummary gets the same conditional
+      // merge as cvText. Previously the field was written
+      // unconditionally from source, so a profile POST that omitted it
+      // (onboarding's buildApiBody never sends it) silently clobbered
+      // a summary the user had saved via /settings or the
+      // CV-extraction review panel.
+      if (Object.prototype.hasOwnProperty.call(source, 'cvSummary')) {
+        doc.cvSummary = source.cvSummary;
       }
       await db.collection('profiles').updateOne(
         { clerkId },
@@ -717,6 +731,10 @@ export async function POST(req, ctx) {
         // Round-73 / BUG F — nuvarande arbete split keys
         'currentJobTitle',
         'currentOrganization',
+        // 2026-08-02 — CV extraction review panel. The AI-extracted
+        // education field is saved verbatim from the settings/onboarding
+        // review UI (see components/CVFileUpload.jsx). Plain short string.
+        'education',
         // Round-12 — Auto-fill extension fields. Must be in ALLOWED to
         // reach $set, otherwise the per-field validators below are dead
         // code (they only run on keys already in $set).
@@ -913,6 +931,16 @@ export async function POST(req, ctx) {
             console.warn('[profile-update] rejected invalid ' + k + ' payload (clerkId=' + clerkId + ')')
             delete $set[k]
           }
+        }
+      }
+      // 2026-08-02 — education comes from the CV-extraction review
+      // panel (components/CVFileUpload.jsx → Spara till profil). The
+      // AI extraction clamps to 300 chars in lib/cv-extract.js; mirror
+      // the same cap here so a hostile client can't bloat the doc.
+      if (Object.prototype.hasOwnProperty.call($set, 'education')) {
+        if (typeof $set.education !== 'string' || $set.education.length > 300) {
+          console.warn('[profile-update] rejected invalid education payload (clerkId=' + clerkId + ')')
+          delete $set.education
         }
       }
       if (Object.prototype.hasOwnProperty.call($set, 'skills')) {
@@ -1430,12 +1458,20 @@ export async function POST(req, ctx) {
         // Platsbanken would have been reachable for an AF job.
         const already = await db.collection('applications').find({ clerkId }).project({ company: 1, title: 1 }).toArray();
         const usedKeys = new Set(already.map(a => `${a.company}|${a.title}`));
+        // 2026-08-02 (location HARD-filter fix): the "AI-assistenten"
+        // CTA fallback must also respect the user's preferred
+        // locations — a Göteborg user should never get a sample job
+        // in Skellefteå when in-area samples exist.
+        const userLocations = Array.isArray(profile?.locations) ? profile.locations.filter(Boolean) : [];
         let realPicked = null;
         try {
           const query = (profile.jobTitles || []).slice(0, 2).join(' ');
           const locationqs = (profile.locations || []).slice(0, 1).join(', ');
           const realJobs = await searchJobs({ query, location: locationqs, limit: 5 });
           const candidates = (realJobs || []).filter(j => !usedKeys.has(`${j.company}|${j.title}`));
+          const inAreaCandidates = userLocations.length > 0
+            ? candidates.filter(j => doesJobMatchUserLocation(j, userLocations))
+            : candidates;
           if (candidates.length > 0) {
             realPicked = candidates[0];
           }
@@ -1472,8 +1508,16 @@ export async function POST(req, ctx) {
           // intentionally do NOT carry `externalId` / `url`, so the modal
           // button will fall through to “Sök jobbet” (Google search). This
           // is the documented, expected behavior.
-          const available = SAMPLE_JOBS.filter(j => !usedKeys.has(`${j.company}|${j.title}`));
-          job = available.length > 0 ? pickRandom(available, 1)[0] : pickRandom(SAMPLE_JOBS, 1)[0];
+          // 2026-08-02 (location HARD-filter fix): prefer in-area samples
+          // first (a Göteborg user gets Volvo Cars / Bolt, never a
+          // Skellefteå Northvolt row when one exists). Any-sample is the
+          // last-resort so the demo CTA never hard-fails.
+          const samplePool = SAMPLE_JOBS.filter(j => !usedKeys.has(`${j.company}|${j.title}`));
+          const inAreaSamples = userLocations.length > 0
+            ? samplePool.filter(j => doesJobMatchUserLocation(j, userLocations))
+            : samplePool;
+          const pickPool = inAreaSamples.length > 0 ? inAreaSamples : samplePool;
+          job = pickPool.length > 0 ? pickRandom(pickPool, 1)[0] : pickRandom(SAMPLE_JOBS, 1)[0];
         }
       }
 

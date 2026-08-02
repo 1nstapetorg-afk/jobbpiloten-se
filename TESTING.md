@@ -436,3 +436,104 @@ Om något FAIL: spara devtools-konsolen + en skärmbild + URL →
 skicka till `hej@jobbpiloten.se` med ämnesraden
 `[v0.2.3 smoke] FAIL <BUG N>`.
 
+---
+
+## Round-80 manuell smoke-test — CV OCR, AI-extrahering, hård ortsfiltrering
+
+> Nya funktioner 2026-08-02 (Round-80). Dessa verifierar att
+> CV-flödet (bild-OCR + AI-extraheringspanel) och den skärpta
+> jobborter-filtreringen fungerar i verkligheten. Kör på en
+> **demo-användare** (`/dashboard` → logga in i demo-läge) eller
+> ett riktigt konto med en profil.
+
+### T1 — Ladda upp ett foto/skärmdump av ett CV (PNG/JPG)
+
+1. Gå till [`/settings → CV`](/settings).
+2. Välj en PNG/JPG/WebP-bild av ett CV (skärmdump eller foto fungerar).
+3. Vänta på uppladdningen (AI-OCR tar några sekunder).
+
+| Steg | Vad du ska se |
+|---|---|
+| Filväljaren accepterar bilden. | Ingen "Endast PDF och DOCX stöds"-varning. |
+| Uppladdningen klar. | Toast med filnamn + text extraherad. |
+| Om en AI-nyckel är konfigurerad. | **"AI-extraherade uppgifter från CV:t"**-panelen visas med fält (kompetenser, nivå, år, titel, arbetsgivare, utbildning, sammanfattning). |
+| Inga fel. | Inga röda toast-/felmeddelanden. |
+
+### T2 — Spara extraherade uppgifter till profilen
+
+1. Upprepa T1 tills panelen visas.
+2. Redigera ett fält (t.ex. lägg till en kompetens i
+   "Kompetenser (komma-separerade)").
+3. Klicka **Spara till profil**.
+
+| Steg | Vad du ska se |
+|---|---|
+| Klick på *Spara till profil*. | Grön toast "Profiluppgifter sparade från CV:t ✓". |
+| Panelens försvinnande. | Panelen kollapsar (parent-sidan laddar om data). |
+| Verifiera i `/settings → Profil`. | De sparade fälten (kompetenser, utbildning m.m.) finns kvar. |
+| Klicka *Avbryt* i stället. | Inget sparas — panelen stängs utan ändringar. |
+
+### T3 — Inskannad PDF (utan textlager) reser sig via OCR
+
+1. Ta en skärmdump av ett CV och spara som **PDF** (skrivare →
+   "Spara som PDF" fungerar också — en bild-PDF utan textlager).
+2. Ladda upp den i [`/settings → CV`](/settings).
+
+| Steg | Vad du ska se |
+|---|---|
+| Uppladdningen klar. | Antingen text extraherad via OCR (toast + panel), ELLER meddelandet om inskannad PDF med tips (om AI-nyckeln saknas/misslyckas). |
+| Inget hårt fel. | Inga 500- eller "kraschad"-fel — flödet hamnar alltid i en förklarad UX (manuell sammanfattning). |
+
+### T4 — Jobborter är ett HÅRT filter (Göteborg → bara Göteborg)
+
+1. Sätt din profil till **endast "Göteborg"** i
+   [`/settings → Arbetsorter`](/settings).
+2. Öppna [`/dashboard`](/dashboard) → *Lediga jobb för dig*.
+
+| Steg | Vad du ska se |
+|---|---|
+| Jobblistan visas. | Varje jobb matchar Göteborg eller dess pendlingsområde — inga Skellefteå/Stockholm-jobb. |
+| Ingen träff alls. | "Inga lediga jobb hittades just nu" — INTE jobb från andra orter. |
+| Blå bannern (allSweden). | Om du klickar *Visa hela Sverige* visas jobb från hela landet med en tydlig varning om trade-off. |
+
+### T5 — "Anslut din profil" från en jobbsajt (Chromebook-fix)
+
+1. Installera tillägget (se `Förutsättningar` ovan).
+2. Gå till **en jobbsajt** (t.ex. <https://arbetsformedlingen.se> eller
+   <https://blocket.se>).
+3. Klicka ✈-ikonen → *Anslut din profil*.
+
+| Steg | Vad du ska se |
+|---|---|
+| Ny flik öppnas. | **JobbPilotens** inloggnings-/auth-sida — INTE en tom sida på arbetsgivarsajtens domän. |
+| Auth-sidan konsol. | Raderna `[extension-auth] step a: page loaded` och `step b: …` visas (F12 → Console). |
+
+### Regressionstester att köra EFTER Round-80-smoken
+
+```bash
+cd jobbpiloten-source
+yarn test:unit
+node scripts/lint-scope.mjs
+node scripts/lint-await-async.mjs
+node scripts/lint-field-patterns.mjs
+node scripts/validate-extension.js
+```
+
+Förväntat: **1190 tester passerar / 0 fail**, alla lintar +
+extensionsvalideringen grön.
+
+### Rapportera Round-80-smoke-resultat
+
+```
+- [ ] T1 bild-CV OCR          - pass / fail (filtyp):
+- [ ] T2 spara extraherade    - pass / fail:
+- [ ] T3 inskannad PDF OCR    - pass / fail:
+- [ ] T4 hård ortsfiltrering  - pass / fail (ort):
+- [ ] T5 Chromebook-auth      - pass / fail (URL):
+- [ ] Regression suite        - pass / fail (1190/0):
+```
+
+Om något FAIL: spara devtools-konsolen + en skärmbild + URL →
+skicka till `hej@jobbpiloten.se` med ämnesraden
+`[Round-80 smoke] FAIL <T-n>`.
+

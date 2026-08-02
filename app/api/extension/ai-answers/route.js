@@ -56,7 +56,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { MongoClient } from 'mongodb';
+import { getDb } from '@/lib/mongo';
 import { ZodError } from 'zod';
 import { generateBatchAnswers } from '@/lib/groq';
 import {
@@ -75,19 +75,7 @@ import { requireCompleteProfile } from '@/lib/profile-check';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// ---- Mongo singleton (mirror /api/extension/profile/route.js so we
-// don't open N pools as fast as routes are imported) ----
-let clientPromise;
-if (!global._mongoClientPromise) {
-  const client = new MongoClient(process.env.MONGO_URL || 'mongodb://localhost:27017/jobbpiloten');
-  global._mongoClientPromise = client.connect();
-}
-clientPromise = global._mongoClientPromise;
-
-async function getDb() {
-  const client = await clientPromise;
-  return client.db(process.env.DB_NAME);
-}
+// ---- Mongo singleton — shared self-healing helper (lib/mongo.js) ----
 
 // ---- Independent rate-limit bucket for the batch endpoint ----
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour

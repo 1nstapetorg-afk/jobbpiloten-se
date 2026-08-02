@@ -32,7 +32,13 @@ const nextConfig = {
     ],
   },
   // Renamed from experimental.serverComponentsExternalPackages in Next 15
-  serverExternalPackages: ['mongodb'],
+  // 2026-08-02: @napi-rs/canvas is a NATIVE (.node) module used by
+  // lib/cv-ocr.js to rasterize scanned-PDF pages for OCR. Webpack
+  // cannot bundle native binaries, so it must be loaded from
+  // node_modules at runtime on the serverless function — exactly the
+  // serverExternalPackages contract. (mongodb is externalized for the
+  // same native-binary reason.)
+  serverExternalPackages: ['mongodb', '@napi-rs/canvas'],
   webpack(config, { dev }) {
     // Round-79 fix: add the @/ path alias so imports like
     // `import { ... } from '@/lib/clerk-config'` resolve correctly.
