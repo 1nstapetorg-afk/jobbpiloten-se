@@ -224,3 +224,63 @@ test('Round-45: provider-startup log line uses provider.name + provider.model', 
     'provider-startup log must reference provider.model',
   )
 })
+
+// ---- Round-80 followup: text-model fallback chain ----
+
+test('Round-80: TEXT_MODELS is an ordered fallback chain with the primary first', async () => {
+  const { textModelChainForProvider } = await import('../../lib/groq.js')
+  const groq = textModelChainForProvider('groq', 'x')
+  assert.equal(groq[0], 'llama-3.3-70b-versatile')
+  assert.ok(
+    groq.length >= 2,
+    'Groq text chain must carry a secondary model for decommission resilience (llama-3.3-70b-versatile shuts down 2026-08-16)',
+  )
+  assert.equal(textModelChainForProvider('openai', 'x')[0], 'gpt-4o-mini')
+  assert.deepEqual(textModelChainForProvider('unknown-vendor', 'fb'), ['fb'])
+})
+
+test('Round-80: every LLM call site routes through createChatWithFallback, not raw client calls', () => {
+  // The five generation paths (cover letter, answer, adaptive answer,
+  // email body, generateText) must ALL go through the fallback chain.
+  // A single raw `client.chat.completions.create` in a generation path
+  // would silently bypass the decommission resilience. Comments may
+  // reference the raw call (doc examples), so we count only lines that
+  // are NOT comment/doc lines.
+  const rawCallLines = SRC.split('\n').filter(
+    (l) => l.includes('client.chat.completions.create') && !l.trim().startsWith('//') && !l.trim().startsWith('*'),
+  )
+  // Exactly one executable raw call remains: inside createChatWithFallback.
+  assert.equal(
+    rawCallLines.length,
+    1,
+    `expected 1 executable raw call (inside the helper), found ${rawCallLines.length}:\n${rawCallLines.join('\n')}`,
+  )
+  const fallbackCalls = SRC.match(/createChatWithFallback\(/g) || []
+  assert.ok(fallbackCalls.length >= 5, `all 5 generation paths must use createChatWithFallback — found ${fallbackCalls.length}`)
+})
+
+test('Round-80: isModelLevelError matches decommissioned models but NOT rate limits (429)', async () => {
+  // 429 rate-limit errors must NOT burn the fallback chain — they
+  // should fail soft to the rule-based template (the same reason
+  // lib/cv-ocr.js treats 429 as non-retryable). Direct behavioral
+  // test of the exported detector.
+  const { isModelLevelError } = await import('../../lib/groq.js')
+  assert.equal(
+    isModelLevelError('The model `llama-3.2-90b-vision-preview` has been decommissioned and is no longer supported.'),
+    true,
+  )
+  assert.equal(
+    isModelLevelError('The model `foo` has been deprecated and will be shut down.'),
+    true,
+  )
+  assert.equal(
+    isModelLevelError('Model `x` does not exist.'),
+    true,
+  )
+  // Rate limits + transient errors are NOT model-level — no retry.
+  assert.equal(
+    isModelLevelError('429 Rate limit reached for model `qwen/qwen3.6-27b` ... Limit 200000, Used 199439'),
+    false,
+  )
+  assert.equal(isModelLevelError('ECONNRESET read ECONNRESET'), false)
+})
