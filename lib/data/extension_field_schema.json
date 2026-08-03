@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-08-03T14:15:42.682Z",
-  "source": "567 form probes -> 102 application forms (64 complete, >= 5 real fields)",
+  "generatedAt": "2026-08-03T16:28:04.264Z",
+  "source": "759 form probes -> 68 application forms (66 complete, >= 5 real fields)",
   "tiers": {
     "tier1Universal": ">70% of complete forms (>= 5 real fields)",
     "tier2IndustryCore": ">40% within industry",
@@ -10,17 +10,17 @@
     {
       "field": "name",
       "label": "förnamn",
-      "frequency": 96.9
+      "frequency": 97
     },
     {
       "field": "email",
       "label": "e-post",
-      "frequency": 96.9
+      "frequency": 97
     },
     {
       "field": "phone",
       "label": "telefon",
-      "frequency": 96.9
+      "frequency": 97
     }
   ],
   "industry": {
@@ -28,11 +28,16 @@
       {
         "field": "cv",
         "label": "ladda upp cv",
-        "frequency": 75
+        "frequency": 100
       },
       {
         "field": "other_documents",
         "label": "övriga dokument",
+        "frequency": 100
+      },
+      {
+        "field": "cover_letter",
+        "label": "personligt brev",
         "frequency": 75
       },
       {
@@ -44,53 +49,73 @@
         "field": "address",
         "label": "adress",
         "frequency": 50
-      },
-      {
-        "field": "cover_letter",
-        "label": "personligt brev",
-        "frequency": 50
       }
     ],
     "vård": [
       {
         "field": "cover_letter",
         "label": "personligt brev",
-        "frequency": 41.7
+        "frequency": 50
       }
     ],
     "kontor": [
       {
-        "field": "field_var",
-        "label": "var",
-        "frequency": 72.2
+        "field": "cover_letter",
+        "label": "personligt brev",
+        "frequency": 85.7
       },
       {
-        "field": "field_distans",
-        "label": "distans",
-        "frequency": 72.2
+        "field": "cv",
+        "label": "ladda upp cv",
+        "frequency": 71.4
       },
       {
-        "field": "city",
-        "label": "sortera på datumproximityrelevans",
-        "frequency": 72.2
+        "field": "other_documents",
+        "label": "övriga dokument",
+        "frequency": 71.4
+      },
+      {
+        "field": "availability",
+        "label": "när är du tillgänglig för start",
+        "frequency": 57.1
+      },
+      {
+        "field": "address",
+        "label": "adress",
+        "frequency": 42.9
       }
     ],
     "IT": [],
     "bygg": [
       {
-        "field": "field_var",
-        "label": "var",
-        "frequency": 81.8
+        "field": "personal_number",
+        "label": "personnummer",
+        "frequency": 66.7
       },
       {
-        "field": "field_distans",
-        "label": "distans",
-        "frequency": 81.8
+        "field": "address",
+        "label": "adress",
+        "frequency": 66.7
       },
       {
         "field": "city",
-        "label": "sortera på datumproximityrelevans",
-        "frequency": 81.8
+        "label": "stad",
+        "frequency": 66.7
+      },
+      {
+        "field": "address",
+        "label": "postnummer",
+        "frequency": 66.7
+      },
+      {
+        "field": "cv",
+        "label": "ladda upp cv",
+        "frequency": 66.7
+      },
+      {
+        "field": "other_documents",
+        "label": "övriga dokument",
+        "frequency": 66.7
       }
     ],
     "restaurang": [],
@@ -98,413 +123,413 @@
       {
         "field": "cv",
         "label": "ladda upp cv",
-        "frequency": 50
+        "frequency": 60
       },
       {
         "field": "other_documents",
         "label": "övriga dokument",
-        "frequency": 50
+        "frequency": 60
       },
       {
         "field": "cover_letter",
         "label": "personligt brev",
-        "frequency": 50
+        "frequency": 60
       }
     ],
     "industri": [
       {
         "field": "personal_number",
         "label": "personnummer",
-        "frequency": 64.3
+        "frequency": 88.9
       },
       {
         "field": "address",
         "label": "adress",
-        "frequency": 64.3
+        "frequency": 88.9
       },
       {
         "field": "city",
         "label": "stad",
-        "frequency": 64.3
+        "frequency": 88.9
       },
       {
         "field": "address",
         "label": "postnummer",
-        "frequency": 64.3
+        "frequency": 88.9
       },
       {
         "field": "cv",
         "label": "ladda upp cv",
-        "frequency": 64.3
+        "frequency": 88.9
       },
       {
         "field": "other_documents",
         "label": "övriga dokument",
-        "frequency": 64.3
+        "frequency": 88.9
       }
     ],
     "transport": []
   },
   "jobSpecific": [
     {
-      "field": "availability",
-      "label": "när är du tillgänglig för start",
-      "count": 10,
-      "frequency": 9.8
-    },
-    {
-      "field": "date_of_birth",
-      "label": "födelseår 2026 2025 2024 2023 2022 2021 2020 2019 2018 2017 2016 2015 2014 2013",
-      "count": 10,
-      "frequency": 9.8
-    },
-    {
-      "field": "field_månad_jan_feb_mar_apr_maj_jun_",
-      "label": "månad jan feb mar apr maj jun jul aug sept okt nov dec",
-      "count": 10,
-      "frequency": 9.8
-    },
-    {
-      "field": "field_dag_1_2_3_4_5_6_7_8_9_10_11_12",
-      "label": "dag 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 2",
-      "count": 10,
-      "frequency": 9.8
-    },
-    {
-      "field": "field_jag_har_tagit_del_av_informati",
-      "label": "jag har tagit del av informationen som hanteras i enlighet med policyn läs vår policy",
-      "count": 10,
-      "frequency": 9.8
-    },
-    {
-      "field": "field_titel",
-      "label": "titel",
-      "count": 9,
-      "frequency": 8.8
-    },
-    {
-      "field": "previous_employer",
-      "label": "företag",
-      "count": 9,
-      "frequency": 8.8
-    },
-    {
-      "field": "field_specialization",
-      "label": "specialization",
-      "count": 9,
-      "frequency": 8.8
-    },
-    {
-      "field": "name",
-      "label": "first name",
-      "count": 8,
-      "frequency": 7.8
-    },
-    {
-      "field": "last_name",
-      "label": "last name",
-      "count": 8,
-      "frequency": 7.8
-    },
-    {
-      "field": "city",
-      "label": "ort",
-      "count": 7,
-      "frequency": 6.9
-    },
-    {
       "field": "field_land",
       "label": "land",
       "count": 6,
-      "frequency": 5.9
-    },
-    {
-      "field": "phone",
-      "label": "phone",
-      "count": 6,
-      "frequency": 5.9
-    },
-    {
-      "field": "city",
-      "label": "skriv en kort motivering om varför du passar för uppdraget max 10000 tecken",
-      "count": 6,
-      "frequency": 5.9
+      "frequency": 8.8
     },
     {
       "field": "field_price",
       "label": "price",
       "count": 6,
-      "frequency": 5.9
+      "frequency": 8.8
     },
     {
       "field": "field_yyyy-mm-dd",
       "label": "yyyy-mm-dd",
       "count": 6,
-      "frequency": 5.9
+      "frequency": 8.8
     },
     {
       "field": "field_annat",
       "label": "annat",
       "count": 4,
-      "frequency": 3.9
+      "frequency": 5.9
     },
     {
       "field": "field_län",
       "label": "län",
       "count": 4,
-      "frequency": 3.9
+      "frequency": 5.9
     },
     {
       "field": "field_ja_både_och",
       "label": "ja både och",
       "count": 4,
-      "frequency": 3.9
-    },
-    {
-      "field": "email",
-      "label": "epost",
-      "count": 4,
-      "frequency": 3.9
+      "frequency": 5.9
     },
     {
       "field": "gender",
       "label": "kön",
       "count": 4,
-      "frequency": 3.9
-    },
-    {
-      "field": "email",
-      "label": "repetera e-postadress",
-      "count": 3,
-      "frequency": 2.9
+      "frequency": 5.9
     },
     {
       "field": "field_postnr",
       "label": "postnr",
       "count": 3,
-      "frequency": 2.9
-    },
-    {
-      "field": "phone",
-      "label": "mobiltelefon",
-      "count": 3,
-      "frequency": 2.9
-    },
-    {
-      "field": "phone",
-      "label": "hemtelefon inkl riktnr",
-      "count": 3,
-      "frequency": 2.9
-    },
-    {
-      "field": "phone",
-      "label": "arbetstelefon inkl riktnr",
-      "count": 3,
-      "frequency": 2.9
+      "frequency": 4.4
     },
     {
       "field": "field_kvinna",
       "label": "kvinna",
       "count": 3,
-      "frequency": 2.9
+      "frequency": 4.4
     },
     {
       "field": "field_man",
       "label": "man",
       "count": 3,
-      "frequency": 2.9
-    },
-    {
-      "field": "personal_number",
-      "label": "födelsedatum personnummer ååååmmdd-nnnn",
-      "count": 3,
-      "frequency": 2.9
-    },
-    {
-      "field": "personal_number",
-      "label": "jag har inte svenskt personnummer och anger bara födelsedatum",
-      "count": 3,
-      "frequency": 2.9
+      "frequency": 4.4
     },
     {
       "field": "education",
       "label": "utbildningskolafrån åååå-mm till examen åååå-mm",
       "count": 3,
-      "frequency": 2.9
+      "frequency": 4.4
     },
     {
       "field": "previous_employer",
       "label": "företag organisation yrke titelfrån åååå-mm till åååå-mm",
       "count": 3,
-      "frequency": 2.9
-    },
-    {
-      "field": "name",
-      "label": "namnyrke titelföretag organisationtelefon",
-      "count": 3,
-      "frequency": 2.9
+      "frequency": 4.4
     },
     {
       "field": "field_questionrepeater_ctl00_ddl",
       "label": "questionrepeater ctl00 ddl",
       "count": 3,
-      "frequency": 2.9
+      "frequency": 4.4
     },
     {
       "field": "field_sourceddl",
       "label": "sourceddl",
       "count": 3,
-      "frequency": 2.9
+      "frequency": 4.4
     },
     {
       "field": "field_btnpreview",
       "label": "btnpreview",
       "count": 3,
-      "frequency": 2.9
+      "frequency": 4.4
     },
     {
       "field": "field_btnsave",
       "label": "btnsave",
       "count": 3,
-      "frequency": 2.9
+      "frequency": 4.4
     },
     {
       "field": "field_dagtid",
       "label": "dagtid",
       "count": 3,
-      "frequency": 2.9
-    },
-    {
-      "field": "cv",
-      "label": "cv",
-      "count": 3,
-      "frequency": 2.9
+      "frequency": 4.4
     },
     {
       "field": "field_övrigt",
       "label": "övrigt",
       "count": 3,
-      "frequency": 2.9
-    },
-    {
-      "field": "address",
-      "label": "om du har annan bostadsort hur har du tänkt att lösa ett boende",
-      "count": 3,
-      "frequency": 2.9
-    },
-    {
-      "field": "availability",
-      "label": "när är du tidigast tillgänglig för start och har du någon uppsägningstid",
-      "count": 3,
-      "frequency": 2.9
+      "frequency": 4.4
     },
     {
       "field": "driving_license",
       "label": "ja körkort men inte tillgång till bil",
       "count": 3,
-      "frequency": 2.9
-    },
-    {
-      "field": "email",
-      "label": "upprepa e-post",
-      "count": 3,
-      "frequency": 2.9
+      "frequency": 4.4
     },
     {
       "field": "field_år",
       "label": "år",
       "count": 3,
-      "frequency": 2.9
+      "frequency": 4.4
     },
     {
       "field": "field_månad",
       "label": "månad",
       "count": 3,
-      "frequency": 2.9
+      "frequency": 4.4
     },
     {
       "field": "field_dag",
       "label": "dag",
       "count": 3,
-      "frequency": 2.9
+      "frequency": 4.4
     },
     {
       "field": "field_c_o",
       "label": "c o",
       "count": 3,
-      "frequency": 2.9
+      "frequency": 4.4
     },
     {
       "field": "field_ac_247_ad_376_ae_971_af_93_ag_",
       "label": "ac 247 ad 376 ae 971 af 93 ag 1 ai 1 al 355 am 374 ao",
       "count": 3,
-      "frequency": 2.9
-    },
-    {
-      "field": "cv",
-      "label": "bifoga ett cv-dokument ladda upp filuppladdning pågår eller skr",
-      "count": 3,
-      "frequency": 2.9
-    },
-    {
-      "field": "cover_letter",
-      "label": "bifoga ett personligt brev ladda upp filuppladdning pågår eller",
-      "count": 3,
-      "frequency": 2.9
+      "frequency": 4.4
     },
     {
       "field": "field_övriga_filer",
       "label": "övriga filer",
       "count": 3,
-      "frequency": 2.9
+      "frequency": 4.4
     },
     {
       "field": "gender",
       "label": "jag har läst och förstått villkoren för att skapa ett varbi-konto och jag har även tagit del av hur",
       "count": 3,
-      "frequency": 2.9
+      "frequency": 4.4
     },
     {
-      "field": "cover_letter",
-      "label": "spara mitt cv och personligt brev på min profil för framtida ansökningar",
+      "field": "field_ja_puuilo_sverige_får_även_ski",
+      "label": "ja puuilo sverige får även skicka framtida jobberbjudanden till mig",
       "count": 3,
-      "frequency": 2.9
+      "frequency": 4.4
     },
     {
       "field": "field_har_du_vana_vid_att_arbeta_i_d",
       "label": "har du vana vid att arbeta i datorbaserade verksamhetsstöd gärna combine och cosmic",
       "count": 2,
-      "frequency": 2
+      "frequency": 2.9
     },
     {
       "field": "field_ständig_kväll",
       "label": "ständig kväll",
       "count": 2,
-      "frequency": 2
+      "frequency": 2.9
     },
     {
       "field": "field_ständig_natt",
       "label": "ständig natt",
       "count": 2,
-      "frequency": 2
+      "frequency": 2.9
     },
     {
       "field": "shift_work",
       "label": "2-skift",
       "count": 2,
-      "frequency": 2
+      "frequency": 2.9
     },
     {
       "field": "shift_work",
       "label": "3-skift eller 4-skift",
       "count": 2,
-      "frequency": 2
+      "frequency": 2.9
     },
     {
       "field": "field_jag_kan_arbeta_alla_tider",
       "label": "jag kan arbeta alla tider",
       "count": 2,
-      "frequency": 2
+      "frequency": 2.9
+    },
+    {
+      "field": "field_vilken_tjänst_avdelning_är_du_",
+      "label": "vilken tjänst avdelning är du intresserad av varför ska vi anställa just dig dit",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_bifoga_valda_filer",
+      "label": "bifoga valda filer",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_ew2_ew2content_ivbtnspara",
+      "label": "ew2 ew2content ivbtnspara",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_ew2_ew2content_ivbtnavbryt",
+      "label": "ew2 ew2content ivbtnavbryt",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_omgående",
+      "label": "omgående",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_två_veckors_uppsägningstid",
+      "label": "två veckors uppsägningstid",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_en_månad_eller_längre_uppsägni",
+      "label": "en månad eller längre uppsägningstid",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "experience",
+      "label": "ingen erfarenhet",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_mer_än_5_år",
+      "label": "mer än 5 år",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_",
+      "label": "",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "linkedin",
+      "label": "link to your linkedin profile",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_subscribe",
+      "label": "subscribe",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_ingen_alls",
+      "label": "ingen alls",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_mindre_än_ett_år",
+      "label": "mindre än ett år",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_1_år",
+      "label": "1 år",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_2_år",
+      "label": "2 år",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_3_år_eller_mer",
+      "label": "3 år eller mer",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_har_du_mycket_god_förmåga_att_",
+      "label": "har du mycket god förmåga att uttrycka dig i tal och skrift på svenska och engelska",
+      "count": 1,
+      "frequency": 1.5
+    },
+    {
+      "field": "experience",
+      "label": "har du erfarenhet av ekonomi inom samhällsbygnadsverksamhet",
+      "count": 1,
+      "frequency": 1.5
+    },
+    {
+      "field": "experience",
+      "label": "har du erfarenhet av kommunalt ekonomiarbete",
+      "count": 1,
+      "frequency": 1.5
+    },
+    {
+      "field": "experience",
+      "label": "har du erfarenhet av avfallsverksamhet samt vatten och alopp",
+      "count": 1,
+      "frequency": 1.5
+    },
+    {
+      "field": "experience",
+      "label": "har du erfarenhet av personalansvar som t ex linjechef inklusive arbetsmiljö och arbetsrätt oblig",
+      "count": 1,
+      "frequency": 1.5
+    },
+    {
+      "field": "experience",
+      "label": "har du erfarenhet av bidragsfinansierad verksamhet t ex vinnova- eller eu-projekt",
+      "count": 1,
+      "frequency": 1.5
+    },
+    {
+      "field": "education",
+      "label": "har du högskoleutbildning inom medie- och kommunikationsvetenskap eller liknande",
+      "count": 1,
+      "frequency": 1.5
+    },
+    {
+      "field": "field_är_du_som_person_positiv_lösni",
+      "label": "är du som person positiv lösningsorienterad och har servicekänsla ut i fingerspetsarna obligatoris",
+      "count": 1,
+      "frequency": 1.5
+    },
+    {
+      "field": "education",
+      "label": "har du högskoleutbildning med examen inom relevant område",
+      "count": 1,
+      "frequency": 1.5
+    },
+    {
+      "field": "computer_skills",
+      "label": "har du god datorvana",
+      "count": 1,
+      "frequency": 1.5
     }
   ],
   "platforms": {
@@ -579,11 +604,7 @@
       "field_qfile_doctypeid_14858",
       "field_qfile_doctypeid_14599"
     ],
-    "staffing-site": [
-      "field_var",
-      "field_distans",
-      "city"
-    ],
+    "staffing-site": [],
     "jobylon": [
       "name",
       "email",

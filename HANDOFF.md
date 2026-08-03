@@ -1004,12 +1004,23 @@ PORT=3001 yarn test:e2e       # in another
 - Field sets come from the form-field corpus built by the isolated
   scraper (`~/jobbpiloten-scraper`): `data/processed/extension_field_schema.json`
   (Tier 1 universal, Tier 2 industry-core, Tier 3 job-specific). A copy
-  of the final schema lives at `lib/extension_field_schema.json`.
+  of the final schema lives at `lib/data/extension_field_schema.json`.
   Keep `lib/field-taxonomy.js` reconciled with the corpus whenever the
   scraper is re-run with a larger corpus.
+- **Round-81 follow-up (2026-08-03):** corpus re-built after a NOISE_RE
+  hardening pass. `var` / `distans` / any label containing `sortera`
+  (staffing-site filter widgets) are now excluded from form counting and
+  Tier 1/2, so the earlier "102 forms" figure (64 complete) dropped to a
+  cleaner **759 probes → 68 application forms (66 complete, ≥5 real
+  fields)**. Tier 2 is now evidence-backed (lager/kontor/sälj show
+  cv+cover_letter+other_documents, bygg/industri show
+  personnummer/adress/postnummer) instead of filter-widget noise.
+  Tier 3 excludes canonical ids already claimed by Tier 1 or Tier 2 so
+  the tiers are mutually exclusive.
 
 ### Testing
-- `yarn test:unit` (1207 tests) — includes the new industry key-count
-  locks, the CE-körkort anti-hijack lock, and per-industry mock routing.
+- `yarn test:unit` (1209 tests, 1206 pass / 3 skipped) — includes the
+  new industry key-count locks, the CE-körkort anti-hijack lock, and
+  per-industry mock routing.
 
 *End of handoff. Good luck.*
