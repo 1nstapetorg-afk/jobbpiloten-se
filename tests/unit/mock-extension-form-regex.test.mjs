@@ -53,8 +53,11 @@ const entries = []
   }
 }
 
-test('(1) validator extracts exactly 57 FIELD_PATTERNS entries from content.js', () => {
-  assert.equal(entries.length, 57, `expected 57 entries; got ${entries.length}. The Round-46 count lock lives here — splits: address split into 4 sub-patterns (gata + gatuadress + street + simple-street + city-närhet-rejection) per the Monday Bug-2 fix; zip and city use the existing projiect pattern. If this fails, the content.js #FIELD_PATTERNS table moved.`)
+test('(1) validator extracts exactly 73 FIELD_PATTERNS entries from content.js', () => {
+  // 2026-08-03 (Round-81): 57 -> 73 — the 16 industry-specific boolean
+  // entries (canLiftHeavy, canShiftWork, hasCareAssistantEducation, …)
+  // were added for the industry taxonomy integration.
+  assert.equal(entries.length, 73, `expected 73 entries; got ${entries.length}. The Round-46 count lock lives here — splits: address split into 4 sub-patterns (gata + gatuadress + street + simple-street + city-närhet-rejection) per the Monday Bug-2 fix; zip and city use the existing project pattern; Round-81 added 16 industry booleans. If this fails, the content.js #FIELD_PATTERNS table moved.`)
 })
 
 // ----------------------------------------------------------------------
@@ -98,8 +101,9 @@ function extractMockFields(html) {
 
 const mockFields = extractMockFields(MOCK)
 
-test('(2) mock HTML exposes one example per Round-12 field type', () => {
-  // 11 boolean + 4 select + 1 multiselect + 1 consent + 3 file = 20 fields.
+test('(2) mock HTML exposes one example per Round-12 + Round-81 field type', () => {
+  // 11 boolean + 4 select + 1 multiselect + 1 consent + 3 file = 20 fields
+  // (Round-12) + 16 industry booleans (Round-81) = 36 fields.
   const expectedKeys = [
     'hasDriversLicense', 'isEuCitizen', 'hasWorkPermit', 'yearsExperience',
     'hasHighSchoolDiploma', 'hasForkliftLicense', 'hasSecurityClearance',
@@ -108,6 +112,12 @@ test('(2) mock HTML exposes one example per Round-12 field type', () => {
     'dateOfBirth', 'gender', 'nationality', 'phoneCountryCode',
     'skills', 'autoConsent',
     'cvFile', 'coverLetterFile', 'additionalDocuments',
+    // Round-81 industry booleans
+    'canLiftHeavy', 'canShiftWork', 'hasCareAssistantEducation', 'hasHLRCertification',
+    'hasNursingExperience', 'hasOfficeExperience', 'hasComputerSkills', 'hasCodingExperience',
+    'hasConstructionExperience', 'canWorkAtHeights', 'hasFoodHandlingCertificate',
+    'hasServiceExperience', 'hasSalesExperience', 'hasIndustrialExperience',
+    'hasTruckLicenseCE', 'hasTransportExperience',
   ]
   for (const key of expectedKeys) {
     assert.ok(
@@ -174,6 +184,35 @@ test('(4a) every Round-12 boolean pattern has a mock example', () => {
     assert.ok(mockFields.some((f) => f.expectedKey === key),
       `boolean pattern ${key} has no mock example in /app/mock-extension-form.html`)
   }
+})
+
+test('(4d) every Round-81 industry boolean pattern has a mock example + routes uniquely', () => {
+  const industryKeys = [
+    'canLiftHeavy', 'canShiftWork', 'hasCareAssistantEducation', 'hasHLRCertification',
+    'hasNursingExperience', 'hasOfficeExperience', 'hasComputerSkills', 'hasCodingExperience',
+    'hasConstructionExperience', 'canWorkAtHeights', 'hasFoodHandlingCertificate',
+    'hasServiceExperience', 'hasSalesExperience', 'hasIndustrialExperience',
+    'hasTruckLicenseCE', 'hasTransportExperience',
+  ]
+  for (const key of industryKeys) {
+    const entry = entries.find((e) => e.profileKey === key)
+    assert.ok(entry, `industry boolean pattern ${key} missing from content.js FIELD_PATTERNS`)
+    assert.ok(mockFields.some((f) => f.expectedKey === key),
+      `industry boolean pattern ${key} has no mock example in /app/mock-extension-form.html`)
+  }
+  // The CE-körkort -> hasDriversLicense hijack regression lock: the
+  // B-körkort entry must NOT win for a CE-körkort label (Round-81
+  // lookbehind fix in hasDriversLicense).
+  const ce = mockFields.find((f) => f.expectedKey === 'hasTruckLicenseCE')
+  const matching = []
+  for (const e of entries) {
+    try {
+      const body = e.regexSource.slice(1, -2)
+      if (new RegExp(body, 'i').test(ce.meta)) matching.push(e.profileKey)
+    } catch (_) { /* defensive */ }
+  }
+  assert.ok(matching.includes('hasTruckLicenseCE'), `CE-körkort meta must route to hasTruckLicenseCE; got [${matching.join(', ')}]`)
+  assert.ok(!matching.includes('hasDriversLicense'), `CE-körkort must NOT route to hasDriversLicense; got [${matching.join(', ')}]`)
 })
 
 test('(4b) consent pattern has a real Swedish / English GDPR label in the mock', () => {

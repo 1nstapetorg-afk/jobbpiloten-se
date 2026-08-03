@@ -54,6 +54,17 @@ import {
   ROUND12_SKILL_OPTIONS,
   getRound12Defaults,
 } from '@/lib/extension-profile-fields'
+// 2026-08-03 (Round-81) — industry taxonomy. INDUSTRIES feeds the
+// industry selector, INDUSTRY_FIELDS the per-industry toggle set,
+// INDUSTRY_BOOLEAN_KEYS the form-state registry. Same single source
+// of truth as onboarding + the API route (lib/field-taxonomy.js).
+import {
+  INDUSTRIES,
+  INDUSTRY_FIELDS,
+  INDUSTRY_IDS,
+  INDUSTRY_BOOLEAN_KEYS,
+  INDUSTRY_BOOLEAN_LABELS,
+} from '@/lib/field-taxonomy'
 
 // Clerk user button — dynamic + crash-safe so the whole page still renders
 // when @clerk/nextjs fails to load (e.g. in demo mode without keys).
@@ -195,6 +206,11 @@ function formFromProfile(profile) {
     // slate-grey outline and never clicks the host checkbox unless
     // the user explicitly toggles this on.
     autoConsent: Boolean(profile?.autoConsent) === true,
+    // ---- 2026-08-03 (Round-81) — industry taxonomy ----
+    industry: INDUSTRY_IDS.includes(profile?.industry) ? profile.industry : '',
+    ...Object.fromEntries(
+      INDUSTRY_BOOLEAN_KEYS.map((k) => [k, Boolean(profile?.[k]) === true]),
+    ),
   }
 }
 
@@ -296,6 +312,18 @@ function buildPatch(profile, form) {
     const fv = Boolean(form[k]) === true
     const pv = Boolean(profile?.[k]) === true
     if (fv !== pv) out[k] = fv
+  }
+  // Round-81 — industry-specific booleans, same compare/emit pattern.
+  for (const k of INDUSTRY_BOOLEAN_KEYS) {
+    const fv = Boolean(form[k]) === true
+    const pv = Boolean(profile?.[k]) === true
+    if (fv !== pv) out[k] = fv
+  }
+  // Round-81 — industry id. Emit only when it changed AND is canonical
+  // (the server re-validates anyway).
+  const formIndustry = INDUSTRY_IDS.includes(form.industry) ? form.industry : ''
+  if (formIndustry !== (INDUSTRY_IDS.includes(profile?.industry) ? profile.industry : '')) {
+    out.industry = formIndustry
   }
   const yearsForm = Number(form.yearsExperience)
   const yearsPrev = Number(profile?.yearsExperience)
@@ -1241,6 +1269,46 @@ function ProfileEditor({ profile, onSaved }) {
               />
             </div>
           ))}
+        </div>
+
+        {/* 2026-08-03 (Round-81) — Industry selector + industry-core
+            fields. The dropdown sets profile.industry (the extension
+            reads it to surface relevant fields); the toggles below it
+            are exactly the selected industry's Tier 2 field set from
+            lib/field-taxonomy.js. Switching industry swaps the shown
+            toggles (already-answered values persist in the profile). */}
+        <div className="pt-3 border-t border-dashed border-slate-200 space-y-3" data-testid="settings-industry-block">
+          <div className="space-y-1.5">
+            <Label htmlFor="industry">Bransch</Label>
+            <Select value={form.industry || ''} onValueChange={(v) => setField('industry', v)}>
+              <SelectTrigger id="industry" data-testid="settings-industry">
+                <SelectValue placeholder="Välj bransch" />
+              </SelectTrigger>
+              <SelectContent>
+                {INDUSTRIES.map((ind) => (
+                  <SelectItem key={ind.id} value={ind.id} data-testid={`settings-industry-${ind.id}`}>{ind.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[10px] text-slate-500">Styr vilka branschspecifika fält som visas nedan och som tillägget besvarar automatiskt.</p>
+          </div>
+          {form.industry && (
+            <div className="space-y-0" data-testid="settings-industry-fields">
+              {(INDUSTRY_FIELDS[form.industry] || []).map((f) => (
+                <div key={f.key} className="flex items-center justify-between gap-3 py-1.5 border-b border-slate-50 last:border-b-0">
+                  <Label htmlFor={`industry-${f.key}`} className="flex-1 cursor-pointer text-sm text-slate-700">
+                    {f.label}
+                  </Label>
+                  <Switch
+                    id={`industry-${f.key}`}
+                    checked={Boolean(form[f.key]) === true}
+                    onCheckedChange={(v) => setField(f.key, v === true)}
+                    data-testid={`settings-${f.key}`}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Number / date / select / text — the non-boolean fields.

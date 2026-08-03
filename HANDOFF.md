@@ -407,6 +407,25 @@ MongoDB, native driver, **no ORM**. All collections use `clerkId` as the tenant 
   workPreference: 'remote' | 'hybrid' | 'onsite',
   employmentType: 'heltid' | 'deltid' | 'konsult',
   industriesToAvoid: string[],
+  // Round-81 — industry taxonomy (lib/field-taxonomy.js). One of the 9
+  // canonical ids: lager | vård | kontor | IT | bygg | restaurang |
+  // sälj | industri | transport. Read by the extension's popup + the
+  // onboarding/settings industry selectors.
+  industry: string,
+  // Round-81 — industry-specific boolean fields (lib/field-taxonomy.js
+  // INDUSTRY_BOOLEAN_KEYS): canLiftHeavy, canShiftWork,
+  // hasCareAssistantEducation, hasHLRCertification, hasNursingExperience,
+  // hasOfficeExperience, hasComputerSkills, hasCodingExperience,
+  // hasConstructionExperience, canWorkAtHeights,
+  // hasFoodHandlingCertificate, hasServiceExperience, hasSalesExperience,
+  // hasIndustrialExperience, hasTruckLicenseCE, hasTransportExperience.
+  // Each is boolean (default false) and mirrors a FIELD_PATTERNS entry
+  // in extension/content.js.
+  canLiftHeavy, canShiftWork, hasCareAssistantEducation, hasHLRCertification: boolean,
+  hasNursingExperience, hasOfficeExperience, hasComputerSkills, hasCodingExperience: boolean,
+  hasConstructionExperience, canWorkAtHeights, hasFoodHandlingCertificate: boolean,
+  hasServiceExperience, hasSalesExperience, hasIndustrialExperience: boolean,
+  hasTruckLicenseCE, hasTransportExperience: boolean,
   cvSummary: string,                  // Groq-generated summary, used in cover letter prompts
   cvOriginal: string,                 // raw parsed text (from pdf-parse/mammoth)
   cvUploadedAt: Date,
@@ -952,5 +971,45 @@ PORT=3001 yarn test:e2e       # in another
 **If a test fails, read the test name — it points at the exact file/pattern that regressed.**
 
 ---
+
+## 11. Round-81 — Industry Field Taxonomy (2026-08-03)
+
+### What changed
+- **New shared module** `lib/field-taxonomy.js` — single source of truth
+  for the 9 industries (`INDUSTRIES`), the 16 industry-specific boolean
+  keys (`INDUSTRY_BOOLEAN_KEYS` + Swedish labels), and the per-industry
+  Tier-2 field sets (`INDUSTRY_FIELDS`).
+- **Profile pipeline** — `industry` + the 16 booleans are accepted by
+  POST /api/profile and /api/profile-update (allow-listed, enum-validated,
+  boolean-coerced; non-canonical `industry` values are dropped).
+- **Onboarding** (`app/onboarding/page.js`) — industry dropdown on the
+  Karriärinfo step; picking one reveals the industry's yes/no questions
+  (tri-state Ja/Nej chips) which are REQUIRED before continuing.
+- **Settings** (`app/settings/page.js`) — industry selector + per-industry
+  toggle grid inside the Auto-fill-inställningar section.
+- **Extension profile** (`lib/extension-profile.js`) — emits `industry`
+  + the 16 booleans to the safe JSON the extension consumes. Count lock:
+  `INDUSTRY_TOTAL_FIELDS` (tests/unit/extension-profile.test.mjs).
+- **Extension v0.3.0** — `extension/lib/field-taxonomy.js` (bundled
+  plain-JS copy), 16 new `kind:'boolean'` FIELD_PATTERNS entries in
+  `extension/content.js` (count lock 57→73 in
+  tests/unit/extension-content.test.mjs + mock-extension-form-regex),
+  and a "Bransch & relevanta fält" panel in the popup (industry
+  selector + per-industry field list with answered status).
+- **Regex precision** — `hasDriversLicense` gained a fixed-width negative
+  lookbehind so "CE-körkort" routes to `hasTruckLicenseCE` (transport),
+  not B-körkort; `hasForkliftLicense` now also matches "truckkörkort".
+
+### Data origin
+- Field sets come from the form-field corpus built by the isolated
+  scraper (`~/jobbpiloten-scraper`): `data/processed/extension_field_schema.json`
+  (Tier 1 universal, Tier 2 industry-core, Tier 3 job-specific). A copy
+  of the final schema lives at `lib/extension_field_schema.json`.
+  Keep `lib/field-taxonomy.js` reconciled with the corpus whenever the
+  scraper is re-run with a larger corpus.
+
+### Testing
+- `yarn test:unit` (1207 tests) — includes the new industry key-count
+  locks, the CE-körkort anti-hijack lock, and per-industry mock routing.
 
 *End of handoff. Good luck.*

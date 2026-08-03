@@ -157,6 +157,94 @@
     </label>
   </fieldset>
 
+  <h2>P6 — Round-81 industry-specific boolean questions</h2>
+  <!--
+    2026-08-03 (Round-81): one field per INDUSTRY_BOOLEAN_KEYS entry.
+    The metas mirror the Swedish recruiter-question phrasing the
+    FIELD_PATTERNS dispatch on; the validator routes each to its
+    expected profileKey (see mock-extension-form-regex.test.mjs (4d)).
+  -->
+  <fieldset data-jobbpiloten-mock-field="canLiftHeavy">
+    <legend>Klarar du fysiskt krävande arbete (t.ex. lyfta tungt)?</legend>
+    <label><input type="radio" name="lift-heavy" value="yes"> Ja</label>
+    <label><input type="radio" name="lift-heavy" value="no"> Nej</label>
+  </fieldset>
+  <fieldset data-jobbpiloten-mock-field="canShiftWork">
+    <legend>Kan du arbeta skift (dag/kväll/natt)?</legend>
+    <label><input type="radio" name="shift" value="yes"> Ja</label>
+    <label><input type="radio" name="shift" value="no"> Nej</label>
+  </fieldset>
+  <fieldset data-jobbpiloten-mock-field="hasCareAssistantEducation">
+    <legend>Har du vårdbiträdes- eller undersköterskeutbildning?</legend>
+    <label><input type="radio" name="care-edu" value="yes"> Ja</label>
+    <label><input type="radio" name="care-edu" value="no"> Nej</label>
+  </fieldset>
+  <fieldset data-jobbpiloten-mock-field="hasHLRCertification">
+    <legend>Har du HLR-certifikat (hjärt- och lungräddning)?</legend>
+    <label><input type="radio" name="hlr" value="yes"> Ja</label>
+    <label><input type="radio" name="hlr" value="no"> Nej</label>
+  </fieldset>
+  <fieldset data-jobbpiloten-mock-field="hasNursingExperience">
+    <legend>Har du erfarenhet av vård- och omsorgsarbete?</legend>
+    <label><input type="radio" name="nursing" value="yes"> Ja</label>
+    <label><input type="radio" name="nursing" value="no"> Nej</label>
+  </fieldset>
+  <fieldset data-jobbpiloten-mock-field="hasOfficeExperience">
+    <legend>Har du kontors- eller administrationserfarenhet?</legend>
+    <label><input type="radio" name="office" value="yes"> Ja</label>
+    <label><input type="radio" name="office" value="no"> Nej</label>
+  </fieldset>
+  <fieldset data-jobbpiloten-mock-field="hasComputerSkills">
+    <legend>Har du god datorvana (Office, verksamhetssystem)?</legend>
+    <label><input type="radio" name="datorvana" value="yes"> Ja</label>
+    <label><input type="radio" name="datorvana" value="no"> Nej</label>
+  </fieldset>
+  <fieldset data-jobbpiloten-mock-field="hasCodingExperience">
+    <legend>Har du programmeringserfarenhet?</legend>
+    <label><input type="radio" name="coding" value="yes"> Ja</label>
+    <label><input type="radio" name="coding" value="no"> Nej</label>
+  </fieldset>
+  <fieldset data-jobbpiloten-mock-field="hasConstructionExperience">
+    <legend>Har du bygg- eller anläggningserfarenhet?</legend>
+    <label><input type="radio" name="construction" value="yes"> Ja</label>
+    <label><input type="radio" name="construction" value="no"> Nej</label>
+  </fieldset>
+  <fieldset data-jobbpiloten-mock-field="canWorkAtHeights">
+    <legend>Kan du arbeta på hög höjd?</legend>
+    <label><input type="radio" name="heights" value="yes"> Ja</label>
+    <label><input type="radio" name="heights" value="no"> Nej</label>
+  </fieldset>
+  <fieldset data-jobbpiloten-mock-field="hasFoodHandlingCertificate">
+    <legend>Har du hygienutbildning eller livsmedelstillstånd?</legend>
+    <label><input type="radio" name="food" value="yes"> Ja</label>
+    <label><input type="radio" name="food" value="no"> Nej</label>
+  </fieldset>
+  <fieldset data-jobbpiloten-mock-field="hasServiceExperience">
+    <legend>Har du serverings- eller serviceerfarenhet?</legend>
+    <label><input type="radio" name="service" value="yes"> Ja</label>
+    <label><input type="radio" name="service" value="no"> Nej</label>
+  </fieldset>
+  <fieldset data-jobbpiloten-mock-field="hasSalesExperience">
+    <legend>Har du säljerfarenhet?</legend>
+    <label><input type="radio" name="sales" value="yes"> Ja</label>
+    <label><input type="radio" name="sales" value="no"> Nej</label>
+  </fieldset>
+  <fieldset data-jobbpiloten-mock-field="hasIndustrialExperience">
+    <legend>Har du industri- eller produktionserfarenhet?</legend>
+    <label><input type="radio" name="industrial" value="yes"> Ja</label>
+    <label><input type="radio" name="industrial" value="no"> Nej</label>
+  </fieldset>
+  <fieldset data-jobbpiloten-mock-field="hasTruckLicenseCE">
+    <legend>Har du CE-körkort (lastbil)?</legend>
+    <label><input type="radio" name="ce-license" value="yes"> Ja</label>
+    <label><input type="radio" name="ce-license" value="no"> Nej</label>
+  </fieldset>
+  <fieldset data-jobbpiloten-mock-field="hasTransportExperience">
+    <legend>Har du transport- eller körerfarenhet?</legend>
+    <label><input type="radio" name="transport" value="yes"> Ja</label>
+    <label><input type="radio" name="transport" value="no"> Nej</label>
+  </fieldset>
+
   <h2>P5 — File uploads</h2>
 
   <label for="cv-upload"><strong>Ladda upp CV</strong></label>

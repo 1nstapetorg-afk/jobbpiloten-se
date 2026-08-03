@@ -303,11 +303,17 @@ const FIELD_PATTERNS = [
   // the backend follow-up section of the Round-12 handoff. When
   // a user has the field set to true/false, fillAll() clicks the
   // right option; when undefined, the field stays untouched.
-  { pattern: /(\bb[\s-]?k[öo]rkort\b|driving[\s_]?license|driver'?s?\s+licen[sc]e|\bk[öo]rkort\b)/i, profileKey: 'hasDriversLicense', kind: 'boolean' },
+  // 2026-08-03 (Round-81): the bare `\bk[öo]rkort\b` alternation gained a
+  // fixed-width negative lookbehind so "CE-körkort" / "C1E-körkort"
+  // (transport industry, routes to hasTruckLicenseCE) can never be
+  // hijacked by this B-körkort entry. "B-körkort" still matches the
+  // first alternation; "truckkörkort" is intentionally NOT matched
+  // here (hasForkliftLicense owns it).
+  { pattern: /(\bb[\s-]?k[öo]rkort\b|driving[\s_]?license|driver'?s?\s+licen[sc]e|(?<!ce[\s-])\bk[öo]rkort\b)/i, profileKey: 'hasDriversLicense', kind: 'boolean' },
   { pattern: /(medborgare[\s\S]{0,30}?(?:eu|europeiska|eea)|citizen[\s\S]{0,30}?(?:eu|european|eea)|swedish[\s_]?citizenship|\beu[\s_-]?medborgare\b)/i, profileKey: 'isEuCitizen', kind: 'boolean' },
   { pattern: /(arbetstillst[åa]nd|work[\s_]?permit|arbets[\s_]?till[åa]telse)/i, profileKey: 'hasWorkPermit', kind: 'boolean' },
   { pattern: /(gymnasieexamen|high[\s_]?school[\s_]?(?:diploma|graduate)|studentexamen)/i, profileKey: 'hasHighSchoolDiploma', kind: 'boolean' },
-  { pattern: /(truckförarbevis|forklift[\s_]?(?:license|certificat))/i, profileKey: 'hasForkliftLicense', kind: 'boolean' },
+  { pattern: /(truckförarbevis|truckk[öo]rkort|forklift[\s_]?(?:license|certificat))/i, profileKey: 'hasForkliftLicense', kind: 'boolean' },
   { pattern: /(s[äa]kerhetsklassad|security[\s_]?(?:classif|cleared|clearance))/i, profileKey: 'hasSecurityClearance', kind: 'boolean' },
 
   // experienceYears — SPECIAL-CASE boolean: the question contains
@@ -417,6 +423,32 @@ const FIELD_PATTERNS = [
   // BUG 6: Other forms — language skill, certificate upload:
   { pattern: /\b(kan[\s_]?prata[\s_]?svenska|speak[\s_]?swedish|fluent[\s_]?swedish)\b/i, profileKey: 'speakSwedish', kind: 'boolean' },
   { pattern: /\b(intyg[\s_]?:?|certifikat[\s_]?:?|bevis[\s_]?:?|certificates?[\s_]?:?|attach[\s_]?certificates?)\b/i, profileKey: 'certificates', kind: 'file' },
+
+  // ---------- Round-81 — Industry-specific boolean questions ----------
+  //
+  // Taxonomy source: lib/field-taxonomy.js (app) / the bundled copy at
+  // extension/lib/field-taxonomy.js. Each entry dispatches through the
+  // SAME clickBooleanOption() path as the Round-12 booleans; profile
+  // values come from the INDUSTRY_BOOLEAN_KEYS section of the safe
+  // extension profile (lib/extension-profile.js). Default-false means
+  // a host question is left untouched unless the user has explicitly
+  // answered it in onboarding / settings.
+  { pattern: /(fysiskt[\s\S]{0,20}?(?:kr[äa]vande|tungt|arbete)|lyfta[\s\S]{0,15}?tungt|physical[\s\S]{0,20}?(?:demanding|heavy)[\s\S]{0,15}?work|heavy[\s\S]{0,10}?lifting)/i, profileKey: 'canLiftHeavy', kind: 'boolean' },
+  { pattern: /(skift[\s\S]{0,20}?(?:arbete|g[åa]ng)|arbeta[\s\S]{0,15}?skift|rot[\s\S]{0,10}?schema|shift[\s\S]{0,15}?work|work[\s\S]{0,15}?shifts)/i, profileKey: 'canShiftWork', kind: 'boolean' },
+  { pattern: /(v[åa]rdbitr[äa]desutbildning|undersk[öo]terskeutbildning|care[\s\S]{0,15}?assistant[\s\S]{0,15}?(?:training|education|certificate))/i, profileKey: 'hasCareAssistantEducation', kind: 'boolean' },
+  { pattern: /(hj[äa]rt[\s-]?och[\s-]?lungr[äa]ddning|\bhlr\b|hj[äa]rt-?lung|cardiopulmonary|\bcpr\b)/i, profileKey: 'hasHLRCertification', kind: 'boolean' },
+  { pattern: /(v[åa]rd[\s\S]{0,25}?(?:erfarenhet|arbete)|omsorg[\s\S]{0,25}?(?:erfarenhet|arbete)|care[\s\S]{0,20}?(?:experience|work)|healthcare[\s\S]{0,15}?experience)/i, profileKey: 'hasNursingExperience', kind: 'boolean' },
+  { pattern: /(kontors[\s\S]{0,30}?(?:erfarenhet|arbete)|administrat[\s\S]{0,25}?(?:erfarenhet|arbete)|office[\s\S]{0,15}?(?:experience|work)|administrative[\s\S]{0,15}?experience)/i, profileKey: 'hasOfficeExperience', kind: 'boolean' },
+  { pattern: /(datorvana|datorkunskaper|computer[\s\S]{0,15}?(?:skills|literacy)|god[\s\S]{0,10}?dator)/i, profileKey: 'hasComputerSkills', kind: 'boolean' },
+  { pattern: /(programmeringserfarenhet|coding[\s\S]{0,15}?experience|programming[\s\S]{0,15}?experience|skrivit[\s\S]{0,20}?kod)/i, profileKey: 'hasCodingExperience', kind: 'boolean' },
+  { pattern: /(bygg[\s\S]{0,20}?(?:erfarenhet|arbete)|anl[äa]ggnings[\s\S]{0,20}?(?:erfarenhet|arbete)|construction[\s\S]{0,15}?(?:experience|work))/i, profileKey: 'hasConstructionExperience', kind: 'boolean' },
+  { pattern: /(h[öo]g[\s\S]{0,15}?h[öo]jd|arbeta[\s\S]{0,15}?p[åa][\s\S]{0,10}?h[öo]jd|work[\s\S]{0,15}?at[\s\S]{0,10}?height|h[öo]jdr[äa]dsla)/i, profileKey: 'canWorkAtHeights', kind: 'boolean' },
+  { pattern: /(hygienutbildning|livsmedelstillst[åa]nd|livsmedelshantering|food[\s\S]{0,15}?(?:hygiene|handling)[\s\S]{0,15}?certificate|haccp)/i, profileKey: 'hasFoodHandlingCertificate', kind: 'boolean' },
+  { pattern: /(serveringserfarenhet|serviceerfarenhet|restaurangerfarenhet|serving[\s\S]{0,15}?experience|restaurant[\s\S]{0,15}?experience)/i, profileKey: 'hasServiceExperience', kind: 'boolean' },
+  { pattern: /(s[äa]ljerfarenhet|f[öo]rs[äa]ljningserfarenhet|sales[\s\S]{0,15}?experience)/i, profileKey: 'hasSalesExperience', kind: 'boolean' },
+  { pattern: /(industrierfarenhet|produktionserfarenhet|operat[öo]rs[\s\S]{0,15}?erfarenhet|industrial[\s\S]{0,15}?experience|production[\s\S]{0,15}?experience)/i, profileKey: 'hasIndustrialExperience', kind: 'boolean' },
+  { pattern: /(\bce[\s-]?k[öo]rkort\b|lastbilsk[öo]rkort|lastbilskort|category[\s\S]{0,5}?ce|\bce[\s-]?licens\b)/i, profileKey: 'hasTruckLicenseCE', kind: 'boolean' },
+  { pattern: /(transport[\s\S]{0,20}?(?:erfarenhet|arbete)|k[öo]rerfarenhet|yrkestrafik|driving[\s\S]{0,15}?experience)/i, profileKey: 'hasTransportExperience', kind: 'boolean' },
 ]
 // ---------- 3. Profile + token storage helpers ----------
 //

@@ -587,9 +587,80 @@ html, body {
     color: var(--jp-slate-100);
   }
   .jp-status-card,
+/* ---- Round-81 — Bransch & relevanta fält ---- */
+.jp-industry {
+  margin-top: 12px;
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid var(--jp-slate-200);
+  padding: 10px 12px;
+}
+.jp-industry-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--jp-slate-500);
+  margin: 2px 0 4px;
+}
+.jp-industry-select {
+  width: 100%;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--jp-slate-300);
+  background: #fff;
+  color: var(--jp-slate-800);
+}
+.jp-industry-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.jp-industry-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--jp-slate-600);
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--jp-slate-100);
+}
+.jp-industry-list li:last-child {
+  border-bottom: 0;
+}
+.jp-industry-status {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.jp-industry-status--set {
+  background: #ecfdf5;
+  color: #059669;
+}
+.jp-industry-status--unset {
+  background: #f1f5f9;
+  color: #94a3b8;
+}
+
   .jp-detected {
     background: #1f2937;
     border-color: #334155;
+  }
+  .jp-industry {
+    background: #1f2937;
+    border-color: #334155;
+  }
+  .jp-industry-select {
+    background: #1f2937;
+    color: var(--jp-slate-100);
+    border-color: #334155;
+  }
+  .jp-industry-list li {
+    color: var(--jp-slate-300);
+    border-color: #374151;
   }
   .jp-status-line {
     color: var(--jp-slate-100);

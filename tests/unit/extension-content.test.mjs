@@ -417,25 +417,43 @@ test('FIELD_PATTERNS must include the 19 Round-12 entries (binary + select + mul
   }
 })
 
-test('FIELD_PATTERNS must contain exactly 57 entries (Round-12 count lock + Round-46 address split)', () => {
-  // 20 legacy + 19 new = 39. The count is informative — it's a
-  // soft contract for future test fixtures that mock a full form
-  // page (the mock page at /app/mock-extension-form.html expects
-  // exactly this many matchable rules). We count entries by
-  // matching lines whose leading whitespace + `{ pattern:` is the
-  // canonical entry-start. False positives from the comment block
-  // ("Round-12"), the type:'file' field, and any inline regex
-  // usage are filtered out by requiring the literal `profileKey:`
-  // AND `kind:` (or `type:` for files) within the same line.
+test('FIELD_PATTERNS must contain exactly 73 entries (Round-12 count lock + Round-46 address split + Round-81 industry booleans)', () => {
+  // 2026-08-03 (Round-81): 57 -> 73 — the 16 industry-specific boolean
+  // entries (canLiftHeavy, canShiftWork, hasCareAssistantEducation,
+  // hasHLRCertification, …) were added for the industry taxonomy
+  // integration. The count is informative — it's a soft contract for
+  // future test fixtures that mock a full form page (the mock page at
+  // /app/mock-extension-form.html expects exactly this many matchable
+  // rules). We count entries by matching lines whose leading whitespace
+  // + `{ pattern:` is the canonical entry-start. False positives from
+  // the comment block ("Round-12"), the type:'file' field, and any
+  // inline regex usage are filtered out by requiring the literal
+  // `profileKey:` AND `kind:` (or `type:` for files) within the same line.
   const entryLines = SOURCE.split('\n').filter((l) => {
     const trimmed = l.trim()
     return trimmed.startsWith('{ pattern:') || trimmed.startsWith('{pattern:')
   })
   assert.equal(
     entryLines.length,
-    57,
-    `FIELD_PATTERNS must have exactly 57 entries (20 legacy + 19 Round-12 + 2 Round-46/Bug 2 address split + 16 from Round-55 through Round-79); found ${entryLines.length}. Did you add or drop an entry in this commit? Update this test + the mock HTML in the same change.`,
+    73,
+    `FIELD_PATTERNS must have exactly 73 entries (20 legacy + 19 Round-12 + 2 Round-46/Bug 2 address split + 16 Round-55..79 + 16 Round-81 industry); found ${entryLines.length}. Did you add or drop an entry in this commit? Update this test + the mock HTML in the same change.`,
   )
+})
+
+test('FIELD_PATTERNS must include every Round-81 industry profileKey (industry taxonomy lock)', () => {
+  const industryKeys = [
+    'canLiftHeavy', 'canShiftWork', 'hasCareAssistantEducation', 'hasHLRCertification',
+    'hasNursingExperience', 'hasOfficeExperience', 'hasComputerSkills', 'hasCodingExperience',
+    'hasConstructionExperience', 'canWorkAtHeights', 'hasFoodHandlingCertificate',
+    'hasServiceExperience', 'hasSalesExperience', 'hasIndustrialExperience',
+    'hasTruckLicenseCE', 'hasTransportExperience',
+  ]
+  for (const key of industryKeys) {
+    assert.ok(
+      new RegExp(`profileKey:\\s*['"]${key}['"]`).test(SOURCE),
+      `FIELD_PATTERNS must include profileKey: '${key}' (Round-81 industry taxonomy)`,
+    )
+  }
 })
 
 test('Round-12 helpers must each be defined exactly once as a function (no shadow definitions)', () => {

@@ -89,6 +89,13 @@ const STORAGE_KEYS = {
   // (10 min) so a stale email doesn't ship after the user moved
   // on to a different To: address.
   mejlutkastCache: 'jobbpiloten_mejlutkastCache',
+  // Round-81 — popup-level industry override. The server-synced
+  // profile carries `industry` (one of the 9 canonical ids); the
+  // popup selector lets the user PREVIEW another industry's field
+  // list locally. Persisted so the choice survives popup re-opens.
+  // The override only affects the popup display — the content
+  // script always fills from the server-synced profile booleans.
+  industryOverride: 'jobbpiloten_industry_override',
   // Round-52 / Issue 3 — content-script heartbeat. content.js
   // writes a `Date.now()` stamp every 30s while the content
   // script is alive on at least one tab. The dashboard + popup
@@ -109,7 +116,7 @@ const STORAGE_KEYS = {
   errors: 'jobbpiloten_errors',
 }
 const BUILD_CONFIG_FILE = 'build-config.json'
-const VERSION = '0.2.4'
+const VERSION = '0.3.0'
 
 // Round-52 / Issue 1 — Mejlutkast mode + heartbeat thresholds.
 const ACTIVE_MODE_FORMULAR = 'formular'
@@ -589,11 +596,14 @@ async function setStatus({ connected, profile, detected, error }) {
         return val != null && String(val).length > 0
       }).length
     meta.textContent = `${times} fält tillgängliga • v${VERSION}`
+    renderIndustryPanel(profile)
   } else {
     dot.style.background = '#f59e0b'
     dot.style.boxShadow = '0 0 0 4px rgba(245,158,11,0.18)'
     line.textContent = 'Inte ansluten'
     meta.textContent = `Öppna Dashboard för att ansluta din profil • v${VERSION}`
+    const indSection = $('jp-industry')
+    if (indSection) indSection.hidden = true
   }
 
   // Detected-fields panel
@@ -625,6 +635,84 @@ async function setStatus({ connected, profile, detected, error }) {
   } else {
     hint.textContent = `Upptäckt ${detected.length} formulärfält. Klicka "Fyll i nu" för att fylla dem.`
   }
+}
+
+// ---- Round-81 — Bransch-panel ----
+//
+// Renders the user's industry (from the server-synced profile) plus
+// the industry-core fields the extension can answer, each tagged with
+// its on-profile status (Ja/—). The selector lets the user preview
+// another industry; the chosen override is persisted locally and only
+// affects this popup's display, never the fill behaviour (the content
+// script fills exclusively from the server-synced profile booleans).
+let industryOptionsLoaded = false
+
+async function renderIndustryPanel(profile) {
+  const section = $('jp-industry')
+  const select = $('jp-industry-select')
+  const list = $('jp-industry-list')
+  if (!section || !select || !list) return
+  const tx = globalThis.FIELD_TAXONOMY
+  if (!tx || !Array.isArray(tx.industries)) {
+    section.hidden = true
+    return
+  }
+
+  // Seed the <select> options once (module-level guard — the popup
+  // re-renders on every status push).
+  if (!industryOptionsLoaded) {
+    select.innerHTML = '<option value="">Välj bransch…</option>'
+    for (const ind of tx.industries) {
+      const opt = document.createElement('option')
+      opt.value = ind.id
+      opt.textContent = ind.label
+      select.appendChild(opt)
+    }
+    industryOptionsLoaded = true
+  }
+
+  let effective = ''
+  try {
+    const { [STORAGE_KEYS.industryOverride]: override } = await loadStorage()
+    effective = override || (profile && profile.industry) || ''
+  } catch (_) {
+    effective = (profile && profile.industry) || ''
+  }
+  select.value = effective
+
+  const fields = effective ? (tx.fields && tx.fields[effective]) || [] : []
+  list.innerHTML = ''
+  for (const f of fields) {
+    const label = (tx.labels && tx.labels[f.key]) || f.key
+    const val = profile ? profile[f.key] : undefined
+    const li = document.createElement('li')
+    const nameSpan = document.createElement('span')
+    nameSpan.textContent = label
+    const statusSpan = document.createElement('span')
+    statusSpan.className = 'jp-industry-status ' + (val === true
+      ? 'jp-industry-status--set'
+      : 'jp-industry-status--unset')
+    statusSpan.textContent = val === true ? 'Ja' : '—'
+    statusSpan.title = val === true ? 'Svarat ja — tillägget kan svara på denna fråga' : 'Ej satt — tillägget lämnar frågan orörd'
+    li.appendChild(nameSpan)
+    li.appendChild(statusSpan)
+    list.appendChild(li)
+  }
+  section.hidden = false
+}
+
+// Industry selector change → persist the override + re-render.
+// Debounced via the select's own change event (no storage spam).
+function setupIndustryPanel() {
+  const select = $('jp-industry-select')
+  if (!select) return
+  select.addEventListener('change', async () => {
+    try {
+      await chrome.storage.local.set({ [STORAGE_KEYS.industryOverride]: select.value })
+    } catch (_) { /* best-effort — preview still works this session */ }
+    const { profile } = await loadStorage()
+    renderIndustryPanel(profile || {})
+  })
 }
 
 // ---- Storage ----
@@ -3396,6 +3484,8 @@ async function loadAndPaint() {
     // but the ordering documents the data flow: wire events → mode
     // toggle → live listener → initial paint).
     setupAutoSwitchLiveListener()
+    // Round-81 — industry selector + per-industry field list.
+    setupIndustryPanel()
     // 2026-07-17 (Bug-2 fix) — defensive wrap so a paint crash can
     // never strand buttons at their HTML-default `disabled` state.
     // If `loadAndPaint()` throws (e.g. due to a malformed profile in

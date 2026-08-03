@@ -19,6 +19,10 @@ import { PROFILE_PICTURE_AVATARS } from '@/lib/avatar-keys';
 import { locationsToLänCodes, isRemoteFriendlyText, doesJobMatchUserLocation } from '@/lib/swedishLocations';
 import { truncate } from '@/lib/utils';
 import { STYLE_PRESETS } from '@/lib/style-presets.mjs';
+// 2026-08-03 (Round-81) — industry taxonomy. INDUSTRY_IDS drives the
+// profile POST/update validation, INDUSTRY_BOOLEAN_KEYS the new
+// industry-specific boolean fields. See lib/field-taxonomy.js.
+import { INDUSTRY_IDS, INDUSTRY_BOOLEAN_KEYS } from '@/lib/field-taxonomy';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -627,6 +631,24 @@ export async function POST(req, ctx) {
         workPreference: source.workPreference || 'hybrid',
         employmentType: source.employmentType || 'heltid',
         industriesToAvoid: source.industriesToAvoid || [],
+        // 2026-08-03 (Round-81) — industry taxonomy. One of the 9
+        // canonical ids from lib/field-taxonomy.js (lager, vård,
+        // kontor, IT, bygg, restaurang, sälj, industri, transport).
+        // Unknown values fall back to '' so the onboarding dropdown
+        // can never persist a free-text industry. The extension's
+        // popup/content script read this to decide which
+        // industry-core fields to surface.
+        industry: INDUSTRY_IDS.includes(source.industry) ? source.industry : '',
+        // 2026-08-03 (Round-81) — industry-specific boolean fields.
+        // Only keys present in the payload are persisted (the rest
+        // stay untouched, mirroring the cvText conditional-merge
+        // pattern) so an onboarding POST that omits them never
+        // clobbers values saved via /settings.
+        ...Object.fromEntries(
+          INDUSTRY_BOOLEAN_KEYS
+            .filter((k) => Object.prototype.hasOwnProperty.call(source, k))
+            .map((k) => [k, Boolean(source[k]) === true]),
+        ),
         tier: source.tier || 'Professional',
         subscriptionStatus: source.subscriptionStatus || 'inactive',
         // Round-35 (Part 3 — Answer Diversity): persist the user's
@@ -753,6 +775,11 @@ export async function POST(req, ctx) {
         'yearsExperience',
         'dateOfBirth', 'gender', 'nationality', 'phoneCountryCode',
         'skills',
+        // 2026-08-03 (Round-81) — industry taxonomy + industry-specific
+        // booleans (lib/field-taxonomy.js). Must be in ALLOWED to reach
+        // $set; the per-field validators below coerce them.
+        'industry',
+        ...INDUSTRY_BOOLEAN_KEYS,
       ];
 
       // Build `$set` BEFORE any guard so the guards can reference it
@@ -819,6 +846,24 @@ export async function POST(req, ctx) {
       if (Object.prototype.hasOwnProperty.call($set, 'aiEmailBodyEnabled') && typeof $set.aiEmailBodyEnabled !== 'boolean') {
         console.warn('[profile-update] rejected non-boolean aiEmailBodyEnabled payload (clerkId=' + clerkId + ')')
         delete $set.aiEmailBodyEnabled
+      }
+      // Round-81 — industry must be one of the 9 canonical ids
+      // (lib/field-taxonomy.js); anything else is dropped so a
+      // hand-rolled POST can't persist a free-text industry.
+      if (Object.prototype.hasOwnProperty.call($set, 'industry') && !INDUSTRY_IDS.includes($set.industry)) {
+        console.warn('[profile-update] rejected non-canonical industry payload (clerkId=' + clerkId + ')')
+        delete $set.industry
+      }
+      // Round-81 — industry-specific booleans are coerced to strict
+      // booleans; a non-boolean payload is dropped (mirrors the
+      // aiFallbackEnabled guard above).
+      for (const k of INDUSTRY_BOOLEAN_KEYS) {
+        if (Object.prototype.hasOwnProperty.call($set, k)) {
+          if (typeof $set[k] !== 'boolean') {
+            console.warn('[profile-update] rejected non-boolean ' + k + ' payload (clerkId=' + clerkId + ')')
+            delete $set[k]
+          }
+        }
       }
       // Server-side guard for `profilePicture`. The client's settings
       // page already validates before submit (2 MB max, JPG/PNG/WebP only,

@@ -38,6 +38,8 @@ import {
   ROUND12_STRING_KEYS,
   ROUND12_UI_BOOLEAN_KEYS,
   ROUND12_TOTAL_FIELDS,
+  INDUSTRY_BOOLEAN_KEYS,
+  INDUSTRY_TOTAL_FIELDS,
   getRound12Defaults,
 } from '../../lib/extension-profile-fields.js'
 
@@ -67,11 +69,23 @@ const SKILLS_SENTINEL = ['Maskiner', 'Service', 'Truck', 42, null, 'Städ'] // m
 // exactly `street` and `country` (BUG 3 net additions).
 const LEGACY_LEAF_COUNT = 17
 const BUG3_SPLIT_KEYS = 2  // BUG 3 (Round-72.2) adds street + country at runtime; zip is also a BUG 3 field but it replaced the previous-days '' fallback (which itself counted as 1) so the net delta vs the pre-BUG 3 shape is +2.
-test('buildExtensionProfile returns exactly 38 keys (17 legacy + 19 Round-12 + 2 BUG 3 split)', () => {
+// 2026-08-03 (Round-81) — the extension profile now also exposes
+// `industry` + every INDUSTRY_BOOLEAN_KEYS boolean, so the runtime
+// key count is 38 + INDUSTRY_TOTAL_FIELDS.
+test('buildExtensionProfile returns exactly the derived key count (legacy + Round-12 + BUG 3 split + industry)', () => {
   const out = buildExtensionProfile({}, null)
   const keys = Object.keys(out).sort()
-  assert.equal(keys.length, LEGACY_LEAF_COUNT + ROUND12_TOTAL_FIELDS + BUG3_SPLIT_KEYS,
-    `Expected ${LEGACY_LEAF_COUNT + ROUND12_TOTAL_FIELDS + BUG3_SPLIT_KEYS} fields (${LEGACY_LEAF_COUNT} legacy + ${ROUND12_TOTAL_FIELDS} Round-12 + ${BUG3_SPLIT_KEYS} BUG 3 split). Got ${keys.length}: ${keys.join(', ')}`)
+  const expected = LEGACY_LEAF_COUNT + ROUND12_TOTAL_FIELDS + BUG3_SPLIT_KEYS + INDUSTRY_TOTAL_FIELDS
+  assert.equal(keys.length, expected,
+    `Expected ${expected} fields (${LEGACY_LEAF_COUNT} legacy + ${ROUND12_TOTAL_FIELDS} Round-12 + ${BUG3_SPLIT_KEYS} BUG 3 split + ${INDUSTRY_TOTAL_FIELDS} industry). Got ${keys.length}: ${keys.join(', ')}`)
+})
+
+test('buildExtensionProfile exposes all industry keys with safe defaults', () => {
+  const out = buildExtensionProfile({}, null)
+  assert.equal(out.industry, '')
+  for (const k of INDUSTRY_BOOLEAN_KEYS) {
+    assert.equal(out[k], false, `expected ${k} default false`)
+  }
 })
 
 test('buildExtensionProfile returns ALL 16 Round-12 keys (registry parity)', () => {

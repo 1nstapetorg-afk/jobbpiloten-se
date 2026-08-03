@@ -193,6 +193,19 @@
       <ul class="jp-detected-list" id="jp-detected-list"></ul>
     </section>
 
+    <!-- Round-81 — Bransch & relevanta fält. Shows the user's industry
+         (synced from the dashboard profile) plus the industry-core
+         fields the extension can answer; the selector lets them
+         preview another industry. Persisted locally as an override. -->
+    <section class="jp-industry" id="jp-industry" hidden>
+      <h3 class="jp-section-title">Bransch & relevanta fält</h3>
+      <label class="jp-industry-label" for="jp-industry-select">Din bransch</label>
+      <select class="jp-industry-select" id="jp-industry-select" data-testid="jp-industry-select">
+        <option value="">Välj bransch…</option>
+      </select>
+      <ul class="jp-industry-list" id="jp-industry-list"></ul>
+    </section>
+
     <!-- Round-52 / Issue 1 — Mejlutkast panel. Hidden by default.
          Surfaces when EITHER (a) the content-email.js script on a
          Gmail/Outlook compose tab writes jobbpiloten_composeTarget
@@ -465,6 +478,8 @@
     </section>
   </main>
 
+  <!-- Round-81 — taxonomy bundle (classic script, sets globalThis.FIELD_TAXONOMY). -->
+  <script src="lib/field-taxonomy.js"></script>
   <script type="module" src="popup.js"></script>
 </body>
 </html>

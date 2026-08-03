@@ -250,12 +250,18 @@ yarn test:e2e
 inline comments tagged with a release version, e.g.
 `// v0.2.2 — Anslut din profil primary CTA`. **These comments mark the
 release that INTRODUCED the feature, not the current release.** The
-current release is `const VERSION = '0.2.4'` (mirrored as the
+current release is `const VERSION = '0.3.0'` (mirrored as the
 `"version"` field in `extension/manifest.json`, plus
 `JOBBPILOTEN_EXTENSION_VERSION` in background.js and
 `getExtensionVersion()` in content.js — keep ALL FOUR in sync when
-bumping). v0.2.4 (2026-08-02) carries the Chromebook blank-tab fix
-(popup only adopts JobbPiloten app origins for the dashboard URL).
+bumping). v0.2.4 (2026-08-02) carried the Chromebook blank-tab fix.
+v0.3.0 (2026-08-03) adds the industry taxonomy: 16 new industry-
+specific boolean FIELD_PATTERNS (canShiftWork, hasHLRCertification,
+hasTruckLicenseCE, …), a bundled copy of the shared taxonomy at
+`lib/field-taxonomy.js`, and the popup's "Bransch & relevanta fält"
+panel (industry selector + per-industry field list). The taxonomy's
+canonical source is `lib/field-taxonomy.js` in the app repo; the
+bundled copy must stay byte-consistent with it.
 A later release that touches the same code should leave the v0.2.x
 historical markers alone — they describe lineage, not state. If the
 convention ever flips, search the repo for `v(MAJOR).(MINOR)` and
