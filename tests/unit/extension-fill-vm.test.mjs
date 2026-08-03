@@ -740,3 +740,100 @@ test('checkConsent signature: (input, autoConsent)', () => {
 test('booleanFromExperienceYears signature: (profileValue, threshold)', () => {
   assert.ok(/^function\s+booleanFromExperienceYears\s*\(\s*profileValue\s*,\s*threshold\s*\)/m.test(SOURCE))
 })
+
+// ============================================================
+// Round-83 — industry label matcher + eligibility gate
+// ============================================================
+//
+// fillDetectedIndustryFields() matches taxonomy question labels
+// against host-input meta text via a content-word matcher. These
+// locks pin the matching semantics so a single-keyword label like
+// "Kan du arbeta skift?" (→ [skift]) still matches — the Round-83
+// reviewer finding: the original ≥8-char single-hit threshold made
+// short real questions unmatchable.
+
+const NORMALIZE_MATCH_RX = /^function normalizeMatchText\([^)]*\)\s*\{[\s\S]+?^}/m
+const FIELD_KEYWORDS_RX = /^function fieldLabelKeywords\([^)]*\)\s*\{[\s\S]+?^}/m
+const META_MATCH_RX = /^function metaMatchesIndustryLabel\([^)]*\)\s*\{[\s\S]+?^}/m
+const INPUT_ELIGIBLE_RX = /^function industryFieldInputEligible\([^)]*\)\s*\{[\s\S]+?^}/m
+const STOPWORDS_RX = /^const INDUSTRY_MATCH_STOPWORDS = new Set\(\[[\s\S]+?\]\)/m
+
+const R83_EXTRACTIONS = {
+  normalizeMatchText: SOURCE.match(NORMALIZE_MATCH_RX),
+  fieldLabelKeywords: SOURCE.match(FIELD_KEYWORDS_RX),
+  metaMatchesIndustryLabel: SOURCE.match(META_MATCH_RX),
+  industryFieldInputEligible: SOURCE.match(INPUT_ELIGIBLE_RX),
+  industryMatchStopwords: SOURCE.match(STOPWORDS_RX),
+}
+
+for (const [name, match] of Object.entries(R83_EXTRACTIONS)) {
+  test(`Round-83 extraction: source-grep regex must locate ${name}`, () => {
+    assert.ok(match,
+      `${name} regex failed — the function/const was renamed or restructured. Update both the regex AND the vm test together.`)
+  })
+}
+
+const r83Sandbox = vm.createContext({})
+const r83Code = `
+(() => {
+  ${R83_EXTRACTIONS.industryMatchStopwords ? R83_EXTRACTIONS.industryMatchStopwords[0] : ''}
+  ${R83_EXTRACTIONS.normalizeMatchText ? R83_EXTRACTIONS.normalizeMatchText[0] : ''}
+  ${R83_EXTRACTIONS.fieldLabelKeywords ? R83_EXTRACTIONS.fieldLabelKeywords[0] : ''}
+  ${R83_EXTRACTIONS.metaMatchesIndustryLabel ? R83_EXTRACTIONS.metaMatchesIndustryLabel[0] : ''}
+  ${R83_EXTRACTIONS.industryFieldInputEligible ? R83_EXTRACTIONS.industryFieldInputEligible[0] : ''}
+  return {
+    normalizeMatchText,
+    fieldLabelKeywords,
+    metaMatchesIndustryLabel,
+    industryFieldInputEligible,
+  }
+})()
+`
+const r83 = vm.runInNewContext(r83Code, r83Sandbox)
+
+test('fieldLabelKeywords: stopword-filtered content words survive', () => {
+  // Spread into a same-realm array first — vm-realm arrays fail
+  // deepStrictEqual on prototype identity.
+  assert.deepEqual([...r83.fieldLabelKeywords('Har du truckkörkort?')], ['truckkörkort'])
+  assert.deepEqual([...r83.fieldLabelKeywords('Kan du arbeta skift?')], ['skift'])
+  assert.deepEqual([...r83.fieldLabelKeywords('Svenska i tal och skrift')], ['svenska', 'skrift'])
+  assert.deepEqual([...r83.fieldLabelKeywords('Har du YKB (yrkeskompetensbevis)?')], ['yrkeskompetensbevis'])
+})
+
+test('metaMatchesIndustryLabel: single short keyword labels match (Round-83 reviewer fix)', () => {
+  // 'skift' (5 chars) — the pre-fix ≥8-char single-hit bar rejected this.
+  assert.equal(r83.metaMatchesIndustryLabel('Kan du arbeta skift?', 'Kan du arbeta skift?'), true)
+  assert.equal(r83.metaMatchesIndustryLabel('Kan du arbeta på höjd?', 'Kan du arbeta på höjd?'), true)
+  assert.equal(r83.metaMatchesIndustryLabel('Har du körkort B?', 'Har du körkort B?'), true)
+  assert.equal(r83.metaMatchesIndustryLabel('Har du truckkörkort?', 'Har du truckkörkort?'), true)
+})
+
+test('metaMatchesIndustryLabel: unrelated meta does not match', () => {
+  assert.equal(r83.metaMatchesIndustryLabel('Har du annan sysselsättning?', 'Svenska i tal och skrift'), false)
+  assert.equal(r83.metaMatchesIndustryLabel('Vad är din adress?', 'Kan du arbeta skift?'), false)
+})
+
+test('industryFieldInputEligible: gates control kinds per def type', () => {
+  const checkbox = { tagName: 'INPUT', type: 'checkbox' }
+  const select = { tagName: 'SELECT', type: undefined }
+  const textInput = { tagName: 'INPUT', type: 'text' }
+  const textarea = { tagName: 'TEXTAREA', type: undefined }
+  const radio = { tagName: 'INPUT', type: 'radio' }
+
+  // multiselect → checkboxes only
+  assert.equal(r83.industryFieldInputEligible(checkbox, 'multiselect', false), true)
+  assert.equal(r83.industryFieldInputEligible(select, 'multiselect', false), false)
+  assert.equal(r83.industryFieldInputEligible(textInput, 'multiselect', false), false)
+  // select-with-options → <select> only
+  assert.equal(r83.industryFieldInputEligible(select, 'select', false), true)
+  assert.equal(r83.industryFieldInputEligible(checkbox, 'select', false), false)
+  assert.equal(r83.industryFieldInputEligible(textInput, 'select', false), false)
+  // Ja/Nej select answers → shared boolean/select dispatch decides
+  assert.equal(r83.industryFieldInputEligible(radio, 'select', true), true)
+  assert.equal(r83.industryFieldInputEligible(select, 'select', true), true)
+  // text/url → text-ish inputs only (never select/radio/checkbox)
+  assert.equal(r83.industryFieldInputEligible(textInput, 'text', false), true)
+  assert.equal(r83.industryFieldInputEligible(textarea, 'text', false), true)
+  assert.equal(r83.industryFieldInputEligible(select, 'text', false), false)
+  assert.equal(r83.industryFieldInputEligible(checkbox, 'text', false), false)
+})

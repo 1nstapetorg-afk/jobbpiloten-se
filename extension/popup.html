@@ -193,16 +193,65 @@
       <ul class="jp-detected-list" id="jp-detected-list"></ul>
     </section>
 
+    <!-- Round-82 — Upptäckt bransch (apply-time detection). Filled by
+         popup.js from `jobbpiloten_pageIndustry` (written by
+         content.js's detectPageIndustry()). Shown when the content
+         script detected an industry from the job-page title /
+         description / URL — the extension then surfaces the Tier 2
+         fields for THAT industry ahead of the fill so the user can
+         verify their profile answers match the host page's questions. -->
+    <section class="jp-industry-detect" id="jp-industry-detect" hidden data-testid="jp-industry-detect">
+      <span class="jp-industry-detect-label">Upptäckt bransch:</span>
+      <span class="jp-industry-detect-value" id="jp-industry-detect-value"></span>
+    </section>
+
+    <!-- Round-82 — Tier 1 universella fält. Always visible when the
+         user is connected (Tier 1 = fields every application form
+         asks for). Mirrors the industry list's Ja/— status pattern so
+         the user can see at a glance which universal fields are set on
+         their profile before hitting Fyll i nu. Tier 3 (job-specific)
+         fields are intentionally NOT listed here — those are detected
+         dynamically at apply-time (see the jp-tier3 panel). -->
+    <section class="jp-industry" id="jp-universal" hidden data-testid="jp-universal">
+      <h3 class="jp-section-title">Universella fält</h3>
+      <ul class="jp-industry-list" id="jp-universal-list"></ul>
+    </section>
+
+    <!-- Round-82 — Tier 3 sällsynta frågor. Hidden by default;
+         surfaces when content.js's detectTier3Fields() found a rare
+         job-specific question keyword on the page (e.g. "ständig
+         natt", "referenstagare", "2-skift"). Prompt-once semantics:
+         the panel is shown at most once per page URL — the Förstått
+         button writes the URL to `jobbpiloten_tier3Dismissed` and the
+         panel stays hidden until the user navigates to another page. -->
+    <section class="jp-tier3" id="jp-tier3" hidden data-testid="jp-tier3">
+      <div class="jp-tier3-title">⚠ Sällsynta frågor upptäckta</div>
+      <p class="jp-tier3-text" id="jp-tier3-text"></p>
+      <button
+        type="button"
+        class="jp-btn jp-btn-link jp-tier3-dismiss"
+        id="jp-tier3-dismiss-btn"
+        data-testid="jp-tier3-dismiss"
+      >
+        Förstått
+      </button>
+    </section>
+
     <!-- Round-81 — Bransch & relevanta fält. Shows the user's industry
          (synced from the dashboard profile) plus the industry-core
          fields the extension can answer; the selector lets them
-         preview another industry. Persisted locally as an override. -->
+         preview another industry. Persisted locally under the
+         `industry` key (Round-82 — the selector also writes the legacy
+         override key so older builds keep working). -->
     <section class="jp-industry" id="jp-industry" hidden>
       <h3 class="jp-section-title">Bransch & relevanta fält</h3>
-      <label class="jp-industry-label" for="jp-industry-select">Din bransch</label>
+      <label class="jp-industry-label" for="jp-industry-select">Välj din bransch</label>
       <select class="jp-industry-select" id="jp-industry-select" data-testid="jp-industry-select">
         <option value="">Välj bransch…</option>
       </select>
+      <p class="jp-industry-help" data-testid="jp-industry-help">
+        Alla frågor i din bransch visas nedan — med status för vilka svar som finns på din profil.
+      </p>
       <ul class="jp-industry-list" id="jp-industry-list"></ul>
     </section>
 

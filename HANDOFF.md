@@ -1023,4 +1023,149 @@ PORT=3001 yarn test:e2e       # in another
   new industry key-count locks, the CE-körkort anti-hijack lock, and
   per-industry mock routing.
 
+---
+
+## 12. Round-82 — Apply-time Industry Detection + Tiered Popup (2026-08-03)
+
+### What changed
+- **Apply-time industry detection** (`extension/content.js`) — new
+  `detectPageIndustry()` scans the page title + first `<h1>` + meta
+  description + URL against per-industry keyword lists
+  (`INDUSTRY_KEYWORDS`, 9 industries mirroring `lib/field-taxonomy.js`
+  `INDUSTRY_IDS`). Deliberately conservative: an industry wins only
+  when its keyword-hit score beats every other industry's by a margin
+  (`DETECT_MIN_LEAD = 1`), so a generic page ("Sök jobb i Stockholm")
+  scores 0 everywhere and yields `null` → universal-only fill, exactly
+  the pre-Round-82 behaviour. Word-boundary matching keeps "lager" off
+  "villa-lager" and "it" off "till".
+- **Tier 3 rare-field detection** — `detectTier3Fields()` scans the
+  same context for question-shaped phrases curated from the scraper
+  corpus's `jobSpecific` tier (ständig natt/kväll, 2-/3-skift,
+  referenstagare, uppsägningstid, Combine/Cosmic, födelseår, …),
+  returning ≤4 labels. The extension NEVER guesses on a rare field —
+  the popup just prompts the user to answer it manually.
+- **`reportPageContext()`** — writes `jobbpiloten_pageIndustry`
+  (`{ id, label, url }`) + `jobbpiloten_tier3Seen` to
+  `chrome.storage.local` on the scan cadence, rate-limited (2 s) so a
+  MutationObserver burst (Workday-class pages) can't spam storage.
+  Failures are swallowed — detection is purely informational and must
+  never break the fill path.
+- **Popup v0.3.1** — three new surfaces, all rendered on every status
+  push (so a late-arriving content-script write is picked up without a
+  popup reopen):
+  1. **"Upptäckt bransch" chip** (`jp-industry-detect`) — shows which
+     industry the extension detected on the current job page (and thus
+     which Tier 2 questions it can answer).
+  2. **Tier 1 "Universella fält"** (`jp-universal`) — always-visible
+     list of the 7 universal keys (namn, e-post, telefon, adress,
+     LinkedIn, sammanfattning, personligt brev) with Satt/— status.
+  3. **Tier 3 "Sällsynta frågor upptäckta"** (`jp-tier3`) — prompt-once
+     per page URL: the Förstått button writes the job-page URL to
+     `jobbpiloten_tier3Dismissed`, so the prompt stays hidden until the
+     user navigates to another ad.
+- **Industry selector dual-write** — the popup selector now persists
+  BOTH the canonical `industry` key (per the storage spec) and the
+  legacy `jobbpiloten_industry_override` (so a downgraded build still
+  reads the choice). Render precedence: canonical → legacy → server
+  profile.
+
+### Storage keys (byte-aligned content.js ↔ popup.js)
+| Key | Writer | Reader |
+|---|---|---|
+| `jobbpiloten_pageIndustry` | content.js (per scan, rate-limited) | popup.js (chip + Tier 3 page URL) |
+| `jobbpiloten_tier3Seen` | content.js (per scan, rate-limited) | popup.js (Tier 3 prompt) |
+| `jobbpiloten_tier3Dismissed` | popup.js (Förstått button) | popup.js |
+| `industry` | popup.js selector (canonical) | popup.js renderIndustryPanel |
+| `jobbpiloten_industry_override` | popup.js selector (legacy) | popup.js (downgrade-compat) |
+
+Drift is locked by `tests/unit/extension-popup-industry.test.mjs` (the
+popup + content storage-key literals and the 9-industry key set).
+
+### Testing
+- 3 new unit files:
+  - `tests/unit/extension-popup-industry.test.mjs` — structural locks
+    on the three popup surfaces (data-testids), UNIVERSAL_FIELDS keys,
+    the dual-write selector, and the storage-key literals in popup.js
+    + content.js.
+  - `tests/unit/field-taxonomy-industries.test.mjs` — behavioural:
+    exactly 9 canonical industries in display order, every Tier-2 key
+    is labelled + in the allowed key universe, `fieldsForIndustry()`
+    empty/unknown handling, INDUSTRY_BOOLEAN_KEYS ↔ LABELS 1:1.
+  - `tests/unit/api-profile-industry.test.mjs` — API contract locks
+    (POST /api/profile + profile-update allow-list/validation/coercion)
+    + behavioural `buildExtensionProfile()` shape tests.
+- New E2E `tests/e2e/onboarding-industry.spec.js` — onboarding industry
+  dropdown → Tier 2 questions → Slutför → GET /api/profile round-trip.
+- `yarn test:unit` — **1230 tests (1227 pass, 3 skipped, 0 fail)**.
+- Extension lints green: `validate:extension`, `lint:await-async`,
+  `lint:field-patterns` (73 FIELD_PATTERNS / 70 profileKeys).
+
+---
+
+## 13. Round-83 — Complete industry field taxonomy (structured schema) (2026-08-03)
+
+### What changed
+- **Complete schema** — `lib/data/extension_field_schema.json` replaced
+  with the Round-83 complete version: 14 universal fields (typed) +
+  9 industries × ~7–8 structured fields (select/multiselect/text/url)
+  with option lists + required flags ("Scraped corpus + known
+  industry patterns" — corpus-thin industries supplemented by domain
+  knowledge: ADR/YKB/tacho for transport, Office suite for kontor, …).
+  The file is an evidence/contract artifact — no code reads it
+  directly; `lib/field-taxonomy.js` is the runtime source of truth.
+- **`lib/field-taxonomy.js`** — new Round-83 projections alongside the
+  Round-81 boolean registry (kept unchanged): `UNIVERSAL_FIELDS`,
+  `INDUSTRY_STRUCTURED_FIELDS`, `STRUCTURED_TO_BOOLEAN`,
+  `structuredAnswerToBoolean()`, `industryFieldsToBooleans()`,
+  `sanitizeIndustryFields()` (API-scoped validation/coercion),
+  `structuredFieldsFor()`. Bundled extension copy
+  (`extension/lib/field-taxonomy.js`) synced + parity-locked.
+- **Mongo/API** — profile gains `industryFields` (nested per industry,
+  e.g. `{ lager: { forklift_license: 'Ja', … } }`; `industry` stays the
+  existing 9-id enum). POST /api/profile + /api/profile-update accept
+  `industryFields` (flat answers in, nested out), validate against the
+  effective industry's field defs, and drop unknown ids / non-option
+  values. profile-update resolves the effective industry from the
+  patch OR the stored profile when `industry` isn't in the payload.
+- **Onboarding** — step 0 industry block now renders the complete
+  structured form (shadcn Selects for select fields, checkbox chips
+  for multiselect, Inputs for text/url). Required fields gate Nästa.
+  `buildApiBody` sends `industry` + `industryFields` AND dual-writes
+  the mapped legacy flat booleans (`hasForkliftLicense`, `canShiftWork`,
+  …) so the Round-81 extension fill + tests stay green.
+- **Extension popup (v0.3.2)** — universal list extended to the full
+  schema projection (11 status rows incl. Postnummer/Stad/
+  Tillgänglighet/Löneanspråk; nested-key resolver); industry list
+  renders the selected industry's complete structured field set with
+  the stored value (multiselect joined, legacy-boolean fallback via
+  `structuredToBoolean`). Selector label → "Välj din bransch".
+- **Autofill** — targeted best-effort industry-field fill pass
+  (`fillDetectedIndustryFields`) in content.js: detects the page
+  industry (Round-82), loads ONLY that industry's
+  `profile.industryFields`, label-matches host inputs (content-word
+  matcher), fills by type, reuses the `handledBooleanGroups` dedup
+  set so the boolean FIELD_PATTERNS path never double-clicks, and is
+  fail-safe. The taxonomy bundle is now injected into content
+  scripts via the manifest (`lib/field-taxonomy.js` + `content.js`).
+  Rare fields keep the existing Tier 3 manual prompt (never guessed).
+- **Tests** — extended taxonomy/API/parity/popup locks + rewritten E2E
+  (`onboarding-industry.spec.js`) for the structured form;
+  `extension-profile.test.mjs` key-count +1 for `industryFields`.
+
+### Storage shape (Round-83 contract)
+- Profile: `industry: String` (9-id enum, unchanged) +
+  `industryFields: { [industryId]: { [fieldId]: value } }`.
+- Extension-safe profile (`buildExtensionProfile`) mirrors the nested
+  shape for the user's industry; sanitize re-validates on read so
+  malformed Mongo docs degrade to `{}`.
+
+### Testing
+- `yarn test:unit` — **1257 tests (1254 pass, 3 skipped, 0 fail)**.
+- Extension lints green: `validate:extension` (v0.3.2),
+  `lint:await-async`, `lint:field-patterns` (73 FIELD_PATTERNS /
+  70 profileKeys — count unchanged; the targeted fill does NOT add
+  FIELD_PATTERNS entries by design).
+- New vm-locked matcher tests (extension-fill-vm.test.mjs) pin the
+  single-keyword label matching + the per-type eligibility gate.
+
 *End of handoff. Good luck.*

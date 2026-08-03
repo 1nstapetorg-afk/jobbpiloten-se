@@ -609,6 +609,13 @@ html, body {
   border-radius: 6px;
   border: 1px solid var(--jp-slate-300);
   background: #fff;
+}
+.jp-industry-help {
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--jp-slate-500);
+  margin: 6px 0 2px;
+}
   color: var(--jp-slate-800);
 }
 .jp-industry-list {
@@ -645,6 +652,58 @@ html, body {
   color: #94a3b8;
 }
 
+/* Round-82 — apply-time industry detection chip. Compact amber-
+   tinted pill above the Tier 1/industry panels so the user sees at a
+   glance which industry the extension detected on the current page. */
+.jp-industry-detect {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  font-size: 11px;
+  color: #92400e;
+}
+.jp-industry-detect-label {
+  font-weight: 700;
+  white-space: nowrap;
+}
+.jp-industry-detect-value {
+  font-weight: 600;
+}
+
+/* Round-82 — Tier 3 rare-field prompt. Amber attention panel;
+   prompt-once per page (dismissal persisted). The text is compact so
+   the popup stays scrollable on small screens. */
+.jp-tier3 {
+  margin-top: 12px;
+  background: #fffbeb;
+  border: 1px solid #fbbf24;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.jp-tier3-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #92400e;
+}
+.jp-tier3-text {
+  font-size: 11px;
+  line-height: 1.45;
+  color: #78350f;
+  margin: 4px 0 6px;
+}
+.jp-tier3-dismiss {
+  font-size: 11px;
+  padding: 0;
+  min-height: 0;
+  color: #92400e;
+  text-decoration: underline;
+}
+
   .jp-detected {
     background: #1f2937;
     border-color: #334155;
@@ -658,9 +717,30 @@ html, body {
     color: var(--jp-slate-100);
     border-color: #334155;
   }
+  .jp-industry-help {
+    color: #94a3b8;
+  }
   .jp-industry-list li {
     color: var(--jp-slate-300);
     border-color: #374151;
+  }
+  .jp-industry-detect {
+    background: #1f2937;
+    border-color: #92400e;
+    color: #fbbf24;
+  }
+  .jp-tier3 {
+    background: #1f2937;
+    border-color: #92400e;
+  }
+  .jp-tier3-title {
+    color: #fbbf24;
+  }
+  .jp-tier3-text {
+    color: #fde68a;
+  }
+  .jp-tier3-dismiss {
+    color: #fbbf24;
   }
   .jp-status-line {
     color: var(--jp-slate-100);

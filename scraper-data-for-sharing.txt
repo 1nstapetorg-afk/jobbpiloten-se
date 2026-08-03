@@ -1,0 +1,890 @@
+==========================================================
+JobbPiloten scraper export - copy-paste bundle
+Generated: 2026-08-03T20:57:14Z
+Contains: extension_field_schema.json (full), industry_core_fields.csv,
+universal_fields.csv, job_specific_fields.csv, MANIFEST.txt
+==========================================================
+
+=== FILE: extension_field_schema.json (full) ===
+{
+  "generatedAt": "2026-08-03T16:28:04.264Z",
+  "source": "759 form probes -> 68 application forms (66 complete, >= 5 real fields)",
+  "tiers": {
+    "tier1Universal": ">70% of complete forms (>= 5 real fields)",
+    "tier2IndustryCore": ">40% within industry",
+    "tier3JobSpecific": "<10% of forms"
+  },
+  "universal": [
+    {
+      "field": "name",
+      "label": "förnamn",
+      "frequency": 97
+    },
+    {
+      "field": "email",
+      "label": "e-post",
+      "frequency": 97
+    },
+    {
+      "field": "phone",
+      "label": "telefon",
+      "frequency": 97
+    }
+  ],
+  "industry": {
+    "lager": [
+      {
+        "field": "cv",
+        "label": "ladda upp cv",
+        "frequency": 100
+      },
+      {
+        "field": "other_documents",
+        "label": "övriga dokument",
+        "frequency": 100
+      },
+      {
+        "field": "cover_letter",
+        "label": "personligt brev",
+        "frequency": 75
+      },
+      {
+        "field": "availability",
+        "label": "när är du tillgänglig för start",
+        "frequency": 50
+      },
+      {
+        "field": "address",
+        "label": "adress",
+        "frequency": 50
+      }
+    ],
+    "vård": [
+      {
+        "field": "cover_letter",
+        "label": "personligt brev",
+        "frequency": 50
+      }
+    ],
+    "kontor": [
+      {
+        "field": "cover_letter",
+        "label": "personligt brev",
+        "frequency": 85.7
+      },
+      {
+        "field": "cv",
+        "label": "ladda upp cv",
+        "frequency": 71.4
+      },
+      {
+        "field": "other_documents",
+        "label": "övriga dokument",
+        "frequency": 71.4
+      },
+      {
+        "field": "availability",
+        "label": "när är du tillgänglig för start",
+        "frequency": 57.1
+      },
+      {
+        "field": "address",
+        "label": "adress",
+        "frequency": 42.9
+      }
+    ],
+    "IT": [],
+    "bygg": [
+      {
+        "field": "personal_number",
+        "label": "personnummer",
+        "frequency": 66.7
+      },
+      {
+        "field": "address",
+        "label": "adress",
+        "frequency": 66.7
+      },
+      {
+        "field": "city",
+        "label": "stad",
+        "frequency": 66.7
+      },
+      {
+        "field": "address",
+        "label": "postnummer",
+        "frequency": 66.7
+      },
+      {
+        "field": "cv",
+        "label": "ladda upp cv",
+        "frequency": 66.7
+      },
+      {
+        "field": "other_documents",
+        "label": "övriga dokument",
+        "frequency": 66.7
+      }
+    ],
+    "restaurang": [],
+    "sälj": [
+      {
+        "field": "cv",
+        "label": "ladda upp cv",
+        "frequency": 60
+      },
+      {
+        "field": "other_documents",
+        "label": "övriga dokument",
+        "frequency": 60
+      },
+      {
+        "field": "cover_letter",
+        "label": "personligt brev",
+        "frequency": 60
+      }
+    ],
+    "industri": [
+      {
+        "field": "personal_number",
+        "label": "personnummer",
+        "frequency": 88.9
+      },
+      {
+        "field": "address",
+        "label": "adress",
+        "frequency": 88.9
+      },
+      {
+        "field": "city",
+        "label": "stad",
+        "frequency": 88.9
+      },
+      {
+        "field": "address",
+        "label": "postnummer",
+        "frequency": 88.9
+      },
+      {
+        "field": "cv",
+        "label": "ladda upp cv",
+        "frequency": 88.9
+      },
+      {
+        "field": "other_documents",
+        "label": "övriga dokument",
+        "frequency": 88.9
+      }
+    ],
+    "transport": []
+  },
+  "jobSpecific": [
+    {
+      "field": "field_land",
+      "label": "land",
+      "count": 6,
+      "frequency": 8.8
+    },
+    {
+      "field": "field_price",
+      "label": "price",
+      "count": 6,
+      "frequency": 8.8
+    },
+    {
+      "field": "field_yyyy-mm-dd",
+      "label": "yyyy-mm-dd",
+      "count": 6,
+      "frequency": 8.8
+    },
+    {
+      "field": "field_annat",
+      "label": "annat",
+      "count": 4,
+      "frequency": 5.9
+    },
+    {
+      "field": "field_län",
+      "label": "län",
+      "count": 4,
+      "frequency": 5.9
+    },
+    {
+      "field": "field_ja_både_och",
+      "label": "ja både och",
+      "count": 4,
+      "frequency": 5.9
+    },
+    {
+      "field": "gender",
+      "label": "kön",
+      "count": 4,
+      "frequency": 5.9
+    },
+    {
+      "field": "field_postnr",
+      "label": "postnr",
+      "count": 3,
+      "frequency": 4.4
+    },
+    {
+      "field": "field_kvinna",
+      "label": "kvinna",
+      "count": 3,
+      "frequency": 4.4
+    },
+    {
+      "field": "field_man",
+      "label": "man",
+      "count": 3,
+      "frequency": 4.4
+    },
+    {
+      "field": "education",
+      "label": "utbildningskolafrån åååå-mm till examen åååå-mm",
+      "count": 3,
+      "frequency": 4.4
+    },
+    {
+      "field": "previous_employer",
+      "label": "företag organisation yrke titelfrån åååå-mm till åååå-mm",
+      "count": 3,
+      "frequency": 4.4
+    },
+    {
+      "field": "field_questionrepeater_ctl00_ddl",
+      "label": "questionrepeater ctl00 ddl",
+      "count": 3,
+      "frequency": 4.4
+    },
+    {
+      "field": "field_sourceddl",
+      "label": "sourceddl",
+      "count": 3,
+      "frequency": 4.4
+    },
+    {
+      "field": "field_btnpreview",
+      "label": "btnpreview",
+      "count": 3,
+      "frequency": 4.4
+    },
+    {
+      "field": "field_btnsave",
+      "label": "btnsave",
+      "count": 3,
+      "frequency": 4.4
+    },
+    {
+      "field": "field_dagtid",
+      "label": "dagtid",
+      "count": 3,
+      "frequency": 4.4
+    },
+    {
+      "field": "field_övrigt",
+      "label": "övrigt",
+      "count": 3,
+      "frequency": 4.4
+    },
+    {
+      "field": "driving_license",
+      "label": "ja körkort men inte tillgång till bil",
+      "count": 3,
+      "frequency": 4.4
+    },
+    {
+      "field": "field_år",
+      "label": "år",
+      "count": 3,
+      "frequency": 4.4
+    },
+    {
+      "field": "field_månad",
+      "label": "månad",
+      "count": 3,
+      "frequency": 4.4
+    },
+    {
+      "field": "field_dag",
+      "label": "dag",
+      "count": 3,
+      "frequency": 4.4
+    },
+    {
+      "field": "field_c_o",
+      "label": "c o",
+      "count": 3,
+      "frequency": 4.4
+    },
+    {
+      "field": "field_ac_247_ad_376_ae_971_af_93_ag_",
+      "label": "ac 247 ad 376 ae 971 af 93 ag 1 ai 1 al 355 am 374 ao",
+      "count": 3,
+      "frequency": 4.4
+    },
+    {
+      "field": "field_övriga_filer",
+      "label": "övriga filer",
+      "count": 3,
+      "frequency": 4.4
+    },
+    {
+      "field": "gender",
+      "label": "jag har läst och förstått villkoren för att skapa ett varbi-konto och jag har även tagit del av hur",
+      "count": 3,
+      "frequency": 4.4
+    },
+    {
+      "field": "field_ja_puuilo_sverige_får_även_ski",
+      "label": "ja puuilo sverige får även skicka framtida jobberbjudanden till mig",
+      "count": 3,
+      "frequency": 4.4
+    },
+    {
+      "field": "field_har_du_vana_vid_att_arbeta_i_d",
+      "label": "har du vana vid att arbeta i datorbaserade verksamhetsstöd gärna combine och cosmic",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_ständig_kväll",
+      "label": "ständig kväll",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_ständig_natt",
+      "label": "ständig natt",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "shift_work",
+      "label": "2-skift",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "shift_work",
+      "label": "3-skift eller 4-skift",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_jag_kan_arbeta_alla_tider",
+      "label": "jag kan arbeta alla tider",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_vilken_tjänst_avdelning_är_du_",
+      "label": "vilken tjänst avdelning är du intresserad av varför ska vi anställa just dig dit",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_bifoga_valda_filer",
+      "label": "bifoga valda filer",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_ew2_ew2content_ivbtnspara",
+      "label": "ew2 ew2content ivbtnspara",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_ew2_ew2content_ivbtnavbryt",
+      "label": "ew2 ew2content ivbtnavbryt",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_omgående",
+      "label": "omgående",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_två_veckors_uppsägningstid",
+      "label": "två veckors uppsägningstid",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_en_månad_eller_längre_uppsägni",
+      "label": "en månad eller längre uppsägningstid",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "experience",
+      "label": "ingen erfarenhet",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_mer_än_5_år",
+      "label": "mer än 5 år",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_",
+      "label": "",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "linkedin",
+      "label": "link to your linkedin profile",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_subscribe",
+      "label": "subscribe",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_ingen_alls",
+      "label": "ingen alls",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_mindre_än_ett_år",
+      "label": "mindre än ett år",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_1_år",
+      "label": "1 år",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_2_år",
+      "label": "2 år",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_3_år_eller_mer",
+      "label": "3 år eller mer",
+      "count": 2,
+      "frequency": 2.9
+    },
+    {
+      "field": "field_har_du_mycket_god_förmåga_att_",
+      "label": "har du mycket god förmåga att uttrycka dig i tal och skrift på svenska och engelska",
+      "count": 1,
+      "frequency": 1.5
+    },
+    {
+      "field": "experience",
+      "label": "har du erfarenhet av ekonomi inom samhällsbygnadsverksamhet",
+      "count": 1,
+      "frequency": 1.5
+    },
+    {
+      "field": "experience",
+      "label": "har du erfarenhet av kommunalt ekonomiarbete",
+      "count": 1,
+      "frequency": 1.5
+    },
+    {
+      "field": "experience",
+      "label": "har du erfarenhet av avfallsverksamhet samt vatten och alopp",
+      "count": 1,
+      "frequency": 1.5
+    },
+    {
+      "field": "experience",
+      "label": "har du erfarenhet av personalansvar som t ex linjechef inklusive arbetsmiljö och arbetsrätt oblig",
+      "count": 1,
+      "frequency": 1.5
+    },
+    {
+      "field": "experience",
+      "label": "har du erfarenhet av bidragsfinansierad verksamhet t ex vinnova- eller eu-projekt",
+      "count": 1,
+      "frequency": 1.5
+    },
+    {
+      "field": "education",
+      "label": "har du högskoleutbildning inom medie- och kommunikationsvetenskap eller liknande",
+      "count": 1,
+      "frequency": 1.5
+    },
+    {
+      "field": "field_är_du_som_person_positiv_lösni",
+      "label": "är du som person positiv lösningsorienterad och har servicekänsla ut i fingerspetsarna obligatoris",
+      "count": 1,
+      "frequency": 1.5
+    },
+    {
+      "field": "education",
+      "label": "har du högskoleutbildning med examen inom relevant område",
+      "count": 1,
+      "frequency": 1.5
+    },
+    {
+      "field": "computer_skills",
+      "label": "har du god datorvana",
+      "count": 1,
+      "frequency": 1.5
+    }
+  ],
+  "platforms": {
+    "teamtailor": [
+      "availability",
+      "field_har_du_vana_vid_att_arbeta_i_d",
+      "name",
+      "email",
+      "phone",
+      "cv",
+      "other_documents",
+      "cover_letter",
+      "field_har_du_mycket_god_förmåga_att_",
+      "address",
+      "experience",
+      "education",
+      "field_är_du_som_person_positiv_lösni",
+      "computer_skills"
+    ],
+    "getwiser": [
+      "name",
+      "last_name",
+      "email",
+      "phone",
+      "city",
+      "field_price",
+      "field_yyyy-mm-dd"
+    ],
+    "varbi": [
+      "field_question_position_question_mod",
+      "email",
+      "name",
+      "field_år",
+      "field_månad",
+      "field_dag",
+      "gender",
+      "address",
+      "field_c_o",
+      "city",
+      "field_land",
+      "field_län",
+      "phone",
+      "field_ac_247_ad_376_ae_971_af_93_ag_",
+      "cv",
+      "cover_letter",
+      "field_övriga_filer"
+    ],
+    "reachmee": [
+      "email",
+      "name",
+      "date_of_birth",
+      "field_månad_jan_feb_mar_apr_maj_jun_",
+      "field_dag_1_2_3_4_5_6_7_8_9_10_11_12",
+      "field_välj_afghanistan_93albanien_35",
+      "phone",
+      "cv",
+      "field_qfile_doctypeid_14716",
+      "field_jag_har_tagit_del_av_informati",
+      "field_qfile_doctypeid_14701",
+      "field_qfile_doctypeid_14691",
+      "field_qfile_doctypeid_14629",
+      "field_qfile_doctypeid_14582",
+      "field_om_ja_ange_vilken",
+      "experience",
+      "field_qfile_doctypeid_14624",
+      "field_qfile_doctypeid_14408",
+      "gender",
+      "address",
+      "city",
+      "field_prof_pldocument-",
+      "field_qfile_doctypeid_14749",
+      "field_qfile_doctypeid_14858",
+      "field_qfile_doctypeid_14599"
+    ],
+    "staffing-site": [],
+    "jobylon": [
+      "name",
+      "email",
+      "phone",
+      "linkedin",
+      "field_meddelande",
+      "cv",
+      "field_övrigt",
+      "field_submit"
+    ]
+  }
+}
+=== FILE: industry_core_fields.csv (full) ===
+industry,label,count,forms,percent
+bygg,personnummer,2,3,66.7
+bygg,adress,2,3,66.7
+bygg,stad,2,3,66.7
+bygg,postnummer,2,3,66.7
+bygg,ladda upp cv,2,3,66.7
+bygg,övriga dokument,2,3,66.7
+industri,personnummer,8,9,88.9
+industri,adress,8,9,88.9
+industri,stad,8,9,88.9
+industri,postnummer,8,9,88.9
+industri,ladda upp cv,8,9,88.9
+industri,övriga dokument,8,9,88.9
+kontor,personligt brev,6,7,85.7
+kontor,ladda upp cv,5,7,71.4
+kontor,övriga dokument,5,7,71.4
+kontor,när är du tillgänglig för start,4,7,57.1
+kontor,adress,3,7,42.9
+lager,ladda upp cv,4,4,100
+lager,övriga dokument,4,4,100
+lager,personligt brev,3,4,75
+lager,när är du tillgänglig för start,2,4,50
+lager,adress,2,4,50
+okänd,personligt brev,3,4,75
+okänd,när är du tillgänglig för start,2,4,50
+okänd,adress,2,4,50
+okänd,ladda upp cv,2,4,50
+okänd,övriga dokument,2,4,50
+sälj,ladda upp cv,3,5,60
+sälj,övriga dokument,3,5,60
+sälj,personligt brev,3,5,60
+vård,personligt brev,5,10,50
+=== FILE: universal_fields.csv (full) ===
+label,count,percent
+förnamn,64,97
+e-post,64,97
+telefon,64,97
+=== FILE: job_specific_fields.csv (full) ===
+label,field_id,count,percent
+land,field_land,6,8.8
+price,field_price,6,8.8
+yyyy-mm-dd,field_yyyy-mm-dd,6,8.8
+annat,field_annat,4,5.9
+län,field_län,4,5.9
+ja både och,field_ja_både_och,4,5.9
+kön,gender,4,5.9
+postnr,field_postnr,3,4.4
+kvinna,field_kvinna,3,4.4
+man,field_man,3,4.4
+utbildningskolafrån åååå-mm till examen åååå-mm,education,3,4.4
+företag organisation yrke titelfrån åååå-mm till åååå-mm,previous_employer,3,4.4
+questionrepeater ctl00 ddl,field_questionrepeater_ctl00_ddl,3,4.4
+sourceddl,field_sourceddl,3,4.4
+btnpreview,field_btnpreview,3,4.4
+btnsave,field_btnsave,3,4.4
+dagtid,field_dagtid,3,4.4
+övrigt,field_övrigt,3,4.4
+ja körkort men inte tillgång till bil,driving_license,3,4.4
+år,field_år,3,4.4
+månad,field_månad,3,4.4
+dag,field_dag,3,4.4
+c o,field_c_o,3,4.4
+ac 247 ad 376 ae 971 af 93 ag 1 ai 1 al 355 am 374 ao,field_ac_247_ad_376_ae_971_af_93_ag_,3,4.4
+övriga filer,field_övriga_filer,3,4.4
+jag har läst och förstått villkoren för att skapa ett varbi-konto och jag har även tagit del av hur,gender,3,4.4
+ja puuilo sverige får även skicka framtida jobberbjudanden till mig,field_ja_puuilo_sverige_får_även_ski,3,4.4
+har du vana vid att arbeta i datorbaserade verksamhetsstöd gärna combine och cosmic,field_har_du_vana_vid_att_arbeta_i_d,2,2.9
+ständig kväll,field_ständig_kväll,2,2.9
+ständig natt,field_ständig_natt,2,2.9
+2-skift,shift_work,2,2.9
+3-skift eller 4-skift,shift_work,2,2.9
+jag kan arbeta alla tider,field_jag_kan_arbeta_alla_tider,2,2.9
+vilken tjänst avdelning är du intresserad av varför ska vi anställa just dig dit,field_vilken_tjänst_avdelning_är_du_,2,2.9
+bifoga valda filer,field_bifoga_valda_filer,2,2.9
+ew2 ew2content ivbtnspara,field_ew2_ew2content_ivbtnspara,2,2.9
+ew2 ew2content ivbtnavbryt,field_ew2_ew2content_ivbtnavbryt,2,2.9
+omgående,field_omgående,2,2.9
+två veckors uppsägningstid,field_två_veckors_uppsägningstid,2,2.9
+en månad eller längre uppsägningstid,field_en_månad_eller_längre_uppsägni,2,2.9
+ingen erfarenhet,experience,2,2.9
+mer än 5 år,field_mer_än_5_år,2,2.9
+,field_,2,2.9
+link to your linkedin profile,linkedin,2,2.9
+subscribe,field_subscribe,2,2.9
+ingen alls,field_ingen_alls,2,2.9
+mindre än ett år,field_mindre_än_ett_år,2,2.9
+1 år,field_1_år,2,2.9
+2 år,field_2_år,2,2.9
+3 år eller mer,field_3_år_eller_mer,2,2.9
+har du mycket god förmåga att uttrycka dig i tal och skrift på svenska och engelska,field_har_du_mycket_god_förmåga_att_,1,1.5
+har du erfarenhet av ekonomi inom samhällsbygnadsverksamhet,experience,1,1.5
+har du erfarenhet av kommunalt ekonomiarbete,experience,1,1.5
+har du erfarenhet av avfallsverksamhet samt vatten och alopp,experience,1,1.5
+har du erfarenhet av personalansvar som t ex linjechef inklusive arbetsmiljö och arbetsrätt oblig,experience,1,1.5
+har du erfarenhet av bidragsfinansierad verksamhet t ex vinnova- eller eu-projekt,experience,1,1.5
+har du högskoleutbildning inom medie- och kommunikationsvetenskap eller liknande,education,1,1.5
+är du som person positiv lösningsorienterad och har servicekänsla ut i fingerspetsarna obligatoris,field_är_du_som_person_positiv_lösni,1,1.5
+har du högskoleutbildning med examen inom relevant område,education,1,1.5
+har du god datorvana,computer_skills,1,1.5
+har du arbetserfarenhet av liknande arbete,experience,1,1.5
+finspång,field_finspång,1,1.5
+norrköping,field_norrköping,1,1.5
+vetlanda,field_vetlanda,1,1.5
+nässjö,field_nässjö,1,1.5
+eksjö,field_eksjö,1,1.5
+sävsjö,field_sävsjö,1,1.5
+inom vilka branschområden vill du jobba administration administratör affärsut,office_experience,1,1.5
+administration administratör,office_experience,1,1.5
+affärsutveckling,field_affärsutveckling,1,1.5
+design,field_design,1,1.5
+digitala affären,field_digitala_affären,1,1.5
+finans ekonomijobb,gender,1,1.5
+försäljning säljjobb,sales_experience,1,1.5
+inköp inköpsjobb,field_inköp_inköpsjobb,1,1.5
+it security,field_it_security,1,1.5
+it-säkerhet,field_it-säkerhet,1,1.5
+juridik,field_juridik,1,1.5
+kundtjänst kundservice,field_kundtjänst_kundservice,1,1.5
+personal hr-jobb,field_personal_hr-jobb,1,1.5
+projektledning,field_projektledning,1,1.5
+sjukvård och hälsa,field_sjukvård_och_hälsa,1,1.5
+socialt arbete,field_socialt_arbete,1,1.5
+säkerhet räddningstjänst,field_säkerhet_räddningstjänst,1,1.5
+teknik ingenjörsjobb,field_teknik_ingenjörsjobb,1,1.5
+underhåll driftsjobb,field_underhåll_driftsjobb,1,1.5
+utbildning,education,1,1.5
+utveckling,field_utveckling,1,1.5
+eller använd din linkedin-profil,linkedin,1,1.5
+övriga uppgifter till rekryterare var chartimer -1 function onemorechargone,field_övriga_uppgifter_till_rekryter,1,1.5
+ew2 ew2content skrivutknapp,field_ew2_ew2content_skrivutknapp,1,1.5
+har du truckkort om ja vilken behörighet,driving_license,1,1.5
+location,field_location,1,1.5
+har du erfarenhet av arbete i produktions tillverkande industri om ja berätta gärna lite kort,experience,1,1.5
+question position question module 2169400,field_question_position_question_mod,1,1.5
+question position question module 2169401,field_question_position_question_mod,1,1.5
+question position question module 2169402,field_question_position_question_mod,1,1.5
+question position question module 2169403 2513416,field_question_position_question_mod,1,1.5
+question position question module 2169403 2513417,field_question_position_question_mod,1,1.5
+question position question module 2169403 2513418,field_question_position_question_mod,1,1.5
+question position question module 2169403 2513419,field_question_position_question_mod,1,1.5
+question position question module 2169403 2513420,field_question_position_question_mod,1,1.5
+question position question module 2169403 2513421,field_question_position_question_mod,1,1.5
+körkort ingen bil,driving_license,1,1.5
+kvällstid,field_kvällstid,1,1.5
+natt,field_natt,1,1.5
+helg,field_helg,1,1.5
+mindre än 2 år,field_mindre_än_2_år,1,1.5
+2 5 år,field_2_5_år,1,1.5
+hur många års erfarenhet har du av att arbeta inom produktion industri,experience,1,1.5
+hur arbetar du för att vara strukturerad och noggrann i ditt arbete,field_hur_arbetar_du_för_att_vara_st,1,1.5
+berätta om dina tidigare erfarenheter som kan vara relevanta för denna tjänst,experience,1,1.5
+kan du berätta lite kort om din utbildningsbakgrund,education,1,1.5
+intyg på annan huvudsaklig sysselsättning - studie arbete,field_intyg_på_annan_huvudsaklig_sys,1,1.5
+question position question module 2183591 2526769,field_question_position_question_mod,1,1.5
+question position question module 2183591 2526770,field_question_position_question_mod,1,1.5
+question position question module 2183591 2526771,field_question_position_question_mod,1,1.5
+question position question module 2183591 2526772,field_question_position_question_mod,1,1.5
+question position question module 2183591 2526773,field_question_position_question_mod,1,1.5
+question position question module 2183591 2526774,field_question_position_question_mod,1,1.5
+question position question module 2183591 2526775,field_question_position_question_mod,1,1.5
+question position question module 2183591 2526776,field_question_position_question_mod,1,1.5
+question position question module 2183591 2526777,field_question_position_question_mod,1,1.5
+question position question module 2183591 2526778,field_question_position_question_mod,1,1.5
+qfile doctypeid 14716,field_qfile_doctypeid_14716,1,1.5
+qfile doctypeid 14701,field_qfile_doctypeid_14701,1,1.5
+qfile doctypeid 14691,field_qfile_doctypeid_14691,1,1.5
+qfile doctypeid 14629,field_qfile_doctypeid_14629,1,1.5
+qfile doctypeid 14582,field_qfile_doctypeid_14582,1,1.5
+om ja ange vilken,field_om_ja_ange_vilken,1,1.5
+beskriv kortfattat din erfarenhet,experience,1,1.5
+qfile doctypeid 14624,field_qfile_doctypeid_14624,1,1.5
+vilka olika fabrikat inom styr och reglering har du arbetat med,field_vilka_olika_fabrikat_inom_styr,1,1.5
+vilka fabrikat inom reservkraft har du arbetat med,field_vilka_fabrikat_inom_reservkraf,1,1.5
+qfile doctypeid 14408,field_qfile_doctypeid_14408,1,1.5
+är under utbildning,education,1,1.5
+ew2 ew2content frg2 1,field_ew2_ew2content_frg2_1,1,1.5
+svensk,field_svensk,1,1.5
+annat land inom eu,field_annat_land_inom_eu,1,1.5
+annat land utanför eu,field_annat_land_utanför_eu,1,1.5
+ew2 ew2content frg4 1,field_ew2_ew2content_frg4_1,1,1.5
+jag är anställd inom region örebro län,field_jag_är_anställd_inom_region_ör,1,1.5
+jag har tidigare varit anställd inom region örebro län,previous_employer,1,1.5
+jag har aldrig varit anställd inom region örebro län,field_jag_har_aldrig_varit_anställd_,1,1.5
+upp till 1 år,field_upp_till_1_år,1,1.5
+1 - 3 år,field_1_-_3_år,1,1.5
+3 - 5 år,field_3_-_5_år,1,1.5
+arbetsförmedlingen,field_arbetsförmedlingen,1,1.5
+region örebro läns webbplats,field_region_örebro_läns_webbplats,1,1.5
+dagstidning,field_dagstidning,1,1.5
+facktidning,field_facktidning,1,1.5
+facebook,field_facebook,1,1.5
+intranätet självservice,field_intranätet_självservice,1,1.5
+linkedin,linkedin,1,1.5
+personliga kontakter,gender,1,1.5
+beskriv en situation där du har löst ett tekniskt problem i ett projekt vad var,field_beskriv_en_situation_där_du_ha,1,1.5
+prof pldocument-,field_prof_pldocument-,1,1.5
+qfile doctypeid 14749,field_qfile_doctypeid_14749,1,1.5
+qfile doctypeid 14858,field_qfile_doctypeid_14858,1,1.5
+linkedin-länk,linkedin,1,1.5
+meddelande,field_meddelande,1,1.5
+submit,field_submit,1,1.5
+har du tidigare erfarenhet av arbete i detaljhandeln berätta gärna lite mer det,experience,1,1.5
+har du tidigare ledarerfarenhet om ja berätta gärna mer om det,experience,1,1.5
+ja chefspoolen får även skicka framtida jobberbjudanden till mig,field_ja_chefspoolen_får_även_skicka,1,1.5
+qfile doctypeid 14599,field_qfile_doctypeid_14599,1,1.5
+har du examen från gymnasium eller likvärdig utbildning,education,1,1.5
+säkerhetskod,field_säkerhetskod,1,1.5
+=== FILE: MANIFEST.txt (full) ===
+JobbPiloten Scraper Export
+==========================
+Generated: 2026-08-03T20:41:25Z
+
+CORPUS SUMMARY
+--------------
+Total forms probed: 759
+Application forms found: 68
+Complete forms (>= 5 real fields): 66
+Total unique jobs: 700
+Sites covered (16): arbetsformedlingen, lernia, bemannia, wise, randstad,
+  jobbsafari, tng, academicwork, manpower, addeco, poolia, indeed, linkedin,
+  blocket, metrojobb, framtiden
+Industries covered (9): lager, vard, kontor, IT, bygg, restaurang, salj,
+  industri, transport
+
+JOB INDUSTRY DISTRIBUTION (job_industry_mapping.csv)
+-----------------------------------------------------
+IT: 117 | vard: 103 | lager: 79 | salj: 78 | bygg: 77 | industri: 73 |
+kontor: 64 | transport: 49 | restaurang: 48 | okand (unclassified): 12
+
+CLASSIFICATION METHOD (job_industry_mapping.csv)
+-------------------------------------------------
+LLM: 681 | keyword: 7 | none (unclassified): 12
+
+FILES INCLUDED
+--------------
+form_fields_raw.jsonl         Raw per-form probe records (759 lines, one JSON
+                              object per probed application form).
+extension_field_schema.json   Tiered field taxonomy (universal / industry-core /
+                              job-specific) with per-field frequency percentages.
+                              Generated 2026-08-03T16:28:04Z.
+industry_core_fields.csv      Industry-core (Tier 2) fields per industry with
+                              counts and percentages.
+universal_fields.csv          Universal (Tier 1) fields with counts and
+                              percentages (fornamn, e-post, telefon).
+job_specific_fields.csv       Rare job-specific (Tier 3) fields with counts and
+                              percentages.
+job_industry_mapping.csv      Per-job predicted industry with confidence, keyword
+                              votes and method (700 rows, 700 unique job URLs).
+sites.js                      Scraper site configuration (16 sites) - the only
+                              source file included.
+README.md                     Scraper overview + usage.
+
+NOTES
+-----
+- field_frequency_matrix.csv was on the requested list but does NOT exist in
+  data/processed/ - the current pipeline does not emit it. The equivalent
+  tiered frequency data lives in extension_field_schema.json
+  (tier1Universal >70% of complete forms, tier2IndustryCore >40% within
+  industry, tier3JobSpecific <10% of forms).
+- Raw scraped fields (data/processed/scraped_fields.csv, ~1.9 MB) and its
+  schema were NOT included - outside the requested file list. Can be added
+  to a follow-up export on request.

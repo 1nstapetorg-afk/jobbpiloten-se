@@ -84,6 +84,31 @@ test('extension bundled taxonomy matches app source of truth', () => {
   }
 });
 
+test('extension bundled structuredFields match app INDUSTRY_STRUCTURED_FIELDS (Round-83)', () => {
+  const bund = loadBundled();
+  const norm = (v) => JSON.parse(JSON.stringify(v));
+  assert.ok(bund.structuredFields, 'bundled copy must carry structuredFields (Round-83)')
+  for (const id of app.INDUSTRY_IDS) {
+    assert.equal(
+      JSON.stringify(norm(bund.structuredFields[id].map((f) => f.id))),
+      JSON.stringify(norm(app.INDUSTRY_STRUCTURED_FIELDS[id].map((f) => f.id))),
+      `structured field-id sequence differs for industry ${id}`
+    )
+    // Deep-compare id/label/type/options/required so a label edit on
+    // one side can't silently drift the popup/extension from the app.
+    assert.equal(
+      JSON.stringify(norm(bund.structuredFields[id])),
+      JSON.stringify(norm(app.INDUSTRY_STRUCTURED_FIELDS[id])),
+      `structured field defs differ for industry ${id}`
+    )
+  }
+  assert.equal(
+    JSON.stringify(norm(bund.structuredToBoolean || {})),
+    JSON.stringify(norm(app.STRUCTURED_TO_BOOLEAN || {})),
+    'bundled structuredToBoolean map must match the app mapping'
+  )
+})
+
 test('taxonomy sanity: lager and vård expose the expected key fields', () => {
   const lager = app.INDUSTRY_FIELDS.lager.map((f) => f.key);
   assert.ok(lager.includes('hasForkliftLicense'), 'lager must include truckförarbevis');

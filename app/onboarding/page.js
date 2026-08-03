@@ -16,11 +16,13 @@ import ErrorBoundary from '@/components/ErrorBoundary'
 import CVFileUpload from '@/components/CVFileUpload'
 import { toast } from 'sonner'
 import { setDemoSessionCookie, hasDemoSessionCookie } from '@/lib/auth-cookie'
-// 2026-08-03 (Round-81) — industry taxonomy. INDUSTRIES feeds the
-// onboarding dropdown; INDUSTRY_FIELDS + INDUSTRY_BOOLEAN_KEYS drive
-// the industry-specific yes/no questions shown after the user picks
-// an industry. See lib/field-taxonomy.js (single source of truth).
-import { INDUSTRIES, INDUSTRY_FIELDS, INDUSTRY_BOOLEAN_KEYS } from '@/lib/field-taxonomy'
+// 2026-08-03 (Round-81/83) — industry taxonomy. INDUSTRIES feeds the
+// onboarding dropdown; structuredFieldsFor() + industryFieldsToBooleans()
+// drive the industry-specific question form (Round-83 complete schema:
+// selects / multiselects / text + url) and the dual-write onto the
+// legacy flat booleans (INDUSTRY_BOOLEAN_KEYS) the extension reads.
+// See lib/field-taxonomy.js (single source of truth).
+import { INDUSTRIES, INDUSTRY_BOOLEAN_KEYS, structuredFieldsFor, industryFieldsToBooleans } from '@/lib/field-taxonomy'
 
 // Onboarding step labels — kept above the component so they can be referenced
 // by tests (e.g. tests/e2e/onboarding.spec.js) without unmounting the wizard.
@@ -159,16 +161,28 @@ function buildApiBody(form, user) {
       .map((t) => EMPLOYMENT_TYPE_MAP[t] || t)
       .filter(Boolean),
     industriesToAvoid: Array.isArray(form.avoidedIndustries) ? form.avoidedIndustries : [],
-    // 2026-08-03 (Round-81) — industry taxonomy. `industry` is sent
+    // 2026-08-03 (Round-81/83) — industry taxonomy. `industry` is sent
     // verbatim (the server validates it against the 9 canonical ids);
-    // the industry-specific yes/no answers are mapped onto the boolean
-    // profile keys (undefined/unanswered -> false so the extension
-    // leaves the host field untouched).
+    // `industryFields` carries the complete structured answers (nested
+    // per field id) which the server sanitizes against the taxonomy.
+    // Round-83 dual-write: the structured answers ALSO map onto the
+    // legacy flat booleans (INDUSTRY_BOOLEAN_KEYS) where a 1:1 mapping
+    // exists, so the pre-Round-83 extension fill + tests stay green
+    // (unanswered keys -> false -> the extension leaves the field
+    // untouched).
     industry: form.industry || '',
+    industryFields: form.industry ? (form.industryFields || {}) : {},
     ...Object.fromEntries(
-      INDUSTRY_BOOLEAN_KEYS.map((k) => [k, form.industryAnswers?.[k] === true]),
+      INDUSTRY_BOOLEAN_KEYS.map((k) => [k, industryFieldsToBooleans(form.industry, form.industryFields || {})[k] === true]),
     ),
   }
+}
+
+/** testid slug — stable lowercase alnum slug for option testids
+ *  ("Mindre än 1 år" → "mindre-an-1-ar"). Kept in the component
+ *  file so the E2E spec can reference the same contract. */
+function testidSlug(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'x'
 }
 
 
@@ -216,12 +230,13 @@ export default function OnboardingPage() {
     // the rest of the app expects before POSTing to /api/profile.
     employmentTypes: [],
     avoidedIndustries: [],
-    // 2026-08-03 (Round-81) — industry taxonomy. `industry` is one of
-    // the 9 canonical ids; `industryAnswers` holds the user's yes/no
-    // (true/false) answers to the industry-specific questions, keyed by
-    // profile field key. null = unanswered (validation blocks Next).
+    // 2026-08-03 (Round-81/83) — industry taxonomy. `industry` is one
+    // of the 9 canonical ids; `industryFields` holds the complete
+    // structured answers keyed by schema field id (select value as
+    // string, multiselect as array, text/url as string). Missing =
+    // unanswered (validation blocks Next for required fields).
     industry: '',
-    industryAnswers: {},
+    industryFields: {},
   })
 
   const progress = ((step + 1) / STEPS.length) * 100
@@ -233,24 +248,40 @@ export default function OnboardingPage() {
   const setIndustryAnswer = (key, value) => {
     setFormData(prev => ({
       ...prev,
-      industryAnswers: { ...(prev.industryAnswers || {}), [key]: value },
+      industryFields: { ...(prev.industryFields || {}), [key]: value },
     }))
+  }
+
+  // Round-83 — multiselect toggle (checkbox chips). Stores the
+  // selected subset as an array under the field id.
+  const toggleIndustryMulti = (key, opt) => {
+    setFormData(prev => {
+      const cur = Array.isArray(prev.industryFields?.[key]) ? prev.industryFields[key] : []
+      const next = cur.includes(opt)
+        ? cur.filter((x) => x !== opt)
+        : [...cur, opt]
+      return { ...prev, industryFields: { ...(prev.industryFields || {}), [key]: next } }
+    })
   }
 
   // 2026-08-03 (Round-81) — per-step validation.
   //   • Step 0: universal career fields + industry fields REQUIRED only
-  //     when an industry has been selected (the yes/no answers must be
-  //     answered before moving on).
+  //     when an industry has been selected (the required structured
+  //     fields must be answered before moving on).
   //   • Step 1: universal personal fields — full name is required
   //     (Clerk's fullName is used as a fallback in buildApiBody, but a
   //     user who types nothing would end up with a name-less profile).
+  const hasStructuredAnswer = (f, val) => {
+    if (f.type === 'multiselect') return Array.isArray(val) && val.length > 0
+    return typeof val === 'string' && val.trim().length > 0
+  }
   const handleNext = () => {
     if (step === 0 && formData.industry) {
-      const missing = (INDUSTRY_FIELDS[formData.industry] || []).filter(
-        (f) => typeof formData.industryAnswers[f.key] !== 'boolean',
+      const missing = structuredFieldsFor(formData.industry).filter(
+        (f) => f.required && !hasStructuredAnswer(f, formData.industryFields?.[f.id]),
       )
       if (missing.length > 0) {
-        toast.error('Svara på alla branschfrågor för att fortsätta')
+        toast.error('Svara på alla obligatoriska branschfrågor för att fortsätta')
         return
       }
     }
@@ -429,33 +460,81 @@ export default function OnboardingPage() {
                 Branschvalet styr vilka specifika frågor JobbPiloten-tillägget besvarar automatiskt i dina ansökningar.
               </p>
             </div>
-            {/* Industry-specific yes/no questions — shown ONLY for the
-                selected industry (Tier 2 industry-core fields). Tri-state:
-                null = unanswered (Next is blocked), true/false = Ja/Nej. */}
+            {/* Round-83 — industry-specific questions for the selected
+                industry (Tier 2 industry-core, complete schema). Each
+                field renders by type: select → shadcn Select with the
+                schema's option list, multiselect → checkbox chips,
+                text/url → Input. Answers live in
+                formData.industryFields[id] (string | array). Required
+                fields gate "Nästa" (see hasStructuredAnswer). */}
             {formData.industry && (
-              <div className="space-y-3 border-t border-dashed border-slate-200 pt-4" data-testid="onboarding-industry-fields">
+              <div className="space-y-4 border-t border-dashed border-slate-200 pt-4" data-testid="onboarding-industry-fields">
                 <Label className="text-sm font-semibold text-slate-800">
                   Frågor för {INDUSTRIES.find((i) => i.id === formData.industry)?.label || formData.industry}
                 </Label>
-                {(INDUSTRY_FIELDS[formData.industry] || []).map((f) => {
-                  const val = formData.industryAnswers[f.key]
-                  return (
-                    <div key={f.key} className="flex items-center justify-between gap-3">
-                      <Label className="flex-1 text-sm text-slate-700">{f.label}</Label>
-                      <div className="flex gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setIndustryAnswer(f.key, true)}
-                          data-testid={`onboarding-industry-field-${f.key}-yes`}
-                          className={`px-3 py-1 rounded-md border text-sm transition-colors ${val === true ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}
-                        >Ja</button>
-                        <button
-                          type="button"
-                          onClick={() => setIndustryAnswer(f.key, false)}
-                          data-testid={`onboarding-industry-field-${f.key}-no`}
-                          className={`px-3 py-1 rounded-md border text-sm transition-colors ${val === false ? 'bg-slate-700 border-slate-700 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}
-                        >Nej</button>
+                {structuredFieldsFor(formData.industry).map((f) => {
+                  const val = formData.industryFields?.[f.id]
+                  if (f.type === 'multiselect') {
+                    return (
+                      <div key={f.id} data-testid={`onboarding-industry-field-${f.id}`}>
+                        <Label className="text-sm text-slate-700">{f.label}</Label>
+                        <div className="grid grid-cols-2 gap-2 mt-1.5">
+                          {(f.options || []).map((opt) => {
+                            const isChecked = Array.isArray(val) && val.includes(opt)
+                            return (
+                              <label
+                                key={opt}
+                                className="flex items-center gap-2 text-sm text-slate-700 px-2.5 py-1.5 rounded-md border border-slate-200 hover:border-slate-300 hover:bg-slate-50 cursor-pointer transition-colors"
+                              >
+                                <Checkbox
+                                  checked={isChecked}
+                                  onCheckedChange={() => toggleIndustryMulti(f.id, opt)}
+                                  data-testid={`onboarding-industry-field-${f.id}-opt-${testidSlug(opt)}`}
+                                />
+                                <span className="text-xs">{opt}</span>
+                              </label>
+                            )
+                          })}
+                        </div>
                       </div>
+                    )
+                  }
+                  if (f.type === 'select') {
+                    return (
+                      <div key={f.id} data-testid={`onboarding-industry-field-${f.id}`}>
+                        <Label className="text-sm text-slate-700">{f.label}</Label>
+                        <Select
+                          value={typeof val === 'string' ? val : ''}
+                          onValueChange={(v) => setIndustryAnswer(f.id, v)}
+                        >
+                          <SelectTrigger data-testid={`onboarding-industry-field-${f.id}-trigger`}>
+                            <SelectValue placeholder="Välj…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(f.options || []).map((opt) => (
+                              <SelectItem
+                                key={opt}
+                                value={opt}
+                                data-testid={`onboarding-industry-field-${f.id}-opt-${testidSlug(opt)}`}
+                              >
+                                {opt}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )
+                  }
+                  // text / url — plain input
+                  return (
+                    <div key={f.id}>
+                      <Label className="text-sm text-slate-700">{f.label}</Label>
+                      <Input
+                        type={f.type === 'url' ? 'url' : 'text'}
+                        value={typeof val === 'string' ? val : ''}
+                        onChange={(e) => setIndustryAnswer(f.id, e.target.value)}
+                        data-testid={`onboarding-industry-field-${f.id}`}
+                      />
                     </div>
                   )
                 })}

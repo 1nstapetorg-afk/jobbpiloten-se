@@ -22,7 +22,7 @@ import { STYLE_PRESETS } from '@/lib/style-presets.mjs';
 // 2026-08-03 (Round-81) — industry taxonomy. INDUSTRY_IDS drives the
 // profile POST/update validation, INDUSTRY_BOOLEAN_KEYS the new
 // industry-specific boolean fields. See lib/field-taxonomy.js.
-import { INDUSTRY_IDS, INDUSTRY_BOOLEAN_KEYS } from '@/lib/field-taxonomy';
+import { INDUSTRY_IDS, INDUSTRY_BOOLEAN_KEYS, sanitizeIndustryFields } from '@/lib/field-taxonomy';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -649,6 +649,21 @@ export async function POST(req, ctx) {
             .filter((k) => Object.prototype.hasOwnProperty.call(source, k))
             .map((k) => [k, Boolean(source[k]) === true]),
         ),
+        // Round-83 — complete structured industry answers. The payload
+        // carries the FLAT answers for the selected industry
+        // ({ forklift_license: 'Ja', … }); the stored Mongo shape is
+        // nested per industry ({ lager: { forklift_license: 'Ja', … } })
+        // per the Round-83 contract. CONDITIONAL merge (mirrors
+        // cvText/cvSummary): an onboarding POST that omits
+        // industryFields never clobbers values saved via /settings;
+        // when present, the object is sanitized against the taxonomy
+        // for the selected industry (unknown ids + non-option values
+        // are dropped) and wrapped under the industry id.
+        ...(Object.prototype.hasOwnProperty.call(source, 'industryFields')
+          ? { industryFields: INDUSTRY_IDS.includes(source.industry)
+            ? { [source.industry]: sanitizeIndustryFields(source.industry, source.industryFields) }
+            : {} }
+          : {}),
         tier: source.tier || 'Professional',
         subscriptionStatus: source.subscriptionStatus || 'inactive',
         // Round-35 (Part 3 — Answer Diversity): persist the user's
@@ -780,6 +795,12 @@ export async function POST(req, ctx) {
         // $set; the per-field validators below coerce them.
         'industry',
         ...INDUSTRY_BOOLEAN_KEYS,
+        // Round-83 — complete structured industry answers (nested
+        // object, e.g. { lager: { forklift_license: 'Ja', … } }).
+        // Validated + sanitized against the taxonomy in the guard
+        // below (industry-scoped: only the effective industry's field
+        // ids survive).
+        'industryFields',
       ];
 
       // Build `$set` BEFORE any guard so the guards can reference it
@@ -863,6 +884,73 @@ export async function POST(req, ctx) {
             console.warn('[profile-update] rejected non-boolean ' + k + ' payload (clerkId=' + clerkId + ')')
             delete $set[k]
           }
+        }
+      }
+      // Round-83 — complete structured industry answers (industryFields
+      // nested object). Sanitized against the taxonomy for the
+      // EFFECTIVE industry — $set.industry when the patch carries it,
+      // else the stored profile industry (a patch that only touches
+      // industryFields still validates). Unknown field ids + values
+      // outside the field's option list are dropped; a non-object
+      // payload rejects the whole key. "Industry fields only if that
+      // industry is selected" is enforced by construction: sanitize
+      // only accepts ids belonging to the effective industry.
+      if (Object.prototype.hasOwnProperty.call($set, 'industryFields')) {
+        let effIndustry = INDUSTRY_IDS.includes($set.industry) ? $set.industry : ''
+        if (!effIndustry) {
+          const existing = await db.collection('profiles').findOne(
+            { clerkId },
+            { projection: { industry: 1 } },
+          )
+          effIndustry = existing && INDUSTRY_IDS.includes(existing.industry) ? existing.industry : ''
+        }
+        if (!effIndustry) {
+          console.warn('[profile-update] rejected industryFields without a canonical industry (clerkId=' + clerkId + ')')
+          delete $set.industryFields
+        } else {
+          // Accept BOTH payload shapes: flat answers for the effective
+          // industry ({ forklift_license: 'Ja', … }) OR the stored
+          // nested shape ({ lager: { forklift_license: 'Ja', … } } — a
+          // client round-tripping the GET /api/profile shape). Sanitize
+          // whichever slice matches, then re-wrap under the effective
+          // industry id (the canonical Mongo shape).
+          const nested = $set.industryFields && typeof $set.industryFields === 'object' &&
+            !Array.isArray($set.industryFields) &&
+            $set.industryFields[effIndustry] &&
+            typeof $set.industryFields[effIndustry] === 'object' &&
+            !Array.isArray($set.industryFields[effIndustry])
+          const rawFields = nested ? $set.industryFields[effIndustry] : $set.industryFields
+          $set.industryFields = {
+            [effIndustry]: sanitizeIndustryFields(effIndustry, rawFields),
+          }
+        }
+      }
+      // Round-83 — stale-industry wipe. When the patch changes the
+      // industry WITHOUT carrying a new industryFields payload (the
+      // /settings industry selector sends exactly this), the nested
+      // answers stored under the OLD industry would silently linger
+      // and the popup/extension would read them against the NEW
+      // industry ("industry fields only if that industry is
+      // selected" — Round-83 requirement). Wipe them so a changed
+      // industry starts clean (the user re-answers via onboarding).
+      if (
+        Object.prototype.hasOwnProperty.call($set, 'industry') &&
+        INDUSTRY_IDS.includes($set.industry) &&
+        !Object.prototype.hasOwnProperty.call(body, 'industryFields')
+      ) {
+        const prev = await db.collection('profiles').findOne(
+          { clerkId },
+          { projection: { industry: 1, industryFields: 1 } },
+        )
+        if (
+          prev &&
+          INDUSTRY_IDS.includes(prev.industry) &&
+          prev.industry !== $set.industry &&
+          prev.industryFields &&
+          typeof prev.industryFields === 'object' &&
+          Object.keys(prev.industryFields).length > 0
+        ) {
+          $set.industryFields = {}
         }
       }
       // Server-side guard for `profilePicture`. The client's settings

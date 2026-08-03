@@ -488,6 +488,257 @@ const STORAGE_KEYS = {
   // with extension/popup.js's STORAGE_KEYS.styleOverride —
   // tests/unit/extension-content.test.mjs locks the literal.
   styleOverride: 'jobbpiloten_styleOverride',
+  // Round-82 — apply-time page context. detectPageIndustry() writes
+  // `jobbpiloten_pageIndustry` ({ id, label, url }) and
+  // detectTier3Fields() writes `jobbpiloten_tier3Seen` (array of
+  // rare-field labels). The popup reads both via the same keys —
+  // keep the literals aligned with popup.js's STORAGE_KEYS.
+  pageIndustry: 'jobbpiloten_pageIndustry',
+  tier3Seen: 'jobbpiloten_tier3Seen',
+}
+
+// ---------- Round-82 — Apply-time industry detection ----------
+//
+// The extension fills universal fields on EVERY page, but Tier 2
+// (industry-core) questions only make sense when we can guess the
+// job's industry from the page itself. detectPageIndustry() scans
+// the document title + first <h1> + meta description + URL against
+// per-industry keyword lists and returns the best-matching industry
+// (or null when there is no clear signal — the fill then falls back
+// to universal fields only, matching pre-Round-82 behaviour).
+//
+// This is BEST-EFFORT heuristics, deliberately conservative: an
+// industry wins only when it beats every other industry's score by a
+// margin (see DETECT_MIN_LEAD below) so a generic page like
+// "Sök jobb i Stockholm" scores 0 everywhere and yields null.
+//
+// The 9 ids mirror lib/field-taxonomy.js INDUSTRY_IDS — drift is
+// locked by tests/unit/extension-content.test.mjs (industry key lock).
+const INDUSTRY_KEYWORDS = {
+  lager: {
+    label: 'Lager & logistik',
+    words: [
+      'lager', 'logistik', 'truck', 'plock', 'lagerarbetare', 'lagerarbete',
+      'lagerpersonal', 'godsmottagning', 'warehouse', 'logistics', 'forklift',
+      'picking', 'stockroom',
+    ],
+  },
+  'vård': {
+    label: 'Vård & omsorg',
+    words: [
+      'vård', 'omsorg', 'undersköterska', 'vårdbiträde', 'sjuksköterska',
+      'sjuksköterskor', 'äldreomsorg', 'hemtjänst', 'hemsjukvård',
+      'vårdpersonal', 'care', 'nursing', 'nurse', 'healthcare', 'eldercare',
+      'caregiver',
+    ],
+  },
+  kontor: {
+    label: 'Kontor & administration',
+    words: [
+      'kontor', 'administration', 'administratör', 'receptionist',
+      'office', 'administrative', 'administrator', 'backoffice',
+      'assistenter', 'koordinator', 'handläggare', 'sekreterare',
+    ],
+  },
+  IT: {
+    label: 'IT & teknik',
+    words: [
+      'it', 'utvecklare', 'programmerare', 'systemutvecklare', 'developer',
+      'programmer', 'software', 'frontend', 'backend', 'fullstack',
+      'devops', 'dataingenjör', 'it-support', 'cybersäkerhet', 'cloud',
+      'systemadministratör', 'it-tekniker',
+    ],
+  },
+  bygg: {
+    label: 'Bygg & anläggning',
+    words: [
+      'bygg', 'anläggning', 'snickare', 'byggarbetare', 'betong',
+      'murare', 'elektriker', 'rörmokare', 'målare', 'plåtslagare',
+      'construction', 'builder', 'carpenter', 'electrician', 'plumber',
+      'site manager', 'arbetsledare', 'hantverkare',
+    ],
+  },
+  restaurang: {
+    label: 'Restaurang & hotell',
+    words: [
+      'restaurang', 'hotell', 'kock', 'servering', 'servitör', 'bartender',
+      'köksbiträde', 'kökspersonal', 'restaurant', 'hotel', 'chef', 'waiter',
+      'barista', 'reception', 'houskeeping', 'städ', 'housekeeping',
+    ],
+  },
+  'sälj': {
+    label: 'Försäljning',
+    words: [
+      'säljare', 'försäljning', 'säljkonsult', 'account manager', 'sales',
+      'säljchef', 'butikssäljare', 'försäljningschef', 'salesperson',
+      'säljkoordinator', 'key account',
+    ],
+  },
+  industri: {
+    label: 'Industri & produktion',
+    words: [
+      'industri', 'produktion', 'operatör', 'montör', 'tillverkning',
+      'fabrik', 'maskinoperatör', 'industriarbetare', 'processoperatör',
+      'industrial', 'production', 'operator', 'manufacturing', 'factory',
+      'assembler', 'machine operator', 'verkstads',
+    ],
+  },
+  transport: {
+    label: 'Transport',
+    words: [
+      'transport', 'chaufför', 'lastbil', 'bud', 'budbilar', 'bussförare',
+      'taxiförare', 'truckförare', 'transportförare', 'transporter',
+      'distribution', 'driving', 'driver', 'courier', 'logistikförare',
+      'yrkestrafik', 'transportarbetare',
+    ],
+  },
+}
+
+// A detection wins only if its score exceeds the runner-up by this
+// margin (in keyword hits). Two keywords on an unrelated page (e.g.
+// "IT" inside "Västerås" — false positive) must not beat a real
+// signal; the margin keeps the detector honest.
+const DETECT_MIN_LEAD = 1
+
+// Context sources the detector scans, strongest first. Each source is
+// a function returning a string; sources that throw (e.g. cross-origin
+// iframe contentDocument) are skipped by the caller.
+function pageContextSources() {
+  return [
+    () => (typeof document !== 'undefined' && document.title) || '',
+    () => {
+      if (typeof document === 'undefined') return ''
+      const h1 = document.querySelector('h1')
+      return (h1 && h1.textContent) || ''
+    },
+    () => {
+      if (typeof document === 'undefined') return ''
+      const meta = document.querySelector('meta[name="description"]')
+      return (meta && meta.getAttribute('content')) || ''
+    },
+    () => (typeof location !== 'undefined' ? location.href : ''),
+  ]
+}
+
+function detectPageIndustry() {
+  const text = pageContextSources()
+    .map((fn) => { try { return fn() || '' } catch (_) { return '' } })
+    .join('\n')
+    .toLowerCase()
+  if (!text.trim()) return null
+
+  let best = null
+  let bestScore = 0
+  for (const [id, cfg] of Object.entries(INDUSTRY_KEYWORDS)) {
+    let score = 0
+    for (const w of cfg.words) {
+      // Word-boundary match so "lager" doesn't fire on "villa-lager"
+      // and "it" doesn't fire on "till" (\b is ASCII-word based;
+      // Swedish å/ä/ö are non-word chars so we match on the ASCII
+      // core of each keyword only).
+      const re = new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
+      if (re.test(text)) score++
+    }
+    if (score > bestScore) {
+      best = id
+      bestScore = score
+    }
+  }
+  // Honesty guard — margin + at least one hit.
+  if (!best || bestScore === 0) return null
+  for (const [id, cfg] of Object.entries(INDUSTRY_KEYWORDS)) {
+    if (id === best) continue
+    let s = 0
+    for (const w of cfg.words) {
+      const re = new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
+      if (re.test(text)) s++
+    }
+    // Clamp the threshold to ≥1: a single strong keyword (score 1 vs
+    // 0 everywhere else, e.g. "Truckförare sökes") must still win,
+    // while a 2-vs-1 split stays rejected — the lead must EXCEED
+    // DETECT_MIN_LEAD, not merely equal it.
+    if (s >= Math.max(1, bestScore - DETECT_MIN_LEAD)) return null // too close — no clear winner
+  }
+  return {
+    id: best,
+    label: INDUSTRY_KEYWORDS[best].label,
+  }
+}
+
+// ---------- Round-82 — Tier 3 (job-specific) rare-field detection ----------
+//
+// Tier 3 fields are rare (<10% of forms in the corpus) and detected
+// dynamically at apply-time rather than shown in the popup. We scan
+// the visible page text for question-shaped phrases that signal such
+// a field; on a hit we surface a one-time prompt in the popup so the
+// user knows to answer it manually (the extension never guesses on a
+// rare field). The phrase list is curated from the scraper corpus's
+// jobSpecific tier (data/processed/extension_field_schema.json) and
+// is deliberately small — this is a heads-up, not a full taxonomy.
+const TIER3_KEYWORDS = [
+  { phrase: /ständig[\s\S]{0,20}natt|nattjänst|standig natt/i, label: 'Ständig natt' },
+  { phrase: /ständig[\s\S]{0,20}kväll|standig kvall/i, label: 'Ständig kväll' },
+  { phrase: /2-skift|3-skift|tvåskift|treskift/i, label: 'Skiftgång (2-/3-skift)' },
+  { phrase: /jag kan arbeta alla tider|alla tider/i, label: 'Tillgänglig alla tider' },
+  { phrase: /referenstagare|referensperson|kontaktpersoner? (?:referens|referens)/i, label: 'Referensperson' },
+  { phrase: /uppsägningstid|notice period/i, label: 'Uppsägningstid' },
+  { phrase: /tidigare arbetsgivare|tidigare anställning|previous employer/i, label: 'Tidigare arbetsgivare' },
+  { phrase: /utbildningskolafrån|utbildning (?:åååå|från)/i, label: 'Utbildningshistorik' },
+  { phrase: /datorbaserade verksamhetsstöd|combine och cosmic|cosmic och combine/i, label: 'Verksamhetssystem (Combine/Cosmic)' },
+  // NOTE: födelseår is deliberately NOT here — FIELD_PATTERNS already
+  // routes it to `dateOfBirth` (kind: 'select'), so the extension
+  // FILLS it; prompting "answer manually" would contradict the fill.
+]
+
+function detectTier3Fields() {
+  const text = pageContextSources()
+    .map((fn) => { try { return fn() || '' } catch (_) { return '' } })
+    .join('\n')
+  if (!text.trim()) return []
+  const hits = []
+  for (const rule of TIER3_KEYWORDS) {
+    if (rule.phrase.test(text) && !hits.includes(rule.label)) {
+      hits.push(rule.label)
+    }
+  }
+  return hits.slice(0, 4) // cap — the popup prompt stays compact
+}
+
+// Write the detected page context to chrome.storage.local so the
+// popup can render the chip + Tier 3 prompt without its own scan.
+// Called from scanAndPaint(); failures are swallowed (detection is
+// purely informational — a blocked storage write must never break
+// the fill path). Writes are rate-limited via lastContextWriteAt to
+// avoid a MutationObserver burst hammering storage.
+let lastContextWriteAt = 0
+const CONTEXT_WRITE_INTERVAL_MS = 2_000
+async function reportPageContext() {
+  const now = Date.now()
+  if (now - lastContextWriteAt < CONTEXT_WRITE_INTERVAL_MS) return
+  try {
+    const industry = detectPageIndustry()
+    const tier3 = detectTier3Fields()
+    // Persist the page URL REGARDLESS of the industry result: the
+    // popup's Tier 3 prompt keys its prompt-once dismissal on this
+    // URL, and Tier 3 hits occur independently of industry detection
+    // (a page with "uppsägningstid" but no industry keyword signal).
+    const url = typeof location !== 'undefined' ? location.href : ''
+    const patch = {}
+    if (industry) {
+      patch[STORAGE_KEYS.pageIndustry] = {
+        id: industry.id,
+        label: industry.label,
+        url,
+      }
+    } else {
+      // Null id/label keeps the popup's detection chip hidden; the
+      // URL still rides along for the Tier 3 prompt-once semantics.
+      patch[STORAGE_KEYS.pageIndustry] = { id: null, label: '', url }
+    }
+    patch[STORAGE_KEYS.tier3Seen] = tier3
+    await chrome.storage.local.set(patch)
+    lastContextWriteAt = Date.now()
+  } catch (_) { /* informational only */ }
 }
 
 async function readStorage() {
@@ -1347,6 +1598,197 @@ function resolveProfileRaw(profile, dottedKey) {
   return cur == null ? undefined : cur
 }
 
+// ---------- 7c. Round-83 — Targeted industry-field fill ----------
+//
+// The COMPLETE structured taxonomy (profile.industryFields, nested per
+// industry — the Round-83 schema in lib/field-taxonomy.js) is filled
+// via a best-effort label-match pass that runs AFTER the main
+// FIELD_PATTERNS loop. Design per the Round-83 spec:
+//   • Detect the page industry with the existing Round-82 detector
+//     (the jobbpiloten_pageIndustry payload reportPageContext()
+//     writes); fall back to the user's profile industry when the
+//     detector returns null (no clear signal on the page).
+//   • Load ONLY that industry's fields from storage
+//     (profile.industryFields[<industryId>]).
+//   • For each stored answer, find host inputs whose label/meta text
+//     overlaps the taxonomy question label (content-word matcher
+//     below) and fill by type:
+//       select (Ja/Nej answer) → setInputValue on a <select> or
+//                                 clickBooleanOption elsewhere
+//       select (option list)   → setInputValue (option text match)
+//       multiselect            → checkMultiCheckboxes
+//       text / url             → setInputValue
+//   • NEVER guesses: a field with no stored answer is left untouched;
+//     a page that doesn't match the label is skipped silently.
+//   • Double-click guard: the shared handledBooleanGroups Set (filled
+//     by the FIELD_PATTERNS boolean path) is consulted before a Ja/Nej
+//     click so a question already answered by the boolean dispatch is
+//     never clicked a second time (the Round-72.2 regression guard).
+//   • Fail-safe: the whole pass is wrapped — a missing taxonomy
+//     bundle, a malformed page, or a blocked storage read degrades
+//     to a no-op and never breaks the universal fill that already
+//     ran.
+
+function normalizeMatchText(s) {
+  return String(s || '').toLowerCase()
+}
+
+// Swedish function words dropped when extracting a question label's
+// content keywords. Kept deliberately small — only high-frequency
+// pronouns/prepositions/question-starters, so real content words
+// (erfarenhet, truckkörkort, skjutstativtruck, …) always survive.
+const INDUSTRY_MATCH_STOPWORDS = new Set([
+  'har', 'du', 'kan', 'vilka', 'vilken', 'vilket', 'hur', 'många', 'med',
+  'för', 'är', 'på', 'en', 'ett', 'och', 'om', 'till', 'av', 'som', 'att',
+  'vad', 'din', 'ditt', 'dina', 'vill', 'söker', 'oss', 'från', 'alla',
+  'inom', 'arbeta', 'finns', 'gärna', 'annat', 'den', 'det', 'de',
+])
+
+// Content keywords of a taxonomy question label ("Har du truckkörkort?"
+// → ["truckkörkort"]; "Hur många års erfarenhet har du av lagerarbete?"
+// → ["många", "erfarenhet", "lagerarbete"]). Words < 4 chars are
+// dropped so short stopword-ish tokens can't single-handedly match.
+function fieldLabelKeywords(label) {
+  const words = normalizeMatchText(label)
+    .replace(/[^a-zåäö0-9\s-]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length >= 4 && !INDUSTRY_MATCH_STOPWORDS.has(w))
+  return Array.from(new Set(words))
+}
+
+// Best-effort overlap: the host input's meta text must contain ≥2 of
+// the label's content keywords, OR 1 keyword of ≥4 chars (a single
+// distinctive word like "truckkörkort" — or "skift" from "Kan du
+// arbeta skift?" — is a strong enough signal alone). The ≥4 bar is
+// deliberately low because Swedish question starters (har/du/kan/
+// hur/många) are stopword-filtered, so many short real questions
+// collapse to a single content word ("Kan du arbeta skift?" →
+// [skift], "Kan du arbeta på höjd?" → [höjd]). False-positive risk is
+// bounded by the eligibility gate (a def's answer can only reach the
+// matching control kind) + the stored-answer requirement.
+function metaMatchesIndustryLabel(meta, label) {
+  const kw = fieldLabelKeywords(label)
+  if (kw.length === 0) return false
+  const hay = normalizeMatchText(meta)
+  let hits = 0
+  for (const k of kw) if (hay.includes(k)) hits++
+  if (hits >= 2) return true
+  if (hits === 1 && kw[0].length >= 4) return true
+  return false
+}
+
+// Type-gate: only plausible control kinds may receive a def's
+// answer, so a select answer can never be written into a free-text
+// textarea and a text answer can never be injected into a radio
+// group.
+function industryFieldInputEligible(input, defType, isYesNoAnswer) {
+  if (!input) return false
+  const tag = input.tagName
+  if (defType === 'multiselect') {
+    return tag === 'INPUT' && String(input.type || '').toLowerCase() === 'checkbox'
+  }
+  if (defType === 'select' && !isYesNoAnswer) {
+    // Option-list select answers (years, levels, …) only make sense
+    // on a real <select> dropdown.
+    return tag === 'SELECT'
+  }
+  if (defType === 'select') {
+    // Ja/Nej answers — the shared boolean + select dispatch decides
+    // (radios / toggle buttons / <select>).
+    return true
+  }
+  // text / url / textarea answers — text-ish inputs only.
+  if (tag === 'TEXTAREA') return true
+  if (tag === 'INPUT') {
+    const t = String(input.type || '').toLowerCase()
+    return ['text', 'email', 'tel', 'url', 'search'].includes(t)
+  }
+  return false
+}
+
+async function fillDetectedIndustryFields(profile, handledBooleanGroups) {
+  try {
+    const tx = globalThis.FIELD_TAXONOMY
+    if (!tx || !tx.structuredFields) return 0
+    // Effective industry — detected page industry first (Round-82
+    // detector), then the user's profile industry.
+    let industryId = ''
+    try {
+      const data = await chrome.storage.local.get([STORAGE_KEYS.pageIndustry])
+      const det = data && data[STORAGE_KEYS.pageIndustry]
+      if (det && typeof det === 'object' && det.id) industryId = det.id
+    } catch (_) { /* detection is best-effort — profile fallback below */ }
+    if (!industryId) industryId = (profile && profile.industry) || ''
+    const defs = (industryId && tx.structuredFields[industryId]) || null
+    const answers = (profile && profile.industryFields && typeof profile.industryFields === 'object')
+      ? (profile.industryFields[industryId] || {})
+      : {}
+    if (!defs || Object.keys(answers).length === 0) return 0
+
+    // Pre-compute each candidate input's meta once (getFieldMeta is a
+    // DOM walk — calling it per def × input would be quadratic).
+    const candidates = []
+    for (const { input } of collectInputs()) {
+      const meta = getFieldMeta(input)
+      if (meta && meta.length > 2) candidates.push({ input, meta })
+    }
+    if (candidates.length === 0) return 0
+
+    let filled = 0
+    for (const def of defs) {
+      const value = answers[def.id]
+      if (value == null || value === '' || (Array.isArray(value) && value.length === 0)) continue
+      const isYesNoAnswer = def.type === 'select' &&
+        (String(value).toLowerCase() === 'ja' || String(value).toLowerCase() === 'nej')
+      let did = false
+      for (const { input, meta } of candidates) {
+        // Type-gate first (cheap), then label-match.
+        if (!industryFieldInputEligible(input, def.type, isYesNoAnswer)) continue
+        if (!metaMatchesIndustryLabel(meta, def.label)) continue
+        // Skip inputs the FIELD_PATTERNS boolean path already handled
+        // (same handledBooleanGroups dedup set as the main loop).
+        if (isYesNoAnswer && handledBooleanGroups.has(booleanGroupKey(input))) continue
+        if (def.type === 'multiselect') {
+          const arr = Array.isArray(value) ? value : [value]
+          const res = checkMultiCheckboxes(input, arr)
+          if (res && res.candidates > 0) {
+            paintField(input, 'boolean_filled')
+            filled += res.clicked
+            did = true
+          }
+        } else if (isYesNoAnswer && input.tagName === 'SELECT') {
+          // Ja/Nej rendered as a dropdown — pick the option by text.
+          if (setInputValue(input, value)) {
+            paintField(input, 'ok')
+            filled++
+            did = true
+          }
+        } else if (isYesNoAnswer) {
+          // Ja/Nej as radios / toggle buttons — shared boolean path.
+          const res = clickBooleanOption(input, String(value).toLowerCase() === 'ja')
+          if (res && res.clicked) {
+            handledBooleanGroups.add(booleanGroupKey(input))
+            paintField(input, 'boolean_filled')
+            filled++
+            did = true
+          }
+        } else {
+          // select-with-options / text / url — generic text+option fill.
+          if (setInputValue(input, value)) {
+            paintField(input, 'ok')
+            filled++
+            did = true
+          }
+        }
+        if (did) break // one host input per question
+      }
+    }
+    return filled
+  } catch (_) {
+    return 0
+  }
+}
+
 // ---------- 8. Scan + fill ----------
 //
 // `scan()` walks the document for matchable inputs and returns the
@@ -1417,6 +1859,11 @@ async function scanAndPaint() {
   // burst (Workday) doesn't spam storage — at most one write
   // per 500ms per content script instance.
   writeDetectedCountIfChanged(matches.length)
+  // Round-82 — apply-time industry + Tier 3 detection. Runs on the
+  // same scan cadence as the detected-count write; rate-limited
+  // inside reportPageContext() so the MutationObserver bursts on
+  // Workday-class pages don't spam storage.
+  reportPageContext()
   return { matches, hasProfile: !!profile }
 }
 
@@ -1672,6 +2119,14 @@ async function fillAll() {
       missing++
     }
   }
+  // Round-83 — targeted industry-field fill (complete structured
+  // taxonomy). Best-effort: label-matches the detected industry's
+  // stored answers (profile.industryFields) against the page. The
+  // shared handledBooleanGroups Set prevents re-clicking questions
+  // the boolean path already answered (the Round-72.2 double-click
+  // regression guard). Fail-safe — a no-match page adds 0.
+  filled += await fillDetectedIndustryFields(profile, handledBooleanGroups)
+
   maybeInstallFileButtons()
 
   // Run AI fills in parallel after the direct pass. We surface a

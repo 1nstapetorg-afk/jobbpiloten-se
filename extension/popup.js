@@ -95,7 +95,20 @@ const STORAGE_KEYS = {
   // list locally. Persisted so the choice survives popup re-opens.
   // The override only affects the popup display — the content
   // script always fills from the server-synced profile booleans.
+  // Round-82 — the selector ALSO writes the canonical `industry`
+  // key (spec: save under key `industry`); the legacy override key
+  // is kept as a write-target so a downgraded build still reads it.
   industryOverride: 'jobbpiloten_industry_override',
+  industry: 'industry',
+  // Round-82 — apply-time page context from content.js. The content
+  // script's detectPageIndustry() / detectTier3Fields() write these
+  // on every scan; the popup reads them to render the detected-
+  // industry chip + the one-time Tier 3 prompt. `tier3Dismissed`
+  // stores the page URL that dismissed the prompt so it shows at
+  // most once per page (prompt-once semantics).
+  pageIndustry: 'jobbpiloten_pageIndustry',
+  tier3Seen: 'jobbpiloten_tier3Seen',
+  tier3Dismissed: 'jobbpiloten_tier3Dismissed',
   // Round-52 / Issue 3 — content-script heartbeat. content.js
   // writes a `Date.now()` stamp every 30s while the content
   // script is alive on at least one tab. The dashboard + popup
@@ -116,7 +129,7 @@ const STORAGE_KEYS = {
   errors: 'jobbpiloten_errors',
 }
 const BUILD_CONFIG_FILE = 'build-config.json'
-const VERSION = '0.3.0'
+const VERSION = '0.3.2'
 
 // Round-52 / Issue 1 — Mejlutkast mode + heartbeat thresholds.
 const ACTIVE_MODE_FORMULAR = 'formular'
@@ -596,7 +609,14 @@ async function setStatus({ connected, profile, detected, error }) {
         return val != null && String(val).length > 0
       }).length
     meta.textContent = `${times} fält tillgängliga • v${VERSION}`
+    // Round-82 — Tier 1 universal list + industry panel + apply-time
+    // detection chip + Tier 3 prompt. All four render on every status
+    // push so a late-arriving pageIndustry / tier3Seen write (content
+    // script scans are async) is picked up without a popup reopen.
+    renderUniversalFields(profile)
     renderIndustryPanel(profile)
+    renderDetectedIndustry()
+    renderTier3Prompt()
   } else {
     dot.style.background = '#f59e0b'
     dot.style.boxShadow = '0 0 0 4px rgba(245,158,11,0.18)'
@@ -604,6 +624,12 @@ async function setStatus({ connected, profile, detected, error }) {
     meta.textContent = `Öppna Dashboard för att ansluta din profil • v${VERSION}`
     const indSection = $('jp-industry')
     if (indSection) indSection.hidden = true
+    const univSection = $('jp-universal')
+    if (univSection) univSection.hidden = true
+    const detSection = $('jp-industry-detect')
+    if (detSection) detSection.hidden = true
+    const t3Section = $('jp-tier3')
+    if (t3Section) t3Section.hidden = true
   }
 
   // Detected-fields panel
@@ -647,6 +673,155 @@ async function setStatus({ connected, profile, detected, error }) {
 // script fills exclusively from the server-synced profile booleans).
 let industryOptionsLoaded = false
 
+// ---- Round-82 — Tier 1 universal fields ----
+//
+// Always-visible field list (every application form asks for these,
+// regardless of industry). Values are read from the server-synced
+// profile; status is Satt/— mirroring the industry list's Ja/—
+// pattern. Tier 3 (job-specific) fields are deliberately NOT here —
+// those are detected at apply-time via the jp-tier3 panel.
+// Round-83 — the universal list is extended to the complete schema
+// projection (lib/field-taxonomy.js UNIVERSAL_FIELDS): the Round-82 7
+// keys plus Postnummer (zip), Stad (city), Tillgänglighet
+// (answers.availability) and Löneanspråk (salaryExpectation).
+// `personalNumber` + the file-upload fields are deliberately absent:
+// the safe extension profile excludes personalNumber (PII) and file
+// uploads are a dashboard concern. Nested keys (answers.*) resolve
+// via resolveProfileKey below.
+const UNIVERSAL_FIELDS = [
+  { key: 'fullName', label: 'Namn' },
+  { key: 'email', label: 'E-post' },
+  { key: 'phone', label: 'Telefon' },
+  { key: 'address', label: 'Adress' },
+  { key: 'zip', label: 'Postnummer' },
+  { key: 'city', label: 'Stad' },
+  { key: 'linkedin', label: 'LinkedIn' },
+  { key: 'cvSummary', label: 'Sammanfattning' },
+  { key: 'latestCoverLetter', label: 'Personligt brev' },
+  { key: 'answers.availability', label: 'Tillgänglighet' },
+  { key: 'salaryExpectation', label: 'Löneanspråk' },
+]
+
+// Walk a dotted key path (e.g. 'answers.availability') against the
+// profile object. Mirrors content.js's resolveProfileValue resolver
+// minus the stringification (the popup only needs the raw value for
+// its has-value check).
+function resolveProfileKey(profile, key) {
+  if (!profile || !key) return undefined
+  return String(key).split('.').reduce((cur, p) => (cur == null ? undefined : cur[p]), profile)
+}
+
+function renderUniversalFields(profile) {
+  const section = $('jp-universal')
+  const list = $('jp-universal-list')
+  if (!section || !list) return
+  list.innerHTML = ''
+  for (const f of UNIVERSAL_FIELDS) {
+    const val = profile ? resolveProfileKey(profile, f.key) : undefined
+    const has = val != null && String(val).length > 0
+    const li = document.createElement('li')
+    const nameSpan = document.createElement('span')
+    nameSpan.textContent = f.label
+    const statusSpan = document.createElement('span')
+    statusSpan.className = 'jp-industry-status ' + (has
+      ? 'jp-industry-status--set'
+      : 'jp-industry-status--unset')
+    statusSpan.textContent = has ? 'Satt' : '—'
+    statusSpan.title = has ? 'Finns på din profil — tillägget kan fylla i detta' : 'Saknas på profilen'
+    li.appendChild(nameSpan)
+    li.appendChild(statusSpan)
+    list.appendChild(li)
+  }
+  section.hidden = false
+}
+
+// ---- Round-82 — multi-tab guard ----
+//
+// The content script writes page context from EVERY open tab into
+// shared chrome.storage.local — the last writer wins. Before
+// rendering the detection chip / Tier 3 prompt we verify the stored
+// payload's URL belongs to the popup's ACTIVE tab; otherwise the UI
+// could describe a background tab's page (two job ads open = wrong
+// chip + wrong dismissal key). Mirrors the existing
+// chrome.tabs.query({ active: true, currentWindow: true }) pattern in
+// resolveEnvAuthBaseUrl.
+async function activeTabUrl() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    return (tab && tab.url) || ''
+  } catch (_) {
+    // chrome.tabs.query may throw on enterprise-restricted popups;
+    // return '' so the chip/prompt stay hidden (fail-closed).
+    return ''
+  }
+}
+
+// ---- Round-82 — apply-time industry detection chip ----
+//
+// content.js's detectPageIndustry() writes `jobbpiloten_pageIndustry`
+// ({ id, label, url }) on every scan; the popup surfaces it so the
+// user sees which industry the extension THINKS the current job page
+// belongs to — and thus which Tier 2 questions it will answer. No
+// chip → detection found no clear signal → universal-only fill.
+async function renderDetectedIndustry() {
+  const section = $('jp-industry-detect')
+  const valueEl = $('jp-industry-detect-value')
+  if (!section || !valueEl) return
+  try {
+    const data = await safeStorageGet([STORAGE_KEYS.pageIndustry])
+    const det = data && data[STORAGE_KEYS.pageIndustry]
+    if (det && typeof det === 'object' && det.id && det.label && det.url === (await activeTabUrl())) {
+      valueEl.textContent = det.label
+      section.hidden = false
+    } else {
+      section.hidden = true
+    }
+  } catch (_) {
+    section.hidden = true
+  }
+}
+
+// ---- Round-82 — Tier 3 prompt-once panel ----
+//
+// content.js's detectTier3Fields() writes `jobbpiloten_tier3Seen` as
+// an array of rare-field labels found on the page. The popup prompts
+// the user ONCE per page URL (dismissal is recorded under
+// `jobbpiloten_tier3Dismissed`) so a rare job-specific question never
+// nags repeatedly while the user is on the same job ad.
+async function renderTier3Prompt() {
+  const section = $('jp-tier3')
+  const textEl = $('jp-tier3-text')
+  if (!section || !textEl) return
+  try {
+    const data = await safeStorageGet([
+      STORAGE_KEYS.tier3Seen,
+      STORAGE_KEYS.tier3Dismissed,
+      STORAGE_KEYS.pageIndustry,
+    ])
+    const seen = data && Array.isArray(data[STORAGE_KEYS.tier3Seen])
+      ? data[STORAGE_KEYS.tier3Seen]
+      : []
+    const dismissedUrl = (data && data[STORAGE_KEYS.tier3Dismissed]) || ''
+    // The real job-page URL lives in the pageIndustry payload written
+    // by content.js (NOT location.href — that's the popup's own
+    // chrome-extension:// URL, constant across pages).
+    const pageIndustry = data && data[STORAGE_KEYS.pageIndustry]
+    const pageUrl = (pageIndustry && pageIndustry.url) || ''
+    // The payload must describe the ACTIVE tab (see activeTabUrl's
+    // multi-tab guard) before the prompt-once check can apply.
+    if (seen.length > 0 && pageUrl && pageUrl === (await activeTabUrl()) && dismissedUrl !== pageUrl) {
+      textEl.textContent =
+        'Den här annonsen frågar om sällsynta fält: ' + seen.join(', ') +
+        '. Svara på dessa manuellt i ansökan eller lägg till dem i din profil i Inställningar.'
+      section.hidden = false
+    } else {
+      section.hidden = true
+    }
+  } catch (_) {
+    section.hidden = true
+  }
+}
+
 async function renderIndustryPanel(profile) {
   const section = $('jp-industry')
   const select = $('jp-industry-select')
@@ -673,27 +848,62 @@ async function renderIndustryPanel(profile) {
 
   let effective = ''
   try {
-    const { [STORAGE_KEYS.industryOverride]: override } = await loadStorage()
-    effective = override || (profile && profile.industry) || ''
+    // Round-82 — read precedence: canonical `industry` key first,
+    // then the legacy override key (written by older builds), then
+    // the server-synced profile value.
+    const data = await safeStorageGet([STORAGE_KEYS.industry, STORAGE_KEYS.industryOverride])
+    const canon = data && data[STORAGE_KEYS.industry]
+    const legacy = data && data[STORAGE_KEYS.industryOverride]
+    effective = String(canon || legacy || (profile && profile.industry) || '')
   } catch (_) {
     effective = (profile && profile.industry) || ''
   }
   select.value = effective
 
-  const fields = effective ? (tx.fields && tx.fields[effective]) || [] : []
+  // Round-83 — render the selected industry's COMPLETE structured
+  // field set (tx.structuredFields[effective]; falls back to the
+  // legacy boolean set tx.fields[effective] when a downgraded
+  // bundle is loaded). Status = the stored value (from
+  // profile.industryFields[effective][fieldId]) or, as a legacy
+  // fallback, the mapped flat boolean (Ja). Multiselect values are
+  // joined with ', ' so the user sees the full answer at a glance.
+  const fields = effective
+    ? ((tx.structuredFields && tx.structuredFields[effective]) || (tx.fields && tx.fields[effective]) || [])
+    : []
+  const indAnswers = (profile && profile.industryFields && typeof profile.industryFields === 'object')
+    ? (profile.industryFields[effective] || {})
+    : {}
   list.innerHTML = ''
   for (const f of fields) {
-    const label = (tx.labels && tx.labels[f.key]) || f.key
-    const val = profile ? profile[f.key] : undefined
+    const fieldId = f.id || f.key
+    const label = f.label || ((tx.labels && tx.labels[fieldId]) || fieldId)
+    let display = ''
+    let set = false
+    const raw = indAnswers[fieldId]
+    if (raw != null && raw !== '' && !(Array.isArray(raw) && raw.length === 0)) {
+      set = true
+      display = Array.isArray(raw) ? raw.join(', ') : String(raw)
+    } else {
+      // Legacy dual-write fallback: the structured answer may be
+      // absent on a pre-Round-83 profile, but the mapped flat
+      // boolean (structuredToBoolean) still reflects the answer.
+      const legacyKey = (tx.structuredToBoolean && tx.structuredToBoolean[fieldId]) || fieldId
+      if (profile && profile[legacyKey] === true) {
+        set = true
+        display = 'Ja'
+      }
+    }
     const li = document.createElement('li')
     const nameSpan = document.createElement('span')
     nameSpan.textContent = label
     const statusSpan = document.createElement('span')
-    statusSpan.className = 'jp-industry-status ' + (val === true
+    statusSpan.className = 'jp-industry-status ' + (set
       ? 'jp-industry-status--set'
       : 'jp-industry-status--unset')
-    statusSpan.textContent = val === true ? 'Ja' : '—'
-    statusSpan.title = val === true ? 'Svarat ja — tillägget kan svara på denna fråga' : 'Ej satt — tillägget lämnar frågan orörd'
+    statusSpan.textContent = set ? display : '—'
+    statusSpan.title = set
+      ? 'Svarat — tillägget kan svara på denna fråga'
+      : 'Ej satt — tillägget lämnar frågan orörd'
     li.appendChild(nameSpan)
     li.appendChild(statusSpan)
     list.appendChild(li)
@@ -701,18 +911,44 @@ async function renderIndustryPanel(profile) {
   section.hidden = false
 }
 
-// Industry selector change → persist the override + re-render.
+// Industry selector change → persist the choice (canonical `industry`
+// key + legacy override for downgrade-compat) + re-render.
 // Debounced via the select's own change event (no storage spam).
 function setupIndustryPanel() {
   const select = $('jp-industry-select')
   if (!select) return
   select.addEventListener('change', async () => {
     try {
-      await chrome.storage.local.set({ [STORAGE_KEYS.industryOverride]: select.value })
+      await chrome.storage.local.set({
+        [STORAGE_KEYS.industry]: select.value,
+        [STORAGE_KEYS.industryOverride]: select.value,
+      })
     } catch (_) { /* best-effort — preview still works this session */ }
     const { profile } = await loadStorage()
     renderIndustryPanel(profile || {})
   })
+
+  // Round-82 — Tier 3 Förstått button. Dismissal is per-page: the
+  // panel stays hidden on this URL until the user navigates away. The
+  // dismissal key is the job-page URL from the pageIndustry payload
+  // (content.js) — location.href in the popup would be constant.
+  const dismissBtn = $('jp-tier3-dismiss-btn')
+  if (dismissBtn) {
+    dismissBtn.addEventListener('click', async () => {
+      try {
+        // Record the ACTIVE tab's URL (the page the user is actually
+        // looking at) rather than the stored payload — the popup is
+        // bound to this tab, and the stored payload can be stale in
+        // multi-tab edge races.
+        const pageUrl = await activeTabUrl()
+        if (pageUrl) {
+          await chrome.storage.local.set({ [STORAGE_KEYS.tier3Dismissed]: pageUrl })
+        }
+      } catch (_) { /* best-effort */ }
+      const t3 = $('jp-tier3')
+      if (t3) t3.hidden = true
+    })
+  }
 }
 
 // ---- Storage ----

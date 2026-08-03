@@ -72,12 +72,17 @@ const BUG3_SPLIT_KEYS = 2  // BUG 3 (Round-72.2) adds street + country at runtim
 // 2026-08-03 (Round-81) — the extension profile now also exposes
 // `industry` + every INDUSTRY_BOOLEAN_KEYS boolean, so the runtime
 // key count is 38 + INDUSTRY_TOTAL_FIELDS.
-test('buildExtensionProfile returns exactly the derived key count (legacy + Round-12 + BUG 3 split + industry)', () => {
+// 2026-08-03 (Round-83) — the complete structured taxonomy adds the
+// nested `industryFields` object (per-industry answers), so the
+// industry block is INDUSTRY_TOTAL_FIELDS + 1.
+const ROUND83_INDUSTRYFIELDS_KEYS = 1
+
+test('buildExtensionProfile returns exactly the derived key count (legacy + Round-12 + BUG 3 split + industry + Round-83 industryFields)', () => {
   const out = buildExtensionProfile({}, null)
   const keys = Object.keys(out).sort()
-  const expected = LEGACY_LEAF_COUNT + ROUND12_TOTAL_FIELDS + BUG3_SPLIT_KEYS + INDUSTRY_TOTAL_FIELDS
+  const expected = LEGACY_LEAF_COUNT + ROUND12_TOTAL_FIELDS + BUG3_SPLIT_KEYS + INDUSTRY_TOTAL_FIELDS + ROUND83_INDUSTRYFIELDS_KEYS
   assert.equal(keys.length, expected,
-    `Expected ${expected} fields (${LEGACY_LEAF_COUNT} legacy + ${ROUND12_TOTAL_FIELDS} Round-12 + ${BUG3_SPLIT_KEYS} BUG 3 split + ${INDUSTRY_TOTAL_FIELDS} industry). Got ${keys.length}: ${keys.join(', ')}`)
+    `Expected ${expected} fields (${LEGACY_LEAF_COUNT} legacy + ${ROUND12_TOTAL_FIELDS} Round-12 + ${BUG3_SPLIT_KEYS} BUG 3 split + ${INDUSTRY_TOTAL_FIELDS} industry + ${ROUND83_INDUSTRYFIELDS_KEYS} Round-83 industryFields). Got ${keys.length}: ${keys.join(', ')}`)
 })
 
 test('buildExtensionProfile exposes all industry keys with safe defaults', () => {

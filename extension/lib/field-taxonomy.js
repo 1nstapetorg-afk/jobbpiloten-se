@@ -106,6 +106,129 @@ const FIELD_TAXONOMY = {
       { key: 'canShiftWork' },
     ],
   },
+  // ---- Round-83 — structured (typed) industry fields ----
+  //
+  // Mirror of lib/field-taxonomy.js INDUSTRY_STRUCTURED_FIELDS (app
+  // side source of truth). Answers are stored on the profile under
+  // `industryFields[<industryId>][<id>]`. The popup renders these
+  // with value status; content.js's targeted fill pass (Round-83)
+  // matches field labels against host-input meta text.
+  structuredFields: {
+    lager: [
+      { id: 'forklift_license', label: 'Har du truckkörkort?', type: 'select', options: ['Ja', 'Nej', 'Pågående'], required: true },
+      { id: 'forklift_types', label: 'Vilka trucktyper har du kört?', type: 'multiselect', options: ['A1 - låglyftande', 'A2 - låglyftande med plattform', 'A3 - höglyftande', 'A4 - höglyftande med plattform', 'B1 - motviktstruck', 'B2 - teleskoptruck', 'D1 - skjutstativtruck'], required: false },
+      { id: 'physical_capacity', label: 'Kan du arbeta fysiskt krävande arbete?', type: 'select', options: ['Ja', 'Nej'], required: true },
+      { id: 'shift_work', label: 'Kan du arbeta skift?', type: 'select', options: ['Ja', 'Nej', 'Endast dagtid', 'Endast kväll', 'Endast natt'], required: true },
+      { id: 'heavy_lifting', label: 'Kan du lyfta tungt (upp till 25 kg)?', type: 'select', options: ['Ja', 'Nej'], required: false },
+      { id: 'warehouse_experience', label: 'Hur många års erfarenhet har du av lagerarbete?', type: 'select', options: ['Ingen', 'Mindre än 1 år', '1-2 år', '3-5 år', 'Mer än 5 år'], required: false },
+      { id: 'driving_license_b', label: 'Har du körkort B?', type: 'select', options: ['Ja', 'Nej'], required: false },
+      { id: 'reach_truck', label: 'Har du erfarenhet av skjutstativtruck?', type: 'select', options: ['Ja', 'Nej'], required: false },
+    ],
+    'vård': [
+      { id: 'care_certificate', label: 'Har du vårdbiträdesutbildning?', type: 'select', options: ['Ja', 'Nej', 'Pågående'], required: true },
+      { id: 'hlr_certificate', label: 'Har du HLR-certifikat?', type: 'select', options: ['Ja', 'Nej', 'Pågående'], required: false },
+      { id: 'hygiene_pass', label: 'Har du hygienpass?', type: 'select', options: ['Ja', 'Nej'], required: false },
+      { id: 'first_aid', label: 'Har du första hjälpen-utbildning?', type: 'select', options: ['Ja', 'Nej'], required: false },
+      { id: 'healthcare_experience', label: 'Hur många års erfarenhet har du inom vård?', type: 'select', options: ['Ingen', 'Mindre än 1 år', '1-2 år', '3-5 år', 'Mer än 5 år'], required: false },
+      { id: 'night_shift_care', label: 'Kan du arbeta natt inom vård?', type: 'select', options: ['Ja', 'Nej', 'Endast dag/kväll'], required: true },
+      { id: 'dementia_care', label: 'Har du erfarenhet av demensvård?', type: 'select', options: ['Ja', 'Nej'], required: false },
+      { id: 'lifting_patients', label: 'Kan du hantera patientförflyttning?', type: 'select', options: ['Ja', 'Nej'], required: false },
+    ],
+    kontor: [
+      { id: 'office_experience', label: 'Hur många års erfarenhet har du av kontorsarbete?', type: 'select', options: ['Ingen', 'Mindre än 1 år', '1-2 år', '3-5 år', 'Mer än 5 år'], required: false },
+      { id: 'computer_skills', label: 'Har du god datorvana?', type: 'select', options: ['Ja', 'Nej'], required: true },
+      { id: 'microsoft_office', label: 'Vilka Microsoft Office-program behärskar du?', type: 'multiselect', options: ['Word', 'Excel', 'PowerPoint', 'Outlook', 'Teams', 'Ingen'], required: false },
+      { id: 'language_swedish', label: 'Svenska i tal och skrift', type: 'select', options: ['Modersmål', 'Flytande', 'God', 'Grundläggande'], required: true },
+      { id: 'language_english', label: 'Engelska i tal och skrift', type: 'select', options: ['Flytande', 'God', 'Grundläggande', 'Ingen'], required: false },
+      { id: 'customer_service', label: 'Har du erfarenhet av kundtjänst?', type: 'select', options: ['Ja', 'Nej'], required: false },
+      { id: 'phone_skills', label: 'Känner du dig bekväm med telefonarbete?', type: 'select', options: ['Ja', 'Nej'], required: false },
+    ],
+    IT: [
+      { id: 'programming_languages', label: 'Vilka programmeringsspråk behärskar du?', type: 'multiselect', options: ['JavaScript', 'TypeScript', 'Python', 'Java', 'C#', 'PHP', 'Ruby', 'Go', 'Rust', 'SQL', 'Ingen'], required: false },
+      { id: 'frameworks', label: 'Vilka ramverk/plattformar har du erfarenhet av?', type: 'multiselect', options: ['React', 'Next.js', 'Vue', 'Angular', 'Node.js', 'Django', 'Laravel', '.NET', 'Spring', 'Ingen'], required: false },
+      { id: 'years_it_experience', label: 'Hur många års erfarenhet har du inom IT?', type: 'select', options: ['Ingen', 'Mindre än 1 år', '1-2 år', '3-5 år', '5-10 år', 'Mer än 10 år'], required: true },
+      { id: 'remote_work', label: 'Vill du arbeta remote, hybrid eller på plats?', type: 'select', options: ['Endast remote', 'Helst remote', 'Hybrid', 'Helst på plats', 'Endast på plats'], required: false },
+      { id: 'github_portfolio', label: 'Länk till GitHub/portfolio', type: 'url', required: false },
+      { id: 'certifications', label: 'IT-certifieringar', type: 'multiselect', options: ['AWS', 'Azure', 'Google Cloud', 'CompTIA', 'Cisco', 'Scrum/Agile', 'Ingen'], required: false },
+      { id: 'database_experience', label: 'Databaser du har erfarenhet av', type: 'multiselect', options: ['MySQL', 'PostgreSQL', 'MongoDB', 'SQL Server', 'Oracle', 'Redis', 'Ingen'], required: false },
+    ],
+    bygg: [
+      { id: 'construction_experience', label: 'Hur många års erfarenhet har du inom bygg?', type: 'select', options: ['Ingen', 'Mindre än 1 år', '1-2 år', '3-5 år', 'Mer än 5 år'], required: false },
+      { id: 'driving_license_b', label: 'Har du körkort B?', type: 'select', options: ['Ja', 'Nej'], required: false },
+      { id: 'driving_license_c', label: 'Har du körkort C/CE?', type: 'select', options: ['Ja', 'Nej'], required: false },
+      { id: 'work_at_height', label: 'Kan du arbeta på höjd?', type: 'select', options: ['Ja', 'Nej'], required: true },
+      { id: 'safety_training', label: 'Har du byggarbetsmiljöutbildning?', type: 'select', options: ['Ja', 'Nej'], required: false },
+      { id: 'tool_experience', label: 'Vilka verktyg/maskiner har du erfarenhet av?', type: 'multiselect', options: ['Handverktyg', 'Elverktyg', 'Svets', 'Grävmaskin', 'Kran', 'Lift', 'Ingen'], required: false },
+      { id: 'physical_capacity', label: 'Kan du arbeta fysiskt krävande arbete?', type: 'select', options: ['Ja', 'Nej'], required: true },
+    ],
+    restaurang: [
+      { id: 'food_handling', label: 'Har du hygienpass för livsmedel?', type: 'select', options: ['Ja', 'Nej', 'Pågående'], required: true },
+      { id: 'serving_license', label: 'Har du serveringscertifikat (alkohol)?', type: 'select', options: ['Ja', 'Nej'], required: false },
+      { id: 'kitchen_experience', label: 'Hur många års erfarenhet har du från kök?', type: 'select', options: ['Ingen', 'Mindre än 1 år', '1-2 år', '3-5 år', 'Mer än 5 år'], required: false },
+      { id: 'serving_experience', label: 'Hur många års erfarenhet har du från servering?', type: 'select', options: ['Ingen', 'Mindre än 1 år', '1-2 år', '3-5 år', 'Mer än 5 år'], required: false },
+      { id: 'shift_work', label: 'Kan du arbeta kvällar och helger?', type: 'select', options: ['Ja', 'Nej', 'Endast kväll', 'Endast helg'], required: true },
+      { id: 'stress_tolerance', label: 'Trivs du i ett högt arbetstempo?', type: 'select', options: ['Ja', 'Nej'], required: false },
+    ],
+    'sälj': [
+      { id: 'sales_experience', label: 'Hur många års erfarenhet har du inom försäljning?', type: 'select', options: ['Ingen', 'Mindre än 1 år', '1-2 år', '3-5 år', 'Mer än 5 år'], required: false },
+      { id: 'b2b_b2c', label: 'Har du erfarenhet av B2B eller B2C-försäljning?', type: 'multiselect', options: ['B2B', 'B2C', 'Båda', 'Ingen'], required: false },
+      { id: 'driving_license_b', label: 'Har du körkort B?', type: 'select', options: ['Ja', 'Nej'], required: false },
+      { id: 'target_driven', label: 'Trivs du med resultatbaserade mål?', type: 'select', options: ['Ja', 'Nej'], required: true },
+      { id: 'customer_meetings', label: 'Är du bekväm med kundbesök?', type: 'select', options: ['Ja', 'Nej'], required: false },
+      { id: 'phone_sales', label: 'Har du erfarenhet av telefonförsäljning?', type: 'select', options: ['Ja', 'Nej'], required: false },
+      { id: 'language_swedish', label: 'Svenska i tal och skrift', type: 'select', options: ['Modersmål', 'Flytande', 'God', 'Grundläggande'], required: true },
+    ],
+    industri: [
+      { id: 'production_experience', label: 'Hur många års erfarenhet har du från industri/produktion?', type: 'select', options: ['Ingen', 'Mindre än 1 år', '1-2 år', '3-5 år', 'Mer än 5 år'], required: false },
+      { id: 'shift_work', label: 'Kan du arbeta skift?', type: 'select', options: ['Ja', 'Nej', 'Endast dagtid', 'Endast kväll', 'Endast natt'], required: true },
+      { id: 'physical_capacity', label: 'Kan du arbeta fysiskt krävande arbete?', type: 'select', options: ['Ja', 'Nej'], required: true },
+      { id: 'machine_operation', label: 'Har du erfarenhet av maskindrift?', type: 'select', options: ['Ja', 'Nej'], required: false },
+      { id: 'quality_control', label: 'Har du erfarenhet av kvalitetskontroll?', type: 'select', options: ['Ja', 'Nej'], required: false },
+      { id: 'safety_training', label: 'Har du industriell säkerhetsutbildning?', type: 'select', options: ['Ja', 'Nej'], required: false },
+      { id: 'forklift_license', label: 'Har du truckkörkort?', type: 'select', options: ['Ja', 'Nej', 'Pågående'], required: false },
+    ],
+    transport: [
+      { id: 'driving_license_c', label: 'Har du körkort C/CE?', type: 'select', options: ['Ja', 'Nej'], required: true },
+      { id: 'ykb', label: 'Har du YKB (yrkeskompetensbevis)?', type: 'select', options: ['Ja', 'Nej', 'Pågående'], required: true },
+      { id: 'digital_tacho', label: 'Har du erfarenhet av digital färdskrivare?', type: 'select', options: ['Ja', 'Nej'], required: false },
+      { id: 'adr_certificate', label: 'Har du ADR-certifikat (farligt gods)?', type: 'select', options: ['Ja', 'Nej'], required: false },
+      { id: 'driving_experience', label: 'Hur många års erfarenhet har du av yrkeskörning?', type: 'select', options: ['Ingen', 'Mindre än 1 år', '1-2 år', '3-5 år', 'Mer än 5 år'], required: false },
+      { id: 'long_distance', label: 'Kan du köra långdistans?', type: 'select', options: ['Ja', 'Nej', 'Endast region'], required: false },
+      { id: 'night_driving', label: 'Kan du köra natt?', type: 'select', options: ['Ja', 'Nej'], required: false },
+    ],
+  },
+  // Round-83 — structured field id → legacy boolean key (dual-write).
+  structuredToBoolean: {
+    forklift_license: 'hasForkliftLicense',
+    physical_capacity: 'canLiftHeavy',
+    shift_work: 'canShiftWork',
+    driving_license_b: 'hasDriversLicense',
+    care_certificate: 'hasCareAssistantEducation',
+    hlr_certificate: 'hasHLRCertification',
+    healthcare_experience: 'hasNursingExperience',
+    office_experience: 'hasOfficeExperience',
+    computer_skills: 'hasComputerSkills',
+    customer_service: 'hasCustomerExperience',
+    years_it_experience: 'hasCodingExperience',
+    construction_experience: 'hasConstructionExperience',
+    work_at_height: 'canWorkAtHeights',
+    food_handling: 'hasFoodHandlingCertificate',
+    kitchen_experience: 'hasServiceExperience',
+    serving_experience: 'hasServiceExperience',
+    sales_experience: 'hasSalesExperience',
+    production_experience: 'hasIndustrialExperience',
+    driving_license_c: 'hasTruckLicenseCE',
+    driving_experience: 'hasTransportExperience',
+  },
+  // Round-83 — structured answer → boolean (for the dual-write bridge).
+  // 'pågående' → false: an in-progress licence must never auto-click
+  // "Ja" on a "Har du X?" radio (see app-side lib doc comment).
+  structuredAnswerToBoolean: function (answer) {
+    if (answer == null || answer === '') return false
+    if (Array.isArray(answer)) return answer.length > 0
+    const s = String(answer).toLowerCase().trim()
+    return !['nej', 'ingen', 'inget', 'no', 'none', 'inte', 'pågående'].includes(s)
+  },
 }
 
 // Convenience helpers (no global pollution — this file is bundled into
