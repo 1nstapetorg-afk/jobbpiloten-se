@@ -24,6 +24,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import ErrorBoundary from '@/components/ErrorBoundary'
+import IndustryFieldsForm from '@/components/IndustryFieldsForm'
 
 import {
   Plane, Settings as SettingsIcon, User, CreditCard, Bell, BellOff, Database,
@@ -60,10 +61,10 @@ import {
 // of truth as onboarding + the API route (lib/field-taxonomy.js).
 import {
   INDUSTRIES,
-  INDUSTRY_FIELDS,
   INDUSTRY_IDS,
   INDUSTRY_BOOLEAN_KEYS,
-  INDUSTRY_BOOLEAN_LABELS,
+  industryFieldsToBooleans,
+  UNIVERSAL_FIELDS,
 } from '@/lib/field-taxonomy'
 
 // Clerk user button — dynamic + crash-safe so the whole page still renders
@@ -118,6 +119,14 @@ const INDUSTRY_OPTIONS = ['Försvar', 'Tobak', 'Spel', 'Olja & Gas']
 // page and lib/extension-profile.js#buildExtensionProfile share one
 // source of truth. Adding a 17th field means editing the shared module
 // only — both surfaces pick it up automatically.
+
+/** Resolve a (possibly dotted) universal-field key from the loaded
+ *  profile for the Satt/— status list. Mirrors the popup's
+ *  resolveProfileKey: answers.availability → profile.answers.availability. */
+function resolveUniversalProfileValue(profile, key) {
+  if (!profile || !key) return undefined
+  return String(key).split('.').reduce((cur, p) => (cur == null ? undefined : cur[p]), profile)
+}
 
 const fmtDate = (d) => {
   if (!d) return '—'
@@ -206,8 +215,23 @@ function formFromProfile(profile) {
     // slate-grey outline and never clicks the host checkbox unless
     // the user explicitly toggles this on.
     autoConsent: Boolean(profile?.autoConsent) === true,
-    // ---- 2026-08-03 (Round-81) — industry taxonomy ----
+    // ---- 2026-08-03 (Round-81/83/84) — industry taxonomy ----
     industry: INDUSTRY_IDS.includes(profile?.industry) ? profile.industry : '',
+    // Round-83/84 — complete structured industry answers. FLAT shape
+    // for the selected industry ({ forklift_license: 'Ja', … }) — the
+    // server stores nested per industry ({ lager: { … } }). Seeded from
+    // profile.industryFields[profile.industry]; reset to {} by
+    // handleIndustryChange when the user switches industry (stale
+    // answers from the previous industry never leak into the new one).
+    industryFields: (() => {
+      if (!profile?.industry) return {}
+      const nested = profile.industryFields && typeof profile.industryFields === 'object'
+        ? profile.industryFields[profile.industry]
+        : undefined
+      return nested && typeof nested === 'object' && !Array.isArray(nested)
+        ? { ...nested }
+        : {}
+    })(),
     ...Object.fromEntries(
       INDUSTRY_BOOLEAN_KEYS.map((k) => [k, Boolean(profile?.[k]) === true]),
     ),
@@ -313,17 +337,47 @@ function buildPatch(profile, form) {
     const pv = Boolean(profile?.[k]) === true
     if (fv !== pv) out[k] = fv
   }
-  // Round-81 — industry-specific booleans, same compare/emit pattern.
-  for (const k of INDUSTRY_BOOLEAN_KEYS) {
-    const fv = Boolean(form[k]) === true
-    const pv = Boolean(profile?.[k]) === true
-    if (fv !== pv) out[k] = fv
-  }
   // Round-81 — industry id. Emit only when it changed AND is canonical
   // (the server re-validates anyway).
   const formIndustry = INDUSTRY_IDS.includes(form.industry) ? form.industry : ''
   if (formIndustry !== (INDUSTRY_IDS.includes(profile?.industry) ? profile.industry : '')) {
     out.industry = formIndustry
+  }
+  // Round-83/84 — complete structured industry answers. Emit the flat
+  // { fieldId: value } set ONLY when it differs from the stored nested
+  // answers for the FORM industry (a changed industry + re-answered
+  // fields = new answer set). When the industry changed and the form
+  // answers are empty, the server's stale-industry wipe handles the
+  // cleanup — no industryFields emission needed.
+  const formIndFields = (form.industryFields && typeof form.industryFields === 'object' && !Array.isArray(form.industryFields))
+    ? form.industryFields
+    : {}
+  const storedIndFields = (() => {
+    if (!formIndustry) return {}
+    const nested = profile?.industryFields && typeof profile.industryFields === 'object'
+      ? profile.industryFields[formIndustry]
+      : undefined
+    return nested && typeof nested === 'object' && !Array.isArray(nested) ? nested : {}
+  })()
+  if (JSON.stringify(formIndFields) !== JSON.stringify(storedIndFields)) {
+    out.industryFields = formIndFields
+  }
+  // Round-84 — dual-write: the structured answers ALSO map onto the
+  // legacy flat booleans where a 1:1 mapping exists (so the pre-Round-83
+  // extension fill + tests stay green). Iterate the DERIVED booleans
+  // (industryFieldsToBooleans) rather than INDUSTRY_BOOLEAN_KEYS so the
+  // three mapped keys missing from that registry (hasForkliftLicense,
+  // hasDriversLicense, hasCustomerExperience) are emitted too — the
+  // registry only lists the Round-81 toggle booleans, while
+  // STRUCTURED_TO_BOOLEAN maps every structured answer. Same
+  // compare/emit pattern as the Round-12 booleans above.
+  {
+    const derived = industryFieldsToBooleans(formIndustry, formIndFields)
+    for (const [boolKey, boolVal] of Object.entries(derived)) {
+      const fv = Boolean(boolVal) === true
+      const pv = Boolean(profile?.[boolKey]) === true
+      if (fv !== pv) out[boolKey] = fv
+    }
   }
   const yearsForm = Number(form.yearsExperience)
   const yearsPrev = Number(profile?.yearsExperience)
@@ -778,6 +832,36 @@ function ProfileEditor({ profile, onSaved }) {
   const dirty = Object.keys(patch).length > 0
 
   const setField = (key, value) => setForm((prev) => ({ ...prev, [key]: value }))
+  // Round-83/84 — structured industry answers (flat { fieldId: value }).
+  // Mirrors the onboarding handlers so the shared IndustryFieldsForm
+  // component works in both surfaces. setIndustryAnswer handles
+  // select/text/url (single value); toggleIndustryMulti toggles a
+  // multiselect option in/out of the array.
+  const setIndustryAnswer = (key, value) => {
+    setForm((prev) => ({
+      ...prev,
+      industryFields: { ...(prev.industryFields || {}), [key]: value },
+    }))
+  }
+  const toggleIndustryMulti = (key, opt) => {
+    setForm((prev) => {
+      const cur = Array.isArray(prev.industryFields?.[key]) ? prev.industryFields[key] : []
+      const next = cur.includes(opt)
+        ? cur.filter((x) => x !== opt)
+        : [...cur, opt]
+      return { ...prev, industryFields: { ...(prev.industryFields || {}), [key]: next } }
+    })
+  }
+  // Round-84 — industry selector change. Sets the new industry AND wipes
+  // the structured answers (stale answers from the previous industry
+  // must never carry over into the new industry's question set — the
+  // requirement "on change, wipe stale industryFields"). The server also
+  // wipes stored industryFields when the industry changes without a new
+  // answer set (see /api/profile-update stale-wipe guard).
+  const handleIndustryChange = (v) => {
+    setField('industry', v)
+    setField('industryFields', {})
+  }
   const toggleIndustry = (industry) => {
     setField('industriesToAvoid',
       form.industriesToAvoid.includes(industry)
@@ -1271,16 +1355,23 @@ function ProfileEditor({ profile, onSaved }) {
           ))}
         </div>
 
-        {/* 2026-08-03 (Round-81) — Industry selector + industry-core
-            fields. The dropdown sets profile.industry (the extension
-            reads it to surface relevant fields); the toggles below it
-            are exactly the selected industry's Tier 2 field set from
-            lib/field-taxonomy.js. Switching industry swaps the shown
-            toggles (already-answered values persist in the profile). */}
+        {/* 2026-08-03 (Round-81/83/84) — Industry selector + complete
+            structured industry-core fields. The dropdown sets
+            profile.industry (the extension reads it to surface
+            relevant fields); below it the shared IndustryFieldsForm
+            (same component as onboarding) renders the selected
+            industry's COMPLETE schema: shadcn Selects, multiselect
+            chips and text/url inputs. Switching industry wipes the
+            structured answers (handleIndustryChange) so stale answers
+            never leak into the new industry's question set — the
+            server additionally wipes stored industryFields when the
+            industry changes without a new answer set. The dual-write
+            to legacy flat booleans happens in buildPatch via
+            industryFieldsToBooleans(). */}
         <div className="pt-3 border-t border-dashed border-slate-200 space-y-3" data-testid="settings-industry-block">
           <div className="space-y-1.5">
             <Label htmlFor="industry">Bransch</Label>
-            <Select value={form.industry || ''} onValueChange={(v) => setField('industry', v)}>
+            <Select value={form.industry || ''} onValueChange={handleIndustryChange}>
               <SelectTrigger id="industry" data-testid="settings-industry">
                 <SelectValue placeholder="Välj bransch" />
               </SelectTrigger>
@@ -1293,22 +1384,42 @@ function ProfileEditor({ profile, onSaved }) {
             <p className="text-[10px] text-slate-500">Styr vilka branschspecifika fält som visas nedan och som tillägget besvarar automatiskt.</p>
           </div>
           {form.industry && (
-            <div className="space-y-0" data-testid="settings-industry-fields">
-              {(INDUSTRY_FIELDS[form.industry] || []).map((f) => (
-                <div key={f.key} className="flex items-center justify-between gap-3 py-1.5 border-b border-slate-50 last:border-b-0">
-                  <Label htmlFor={`industry-${f.key}`} className="flex-1 cursor-pointer text-sm text-slate-700">
-                    {f.label}
-                  </Label>
-                  <Switch
-                    id={`industry-${f.key}`}
-                    checked={Boolean(form[f.key]) === true}
-                    onCheckedChange={(v) => setField(f.key, v === true)}
-                    data-testid={`settings-${f.key}`}
-                  />
-                </div>
-              ))}
-            </div>
+            <IndustryFieldsForm
+              industry={form.industry}
+              value={form.industryFields || {}}
+              onChange={setIndustryAnswer}
+              onToggleMulti={toggleIndustryMulti}
+              testidPrefix="settings-industry-field"
+              wrapperTestid="settings-industry-fields"
+              heading={`Frågor för ${INDUSTRIES.find((i) => i.id === form.industry)?.label || form.industry}`}
+            />
           )}
+        </div>
+
+        {/* Round-84 — Universella fält status. Read-only mirror of the
+            popup's Tier-1 list: the fields EVERY application form
+            asks for. Shows Satt/— per field so the user can see at a
+            glance which universal fields the extension can fill. The
+            editable versions live in the Personuppgifter / CV sections
+            above (same single source: lib/field-taxonomy.js
+            UNIVERSAL_FIELDS). */}
+        <div className="pt-3 border-t border-dashed border-slate-200 space-y-2" data-testid="settings-universal-block">
+          <Label className="text-sm font-semibold text-slate-800">Universella fält</Label>
+          <p className="text-[10px] text-slate-500">Fält som fylls i vid varje ansökan — status nedan visar vad som finns på din profil.</p>
+          <ul className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1">
+            {UNIVERSAL_FIELDS.map((f) => {
+              const val = resolveUniversalProfileValue(profile, f.key)
+              const has = val != null && String(val).length > 0
+              return (
+                <li key={f.id} className="flex items-center justify-between gap-2 text-xs text-slate-600">
+                  <span>{f.label}</span>
+                  <span className={has ? 'text-emerald-600 font-semibold' : 'text-slate-400'} data-testid={`settings-universal-${f.id}`}>
+                    {has ? 'Satt' : '—'}
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
         </div>
 
         {/* Number / date / select / text — the non-boolean fields.

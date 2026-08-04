@@ -52,6 +52,15 @@ test('popup.html renders the detected-industry chip + Tier 3 prompt', () => {
   assert.match(POPUP_HTML, /data-testid="jp-tier3-dismiss"/, 'Tier 3 dismiss button must be testid-locked')
 })
 
+test('popup.html renders the Tier-3 save UI (Round-84 answer capture)', () => {
+  assert.match(POPUP_HTML, /id="jp-tier3-answers"/, 'Tier 3 per-field answer container must exist')
+  assert.match(POPUP_HTML, /id="jp-tier3-save-check"/, 'Tier 3 save checkbox must exist')
+  assert.match(POPUP_HTML, /data-testid="jp-tier3-save-check"/, 'Tier 3 save checkbox must be testid-locked')
+  assert.match(POPUP_HTML, /id="jp-tier3-save-btn"/, 'Tier 3 save button must exist')
+  assert.match(POPUP_HTML, /data-testid="jp-tier3-save"/, 'Tier 3 save button must be testid-locked')
+  assert.match(POPUP_HTML, /Spara svar för framtida ansökningar/, 'Tier 3 save row must be labelled')
+})
+
 test('popup.js renders Tier 1 from a UNIVERSAL_FIELDS list covering all 7 universal keys', () => {
   assert.match(POPUP_JS, /const UNIVERSAL_FIELDS = \[/, 'Tier 1 list must be a UNIVERSAL_FIELDS constant')
   for (const key of ['fullName', 'email', 'phone', 'address', 'linkedin', 'cvSummary', 'latestCoverLetter']) {
@@ -84,7 +93,7 @@ test('popup.js reads the content-script detection keys for the chip + Tier 3 pro
   assert.match(POPUP_JS, /tier3Seen: 'jobbpiloten_tier3Seen'/, 'popup STORAGE_KEYS must carry tier3Seen')
   assert.match(POPUP_JS, /tier3Dismissed: 'jobbpiloten_tier3Dismissed'/, 'popup STORAGE_KEYS must carry tier3Dismissed')
   assert.match(POPUP_JS, /function renderDetectedIndustry\(\)/, 'renderDetectedIndustry must exist')
-  assert.match(POPUP_JS, /function renderTier3Prompt\(\)/, 'renderTier3Prompt must exist')
+  assert.match(POPUP_JS, /function renderTier3Prompt\(/, 'renderTier3Prompt must exist')
 })
 
 test('content.js detection keys stay byte-aligned with the popup', () => {
@@ -93,6 +102,24 @@ test('content.js detection keys stay byte-aligned with the popup', () => {
   assert.match(CONTENT_JS, /function detectPageIndustry\(\)/, 'detectPageIndustry must exist')
   assert.match(CONTENT_JS, /function detectTier3Fields\(\)/, 'detectTier3Fields must exist')
   assert.match(CONTENT_JS, /function reportPageContext\(\)/, 'reportPageContext must exist')
+})
+
+test('popup.js Tier-3 save flow locks (Round-84)', () => {
+  assert.match(POPUP_JS, /function normaliseTier3Seen\(seen\)/, 'normaliseTier3Seen must exist')
+  assert.match(POPUP_JS, /async function renderTier3Prompt\(profile\)/, 'renderTier3Prompt must take the profile')
+  assert.match(POPUP_JS, /function saveTier3Answers\(\)/, 'saveTier3Answers must exist')
+  assert.match(POPUP_JS, /\/api\/profile-update/, 'Tier 3 save must POST to /api/profile-update')
+  assert.match(POPUP_JS, /rareFields/, 'Tier 3 save must carry the rareFields payload')
+  assert.match(POPUP_JS, /input\.dataset\.testid = 'jp-tier3-answer-' \+ s\.id/, 'Tier 3 answer inputs must be keyed by canonical id')
+  assert.match(POPUP_JS, /savedRare\[s\.id\]/, 'renderTier3Prompt must filter already-answered rare fields')
+})
+
+test('content.js Tier-3 rare-field autofill + canonical ids (Round-84)', () => {
+  assert.match(CONTENT_JS, /function fillRareFields\(profile, handledBooleanGroups\)/, 'fillRareFields must exist')
+  assert.match(CONTENT_JS, /filled \+= await fillRareFields\(profile, handledBooleanGroups\)/, 'fillAll must call fillRareFields after the industry fill')
+  assert.match(CONTENT_JS, /id: 'standig_natt'/, 'TIER3_KEYWORDS must carry the standig_natt canonical id')
+  assert.match(CONTENT_JS, /id: 'uppsagningstid'/, 'TIER3_KEYWORDS must carry the uppsagningstid canonical id')
+  assert.match(CONTENT_JS, /hits\.push\(\{ id: rule\.id, label: rule\.label \}\)/, 'detectTier3Fields must return { id, label } objects')
 })
 
 test('popup.js universal list covers the complete schema projection (Round-83)', () => {

@@ -28,10 +28,20 @@ import { PDFDocument, StandardFonts } from 'pdf-lib'
 
 async function makeTextPdf(label) {
   const doc = await PDFDocument.create()
-  const page = doc.addPage([300, 200])
+  const page = doc.addPage([300, 400])
   const font = await doc.embedFont(StandardFonts.Helvetica)
-  page.drawText(label, { x: 30, y: 130, size: 16, font })
-  page.drawText('Frontendutvecklare', { x: 30, y: 95, size: 12, font })
+  // Round-84: the upload route's TINY_PDF heuristic (Round-58 / Bug 3)
+  // rejects sub-8KB PDFs whose extracted text is <
+  // MIN_VALID_CV_TEXT_CHARS (50). These fixtures are ~0.9 KB, so the
+  // page must carry >= 50 chars of extractable text to pass the gate
+  // (the label alone is ~25).
+  const bodyLines = [
+    label,
+    'Frontendutvecklare',
+    'Frontendutvecklare med 5+ års erfarenhet av React, Next.js och Node.js.',
+    'Tidigare roller hos Spotify och Klarna. CI/CD med Docker och AWS.',
+  ]
+  bodyLines.forEach((line, i) => page.drawText(line, { x: 30, y: 370 - i * 28, size: 12, font }))
   return await doc.save()
 }
 

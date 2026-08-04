@@ -106,10 +106,13 @@ test.describe.serial('Settings: CV upload', () => {
     ).toBeVisible({ timeout: 10_000 })
   })
 
-  test('image-only PDF triggers the empty-hint banner instead of an error', async ({ page }) => {
-    // The route treats TRIM-EMPTY text as a 200 OK with needsManualFallback.
-    // The UI then renders the in-section empty-hint banner rather than the
-    // server-error alert. This is the "scanned / image-only PDF" path.
+  test('tiny empty PDF: 400 TINY_PDF surfaces a clear Swedish error (Round-58 heuristic)', async ({ page }) => {
+    // Round-84 fix: the "trim-empty → 200 OK + empty-hint banner"
+    // contract predates the Round-58 / Bug 3 TINY_PDF heuristic. A
+    // sub-8KB PDF with < MIN_VALID_CV_TEXT_CHARS (50) extracted chars
+    // is now rejected with 400 + code TINY_PDF ("filen är för liten
+    // eller tom") — the UI shows the red settings-cv-error alert, and
+    // NO file card / empty-hint banner / success line renders.
     await page.goto('/settings')
     await page.waitForSelector('[data-testid="settings-cv-dropzone"]', {
       state: 'visible',
@@ -123,18 +126,9 @@ test.describe.serial('Settings: CV upload', () => {
       buffer: Buffer.from(emptyBytes),
     })
 
-    await page.waitForSelector('[data-testid="settings-cv-filecard"]', {
-      state: 'visible',
-      timeout: 20_000,
-    })
-    await expect(page.locator('[data-testid="settings-cv-filecard"]')).toContainText('scanned.pdf')
-
-    // The empty-hint banner renders, NOT the generic error alert.
-    await expect(page.locator('[data-testid="settings-cv-empty-hint"]')).toBeVisible()
-    await expect(page.locator('[data-testid="settings-cv-empty-hint"]')).toContainText('kunde inte tolka texten')
-    await expect(page.locator('[data-testid="settings-cv-error"]')).toHaveCount(0)
-
-    // Success-line is absent (no char count for an empty extraction).
+    await expect(page.locator('[data-testid="settings-cv-error"]')).toContainText('för liten eller tom', { timeout: 20_000 })
+    await expect(page.locator('[data-testid="settings-cv-filecard"]')).toHaveCount(0)
+    await expect(page.locator('[data-testid="settings-cv-empty-hint"]')).toHaveCount(0)
     await expect(page.locator('[data-testid="settings-cv-success"]')).toHaveCount(0)
   })
 
@@ -153,7 +147,10 @@ test.describe.serial('Settings: CV upload', () => {
 
     // Client validates before round-tripping; error banner appears inline.
     await expect(page.locator('[data-testid="settings-cv-error"]')).toBeVisible({ timeout: 5_000 })
-    await expect(page.locator('[data-testid="settings-cv-error"]')).toContainText('Endast PDF, DOC och DOCX stöds')
+    // Round-84: the accept-copy now reflects the image formats the
+    // route accepts (png/jpg/jpeg/webp were added later than this
+    // test's original expectation).
+    await expect(page.locator('[data-testid="settings-cv-error"]')).toContainText('Endast PDF, DOCX och bilder (PNG/JPG/WebP) stöds.')
 
     // Dropzone still visible — no card should have appeared.
     await expect(page.locator('[data-testid="settings-cv-dropzone"]')).toBeVisible()

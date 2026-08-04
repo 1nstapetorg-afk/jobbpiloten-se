@@ -16,6 +16,7 @@ dev-*.log
 .env.production.local
 dist/
 test-results/
+playwright-report/
 extension/build-config.json
 
 # 2026-07-21 / Round-72.2 / Followup-3 — runtime artifacts from

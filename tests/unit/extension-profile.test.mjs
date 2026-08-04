@@ -76,13 +76,18 @@ const BUG3_SPLIT_KEYS = 2  // BUG 3 (Round-72.2) adds street + country at runtim
 // nested `industryFields` object (per-industry answers), so the
 // industry block is INDUSTRY_TOTAL_FIELDS + 1.
 const ROUND83_INDUSTRYFIELDS_KEYS = 1
+// 2026-08-03 (Round-84) — the Tier-3 rare-field answers add the flat
+// `rareFields` object (keyed by canonical id), so +1 more.
+const ROUND84_RAREFIELDS_KEYS = 1
 
-test('buildExtensionProfile returns exactly the derived key count (legacy + Round-12 + BUG 3 split + industry + Round-83 industryFields)', () => {
+test('buildExtensionProfile returns exactly the derived key count (legacy + Round-12 + BUG 3 split + industry + Round-83 industryFields + Round-84 rareFields)', () => {
   const out = buildExtensionProfile({}, null)
   const keys = Object.keys(out).sort()
-  const expected = LEGACY_LEAF_COUNT + ROUND12_TOTAL_FIELDS + BUG3_SPLIT_KEYS + INDUSTRY_TOTAL_FIELDS + ROUND83_INDUSTRYFIELDS_KEYS
+  const expected = LEGACY_LEAF_COUNT + ROUND12_TOTAL_FIELDS + BUG3_SPLIT_KEYS + INDUSTRY_TOTAL_FIELDS + ROUND83_INDUSTRYFIELDS_KEYS + ROUND84_RAREFIELDS_KEYS
   assert.equal(keys.length, expected,
-    `Expected ${expected} fields (${LEGACY_LEAF_COUNT} legacy + ${ROUND12_TOTAL_FIELDS} Round-12 + ${BUG3_SPLIT_KEYS} BUG 3 split + ${INDUSTRY_TOTAL_FIELDS} industry + ${ROUND83_INDUSTRYFIELDS_KEYS} Round-83 industryFields). Got ${keys.length}: ${keys.join(', ')}`)
+    `Expected ${expected} fields (${LEGACY_LEAF_COUNT} legacy + ${ROUND12_TOTAL_FIELDS} Round-12 + ${BUG3_SPLIT_KEYS} BUG 3 split + ${INDUSTRY_TOTAL_FIELDS} industry + ${ROUND83_INDUSTRYFIELDS_KEYS} Round-83 industryFields + ${ROUND84_RAREFIELDS_KEYS} Round-84 rareFields). Got ${keys.length}: ${keys.join(', ')}`)
+  assert.ok(Object.prototype.hasOwnProperty.call(out, 'rareFields'), 'buildExtensionProfile must expose rareFields')
+  assert.deepEqual(out.rareFields, {}, 'rareFields must default to {}')
 })
 
 test('buildExtensionProfile exposes all industry keys with safe defaults', () => {

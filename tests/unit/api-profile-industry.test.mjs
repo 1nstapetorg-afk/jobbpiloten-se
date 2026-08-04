@@ -33,7 +33,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..', '..')
 const ROUTE = readFileSync(resolve(ROOT, 'app/api/[[...path]]/route.js'), 'utf8')
 
-import { INDUSTRY_IDS, INDUSTRY_BOOLEAN_KEYS, INDUSTRY_STRUCTURED_FIELDS } from '../../lib/field-taxonomy.js'
+import { INDUSTRY_IDS, INDUSTRY_BOOLEAN_KEYS, INDUSTRY_STRUCTURED_FIELDS, RARE_FIELDS, sanitizeRareFields } from '../../lib/field-taxonomy.js'
 
 test('POST /api/profile persists industry + all industry booleans', () => {
   assert.match(
@@ -144,6 +144,56 @@ test('profile-update wipes stale industryFields when the industry changes withou
     /!Object\.prototype\.hasOwnProperty\.call\(body, 'industryFields'\)/,
     'the stale wipe must only fire when the patch carries NO new industryFields',
   )
+})
+
+// ---- Round-84 — Tier-3 rare-field answers (rareFields) ----
+
+test('profile-update ALLOW list includes rareFields (Round-84)', () => {
+  assert.match(ROUTE, /'rareFields',/, 'profile-update ALLOWED must include rareFields')
+  assert.match(
+    ROUTE,
+    /hasOwnProperty\.call\(\$set, 'rareFields'\)/,
+    'profile-update must guard the rareFields key',
+  )
+  assert.match(
+    ROUTE,
+    /sanitizeRareFields\(\$set\.rareFields\)/,
+    'profile-update must sanitize rareFields against the canonical registry',
+  )
+  assert.match(
+    ROUTE,
+    /delete \$set\.rareFields/,
+    'profile-update must drop rareFields when nothing valid survives sanitize',
+  )
+})
+
+test('POST /api/profile conditionally persists rareFields sanitized (Round-84)', () => {
+  assert.match(
+    ROUTE,
+    /hasOwnProperty\.call\(source, 'rareFields'\)/,
+    'POST profile must conditionally merge rareFields (never clobber on omission)',
+  )
+  assert.match(
+    ROUTE,
+    /rareFields: sanitizeRareFields\(source\.rareFields\)/,
+    'POST profile must sanitize rareFields against the canonical registry',
+  )
+})
+
+test('RARE_FIELDS registry: canonical ids, byte-stable labels, sanitizer drops junk', () => {
+  assert.ok(Array.isArray(RARE_FIELDS) && RARE_FIELDS.length > 0, 'RARE_FIELDS must be a non-empty registry')
+  for (const r of RARE_FIELDS) {
+    assert.equal(typeof r.id, 'string')
+    assert.equal(typeof r.label, 'string')
+    assert.ok(r.id.length > 0 && r.label.length > 0, 'id + label must be non-empty')
+  }
+  const ids = RARE_FIELDS.map((r) => r.id)
+  assert.equal(new Set(ids).size, ids.length, 'rare-field ids must be unique')
+  // Sanitizer: drops unknown ids, non-strings, empties; caps at 500.
+  assert.deepEqual(sanitizeRareFields({ unknown_id: 'x', uppsagningstid: '' }), {}, 'junk must be dropped')
+  assert.deepEqual(sanitizeRareFields({ uppsagningstid: '  1 månad  ' }), { uppsagningstid: '1 månad' }, 'valid answer trimmed')
+  assert.deepEqual(sanitizeRareFields({ uppsagningstid: 42 }), {}, 'non-string values dropped')
+  assert.equal(sanitizeRareFields({ uppsagningstid: 'a'.repeat(600) }).uppsagningstid.length, 500, 'answers capped at 500 chars')
 })
 
 test('INDUSTRY_STRUCTURED_FIELDS covers every canonical industry with labelled, typed defs', () => {

@@ -78,15 +78,25 @@ test.describe('Dashboard: auto-sync fires on mount (BUG A fix)', () => {
     //    `data-jobbpiloten-ext` attribute every 1s + on window focus.
     await page.goto('/dashboard')
 
-    // 3. Wait for the dashboard's profile-fetch to settle BEFORE
-    //    flipping the extension flag. The auto-sync guard requires
-    //    ALL THREE deps truthy, so flipping the flag before the
-    //    profile arrives would NOT trigger the auto-sync (the
-    //    effect re-runs once profile becomes truthy though, so a
-    //    late flip still works, but a deterministic test waits
-    //    for connect button visibility first).
-    const connectButton = page.locator('[data-testid="extension-connect-button"]')
-    await expect(connectButton).toBeVisible({ timeout: 30_000 })
+    // 3. Wait for the dashboard's poll to settle BEFORE flipping the
+    //    extension flag. The auto-sync guard requires ALL FOUR deps
+    //    truthy (user, profile, extensionInstalled, extensionChecked),
+    //    so flipping the flag before the profile arrives would NOT
+    //    trigger the auto-sync (the effect re-runs once profile becomes
+    //    truthy though, so a late flip still works — but a
+    //    deterministic test waits for the poll first).
+    //
+    //    Round-84 fix: previously this waited for the
+    //    `extension-connect-button`, but that card only renders AFTER
+    //    the extension is detected (`extensionChecked &&
+    //    extensionInstalled` — app/dashboard/page.js) — a state this
+    //    test only reaches by flipping the flag in step 4, so the wait
+    //    could never resolve. The install banner is the NOT-detected
+    //    surface: its visibility proves the poll completed
+    //    (`extensionChecked` true) with the extension still
+    //    undetected, which is exactly the pre-flip state we want.
+    const installBanner = page.locator('[data-testid="extension-install-banner"]')
+    await expect(installBanner).toBeVisible({ timeout: 30_000 })
 
     // 4. CRITICAL: simulate extension detection WITHOUT clicking
     //    the button. Dispatching the focus event short-circuits
@@ -126,9 +136,14 @@ test.describe('Dashboard: auto-sync fires on mount (BUG A fix)', () => {
             'dashboard auto-sync should fire JOBBPILOTEN_AUTH_SYNC on mount without manual click (BUG A fix verification)',
         },
       )
+      // Round-84 fix: `expect.toBeGreaterThanOrEqual(1)` is not a
+      // nested asymmetric matcher through the re-exported fixture
+      // `expect` — it threw TypeError. The >=1 contract is asserted
+      // directly in step 6 below (authMessages.length >= 1), so a
+      // plain number placeholder suffices here.
       .toEqual({
         total: expect.any(Number),
-        auth: expect.toBeGreaterThanOrEqual(1),
+        auth: expect.any(Number),
         setUrl: expect.any(Number),
       })
 

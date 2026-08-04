@@ -93,8 +93,16 @@ test.describe('Round-38 / Part 4 — email-source application surface', () => {
     //    and the Mail tag is visible on it.
     await emailChip.click()
 
-    // 4. The Mail tag is rendered on the row.
-    const mailTag = page.getByTestId('application-source-email')
+    // 4. The Mail tag is rendered on the row(s). We assert against
+    //    .first() rather than the bare locator: the per-test clerkId
+    //    (Round-31) isolates THIS test from every OTHER test's rows,
+    //    but the same title run against a PERSISTENT dev Mongo (repeated
+    //    full-suite runs) accumulates one email row per run because
+    //    this spec POSTs its own application without a cleanup route.
+    //    In CI (fresh DB per run) exactly one row exists; in dev,
+    //    `.first()` keeps the contract (tag renders + Swedish label)
+    //    while tolerating the leftovers.
+    const mailTag = page.getByTestId('application-source-email').first()
     await expect(mailTag, 'Mail tag renders for source: email rows').toBeVisible()
     await expect(mailTag, 'Mail tag shows the Swedish label').toHaveText('Mejl')
 

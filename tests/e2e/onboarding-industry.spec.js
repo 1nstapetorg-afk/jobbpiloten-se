@@ -58,7 +58,9 @@ test.describe.serial('Onboarding: industry selection', () => {
       await page.getByTestId(`onboarding-industry-field-${fieldId}-trigger`).click()
       await page.getByTestId(`onboarding-industry-field-${fieldId}-opt-ja`).click()
     }
-    await page.getByTestId('onboarding-industry-field-forklift_types-opt-a1-låglyftande').click()
+        // testidSlug() strips non-ASCII: 'A1 - låglyftande' →
+    // 'a1-l-glyftande' (see components/IndustryFieldsForm.jsx).
+    await page.getByTestId('onboarding-industry-field-forklift_types-opt-a1-l-glyftande').click()
 
     // --- Step 1 → 3: click through the remaining steps ---
     // Step 1 (Personuppgifter): demo user has fullName, so no input

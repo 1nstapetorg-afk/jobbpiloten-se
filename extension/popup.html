@@ -217,24 +217,51 @@
       <ul class="jp-industry-list" id="jp-universal-list"></ul>
     </section>
 
-    <!-- Round-82 — Tier 3 sällsynta frågor. Hidden by default;
+    <!-- Round-82/84 — Tier 3 sällsynta frågor. Hidden by default;
          surfaces when content.js's detectTier3Fields() found a rare
          job-specific question keyword on the page (e.g. "ständig
-         natt", "referenstagare", "2-skift"). Prompt-once semantics:
-         the panel is shown at most once per page URL — the Förstått
-         button writes the URL to `jobbpiloten_tier3Dismissed` and the
-         panel stays hidden until the user navigates to another page. -->
+         natt", "referenstagare", "2-skift"). Round-84: the panel
+         now captures the user's MANUAL answers — one text input per
+         detected rare field — and, when the "Spara svar för framtida
+         ansökningar" checkbox is checked, POSTs them to
+         /api/profile-update under `rareFields` (keyed by canonical
+         id). A field already answered in the profile's rareFields is
+         NOT re-prompted (the extension autofills it instead).
+         Prompt-once semantics: dismissal is recorded per page URL
+         (`jobbpiloten_tier3Dismissed`) so the panel stays hidden
+         until the user navigates to another page. -->
     <section class="jp-tier3" id="jp-tier3" hidden data-testid="jp-tier3">
       <div class="jp-tier3-title">⚠ Sällsynta frågor upptäckta</div>
       <p class="jp-tier3-text" id="jp-tier3-text"></p>
-      <button
-        type="button"
-        class="jp-btn jp-btn-link jp-tier3-dismiss"
-        id="jp-tier3-dismiss-btn"
-        data-testid="jp-tier3-dismiss"
-      >
-        Förstått
-      </button>
+      <!-- Round-84 — per-field manual answer inputs (built by popup.js
+           renderTier3Prompt from the detected { id, label } list). -->
+      <div class="jp-tier3-answers" id="jp-tier3-answers"></div>
+      <label class="jp-tier3-save-row" data-testid="jp-tier3-save-row">
+        <input
+          type="checkbox"
+          id="jp-tier3-save-check"
+          data-testid="jp-tier3-save-check"
+        />
+        <span>Spara svar för framtida ansökningar</span>
+      </label>
+      <div class="jp-tier3-actions">
+        <button
+          type="button"
+          class="jp-btn jp-btn-primary jp-tier3-save"
+          id="jp-tier3-save-btn"
+          data-testid="jp-tier3-save"
+        >
+          Spara svar
+        </button>
+        <button
+          type="button"
+          class="jp-btn jp-btn-link jp-tier3-dismiss"
+          id="jp-tier3-dismiss-btn"
+          data-testid="jp-tier3-dismiss"
+        >
+          Förstått
+        </button>
+      </div>
     </section>
 
     <!-- Round-81 — Bransch & relevanta fält. Shows the user's industry

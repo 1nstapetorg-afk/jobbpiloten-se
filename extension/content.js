@@ -676,15 +676,20 @@ function detectPageIndustry() {
 // jobSpecific tier (data/processed/extension_field_schema.json) and
 // is deliberately small — this is a heads-up, not a full taxonomy.
 const TIER3_KEYWORDS = [
-  { phrase: /ständig[\s\S]{0,20}natt|nattjänst|standig natt/i, label: 'Ständig natt' },
-  { phrase: /ständig[\s\S]{0,20}kväll|standig kvall/i, label: 'Ständig kväll' },
-  { phrase: /2-skift|3-skift|tvåskift|treskift/i, label: 'Skiftgång (2-/3-skift)' },
-  { phrase: /jag kan arbeta alla tider|alla tider/i, label: 'Tillgänglig alla tider' },
-  { phrase: /referenstagare|referensperson|kontaktpersoner? (?:referens|referens)/i, label: 'Referensperson' },
-  { phrase: /uppsägningstid|notice period/i, label: 'Uppsägningstid' },
-  { phrase: /tidigare arbetsgivare|tidigare anställning|previous employer/i, label: 'Tidigare arbetsgivare' },
-  { phrase: /utbildningskolafrån|utbildning (?:åååå|från)/i, label: 'Utbildningshistorik' },
-  { phrase: /datorbaserade verksamhetsstöd|combine och cosmic|cosmic och combine/i, label: 'Verksamhetssystem (Combine/Cosmic)' },
+  // Round-84 — each rule carries a canonical `id` matching
+  // lib/field-taxonomy.js RARE_FIELDS (the popup saves answers keyed
+  // by id; the API validates against the same registry). The labels
+  // MUST stay byte-identical to RARE_FIELDS labels — the popup + the
+  // fill pass match host inputs by label keyword.
+  { id: 'standig_natt', phrase: /ständig[\s\S]{0,20}natt|nattjänst|standig natt/i, label: 'Ständig natt' },
+  { id: 'standig_kvall', phrase: /ständig[\s\S]{0,20}kväll|standig kvall/i, label: 'Ständig kväll' },
+  { id: 'skiftgang', phrase: /2-skift|3-skift|tvåskift|treskift/i, label: 'Skiftgång (2-/3-skift)' },
+  { id: 'alla_tider', phrase: /jag kan arbeta alla tider|alla tider/i, label: 'Tillgänglig alla tider' },
+  { id: 'referensperson', phrase: /referenstagare|referensperson|kontaktpersoner? (?:referens|referens)/i, label: 'Referensperson' },
+  { id: 'uppsagningstid', phrase: /uppsägningstid|notice period/i, label: 'Uppsägningstid' },
+  { id: 'tidigare_arbetsgivare', phrase: /tidigare arbetsgivare|tidigare anställning|previous employer/i, label: 'Tidigare arbetsgivare' },
+  { id: 'utbildningshistorik', phrase: /utbildningskolafrån|utbildning (?:åååå|från)/i, label: 'Utbildningshistorik' },
+  { id: 'verksamhetssystem', phrase: /datorbaserade verksamhetsstöd|combine och cosmic|cosmic och combine/i, label: 'Verksamhetssystem (Combine/Cosmic)' },
   // NOTE: födelseår is deliberately NOT here — FIELD_PATTERNS already
   // routes it to `dateOfBirth` (kind: 'select'), so the extension
   // FILLS it; prompting "answer manually" would contradict the fill.
@@ -697,8 +702,8 @@ function detectTier3Fields() {
   if (!text.trim()) return []
   const hits = []
   for (const rule of TIER3_KEYWORDS) {
-    if (rule.phrase.test(text) && !hits.includes(rule.label)) {
-      hits.push(rule.label)
+    if (rule.phrase.test(text) && !hits.some((h) => h.id === rule.id)) {
+      hits.push({ id: rule.id, label: rule.label })
     }
   }
   return hits.slice(0, 4) // cap — the popup prompt stays compact
@@ -1789,6 +1794,81 @@ async function fillDetectedIndustryFields(profile, handledBooleanGroups) {
   }
 }
 
+// ---------- Round-84 — Tier-3 rare-field autofill ----------
+//
+// The popup's Tier-3 prompt can save the user's MANUAL answers to a
+// rare (job-specific) question under `profile.rareFields` (keyed by
+// the canonical ids in lib/field-taxonomy.js RARE_FIELDS). On a
+// LATER page that asks the same rare question, this pass fills it
+// from the saved answer instead of prompting again. Rare fields are
+// free-text by nature (uppsägningstid, referensperson, …), so we
+// ONLY touch text-ish inputs / <select> (never radios/checkboxes) and
+// we match by the label keyword matcher used by the industry fill
+// pass. Best-effort + fail-safe: a no-match page adds 0.
+async function fillRareFields(profile, handledBooleanGroups) {
+  try {
+    const rare = (profile && profile.rareFields && typeof profile.rareFields === 'object')
+      ? profile.rareFields
+      : {}
+    const entries = Object.entries(rare).filter(([, v]) => v != null && String(v).trim().length > 0)
+    if (entries.length === 0) return 0
+
+    // Map canonical id → label from the bundled taxonomy (single
+    // source; RARE_FIELDS mirror in extension/lib/field-taxonomy.js).
+    const tx = globalThis.FIELD_TAXONOMY
+    const labelById = {}
+    if (tx && Array.isArray(tx.rareFields)) {
+      for (const r of tx.rareFields) if (r && r.id && r.label) labelById[r.id] = r.label
+    }
+    if (Object.keys(labelById).length === 0) return 0
+
+    // Pre-compute candidate inputs once (getFieldMeta is a DOM walk).
+    const candidates = []
+    for (const { input } of collectInputs()) {
+      const meta = getFieldMeta(input)
+      if (meta && meta.length > 2) candidates.push({ input, meta })
+    }
+    if (candidates.length === 0) return 0
+
+    let filled = 0
+    for (const [rareId, answer] of entries) {
+      const label = labelById[rareId]
+      if (!label) continue
+      const value = String(answer).trim()
+      if (!value) continue
+      let did = false
+      for (const { input, meta } of candidates) {
+        // Text-ish inputs + <select> only — a rare free-text answer
+        // must never be injected into a radio/checkbox group.
+        const tag = input.tagName
+        if (tag === 'SELECT') {
+          // keep — option picked by text below
+        } else if (tag === 'TEXTAREA') {
+          // keep
+        } else if (tag === 'INPUT') {
+          const t = String(input.type || '').toLowerCase()
+          if (!['text', 'email', 'tel', 'url', 'search'].includes(t)) continue
+        } else {
+          continue
+        }
+        if (!metaMatchesIndustryLabel(meta, label)) continue
+        // Skip inputs the boolean/industry paths already handled (shared
+        // dedup set — a radio this pass would never touch anyway).
+        if (handledBooleanGroups.has(booleanGroupKey(input))) continue
+        if (setInputValue(input, value)) {
+          paintField(input, 'ok')
+          filled++
+          did = true
+        }
+        if (did) break // one host input per rare question
+      }
+    }
+    return filled
+  } catch (_) {
+    return 0
+  }
+}
+
 // ---------- 8. Scan + fill ----------
 //
 // `scan()` walks the document for matchable inputs and returns the
@@ -2126,6 +2206,10 @@ async function fillAll() {
   // the boolean path already answered (the Round-72.2 double-click
   // regression guard). Fail-safe — a no-match page adds 0.
   filled += await fillDetectedIndustryFields(profile, handledBooleanGroups)
+  // Round-84 — Tier-3 rare-field autofill (profile.rareFields). Fills
+  // saved rare answers (uppsägningstid, referensperson, …) on pages
+  // that ask them, so the user answers once and never gets re-prompted.
+  filled += await fillRareFields(profile, handledBooleanGroups)
 
   maybeInstallFileButtons()
 

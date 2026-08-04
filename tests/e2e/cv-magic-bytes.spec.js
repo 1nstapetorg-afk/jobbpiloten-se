@@ -26,9 +26,20 @@ import { Document, Packer, Paragraph } from 'docx'
 
 async function makeTextPdf(label) {
   const doc = await PDFDocument.create()
-  const page = doc.addPage([300, 200])
+  const page = doc.addPage([300, 400])
   const font = await doc.embedFont(StandardFonts.Helvetica)
-  page.drawText(label, { x: 30, y: 130, size: 16, font })
+  // Round-84: the upload route's TINY_PDF heuristic (Round-58 / Bug 3)
+  // rejects sub-8KB PDFs whose extracted text is <
+  // MIN_VALID_CV_TEXT_CHARS (50). These fixtures are ~0.9 KB, so the
+  // page must carry >= 50 chars of extractable text to pass the gate
+  // (the label alone is ~25).
+  const bodyLines = [
+    label,
+    'Stockholm, Sverige',
+    'Frontendutvecklare med 5+ års erfarenhet av React, Next.js och Node.js.',
+    'Tidigare roller hos Spotify och Klarna. CI/CD med Docker och AWS.',
+  ]
+  bodyLines.forEach((line, i) => page.drawText(line, { x: 30, y: 370 - i * 28, size: 12, font }))
   return await doc.save()
 }
 
@@ -167,13 +178,18 @@ test.describe.serial('Settings: CV magic-bytes validation', () => {
     await expect(page.locator('[data-testid="settings-cv-filecard"]')).toHaveCount(0)
   })
 
-  test('image-only PDF: 200 OK with empty cvText + needsManualFallback, empty-hint banner renders', async ({ page }) => {
+  test('tiny empty PDF: 400 TINY_PDF with a clear Swedish error (Round-58 heuristic)', async ({ page }) => {
     await page.goto('/settings')
     await page.waitForSelector('[data-testid="settings-cv-dropzone"]', { timeout: 20_000 })
-    // Empty page PDF — no drawText call means pdf-parse returns
-    // an empty string, and the image-only detector (added 2026-07-10)
-    // sees no text operators but no image operators either, so it
-    // falls through to the "empty text" success path.
+    // Round-84 fix: the pre-Round-58 contract ("200 OK + empty-hint
+    // banner for an empty-page PDF") was superseded by the Round-58 /
+    // Bug 3 TINY_PDF heuristic: a sub-8KB PDF whose extracted text is
+    // < MIN_VALID_CV_TEXT_CHARS (50) is almost certainly a corrupt or
+    // empty export, so the route now returns 400 + code TINY_PDF with
+    // a specific Swedish message (the UI surfaces it via the red
+    // settings-cv-error alert; no file card renders). A REAL scanned
+    // image-only PDF is >8 KB and hits the separate IMAGE_ONLY_PDF
+    // 400 branch instead.
     const bytes = await (async () => {
       const d = await PDFDocument.create()
       d.addPage([300, 200])
@@ -184,11 +200,8 @@ test.describe.serial('Settings: CV magic-bytes validation', () => {
       mimeType: 'application/pdf',
       buffer: Buffer.from(bytes),
     })
-    await page.waitForSelector('[data-testid="settings-cv-filecard"]', { timeout: 20_000 })
-    // The empty-hint banner renders; no success line; no error alert.
-    await expect(page.locator('[data-testid="settings-cv-empty-hint"]')).toBeVisible()
-    await expect(page.locator('[data-testid="settings-cv-empty-hint"]')).toContainText('kunde inte tolka texten')
-    await expect(page.locator('[data-testid="settings-cv-error"]')).toHaveCount(0)
-    await expect(page.locator('[data-testid="settings-cv-success"]')).toHaveCount(0)
+    await expect(page.locator('[data-testid="settings-cv-error"]')).toContainText('för liten eller tom', { timeout: 20_000 })
+    // The dropzone is still visible — no file card should have appeared.
+    await expect(page.locator('[data-testid="settings-cv-filecard"]')).toHaveCount(0)
   })
 })

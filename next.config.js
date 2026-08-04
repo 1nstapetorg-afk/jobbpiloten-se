@@ -38,7 +38,17 @@ const nextConfig = {
   // node_modules at runtime on the serverless function — exactly the
   // serverExternalPackages contract. (mongodb is externalized for the
   // same native-binary reason.)
-  serverExternalPackages: ['mongodb', '@napi-rs/canvas'],
+  // Round-84: pdfjs-dist must ALSO be externalized. The upload-cv
+  // route imports it at runtime (`await import('pdfjs-dist/legacy/...')`)
+  // to extract text from user PDFs. When webpack bundles it, pdfjs's
+  // internal environment detection flips (browser-style fetch against
+  // `file://` standard-font URLs), so every PDF using the non-embedded
+  // base-14 fonts (Helvetica/Times — the common Word/Pages/pdf-lib
+  // export case) fails extraction and is mislabelled
+  // UNSUPPORTED_PDF_FORMAT. Loading the module natively from
+  // node_modules restores the Node path (fs-based font loading),
+  // which works — verified against the exact route options.
+  serverExternalPackages: ['mongodb', '@napi-rs/canvas', 'pdfjs-dist'],
   webpack(config, { dev }) {
     // Round-79 fix: add the @/ path alias so imports like
     // `import { ... } from '@/lib/clerk-config'` resolve correctly.

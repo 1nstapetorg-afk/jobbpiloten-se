@@ -107,6 +107,16 @@ test('extension bundled structuredFields match app INDUSTRY_STRUCTURED_FIELDS (R
     JSON.stringify(norm(app.STRUCTURED_TO_BOOLEAN || {})),
     'bundled structuredToBoolean map must match the app mapping'
   )
+});
+
+test('extension bundled rareFields match app RARE_FIELDS (Round-84)', () => {
+  const bund = loadBundled();
+  const norm = (v) => JSON.parse(JSON.stringify(v));
+  assert.ok(Array.isArray(bund.rareFields), 'bundled copy must carry rareFields (Round-84)')
+  assert.equal(
+    JSON.stringify(norm(bund.rareFields)),
+    JSON.stringify(norm(app.RARE_FIELDS)),
+    'bundled rareFields registry must match the app RARE_FIELDS')
 })
 
 test('taxonomy sanity: lager and vård expose the expected key fields', () => {

@@ -78,8 +78,29 @@ test.describe('Extension auth handshake — /extension-auth bridge page', () => 
     // Force the SIGN_IN path by clearing localStorage.demoUser so the
     // bridge falls back to the sign-in block, THEN click the demo
     // button + validate the round-trip.
-    await page.evaluate(() => {
-      try { window.localStorage.removeItem('demoUser') } catch (_) {}
+    //
+    // Round-84 fix: this must be an INIT SCRIPT, not
+    // `page.evaluate(removeItem)` + reload — the auth fixture seeds
+    // localStorage.demoUser via a context-level addInitScript that
+    // re-runs on EVERY navigation, so a plain removal before reload
+    // was silently re-seeded (the SIGN_IN block never appeared and the
+    // test timed out). Page-level init scripts run AFTER context-level
+    // ones, so this removal wins on the reload below.
+    //
+    // The removal is guarded by a sessionStorage flag so it applies
+    // ONLY on the first load: signInDemo() reloads the page after
+    // setting localStorage.demoUser, and on that reload the fixture
+    // would re-seed demoUser AND this script would remove it again —
+    // leaving the bridge stuck in SIGN_IN forever. With the flag, the
+    // removal runs exactly once and the demo sign-in's own reload
+    // keeps the freshly-set demoUser (minting proceeds).
+    await page.addInitScript(() => {
+      try {
+        if (!window.sessionStorage.getItem('jobbpiloten-e2e-cleared-demo-user')) {
+          window.localStorage.removeItem('demoUser')
+          window.sessionStorage.setItem('jobbpiloten-e2e-cleared-demo-user', '1')
+        }
+      } catch (_) {}
     })
     await page.reload()
     // The bridge now shows the SIGN_IN block (no Clerk, so demo UI).
@@ -95,9 +116,22 @@ test.describe('Extension auth handshake — /extension-auth bridge page', () => 
     // behaviour). Give it generously.
     await expect(page.locator('[data-testid="extension-auth-root"]')).toHaveAttribute(
       'data-phase',
-      /(minting|delivering|done)/,
+      /(delivering|done)/,
       { timeout: 15_000 },
     )
+
+    // Round-84 fix: poll for the handshake instead of snapshotting
+    // immediately. The phase assertion above may pass during
+    // 'minting' (or 'delivering') BEFORE the mint POST resolves and
+    // Path-1 dispatches the handshake — a straight snapshot could
+    // race the delivery and see an empty capture. The poll waits for
+    // the envelope to land.
+    await expect
+      .poll(async () => {
+        const msgs = await page.evaluate(() => window.__capturedMessages || [])
+        return msgs.find((m) => m && m.data && m.data.type === 'JOBBPILOTEN_AUTH_HANDSHAKE') || null
+      }, { timeout: 15_000, intervals: [100, 250, 500] })
+      .not.toBeNull()
 
     // Pull the captured postMessages out of the page.
     const msgs = await page.evaluate(() => window.__capturedMessages || [])
@@ -182,7 +216,7 @@ test.describe('Extension auth handshake — /extension-auth bridge page', () => 
     // check is enforced by the data-phase attribute regex above.
   })
 
-  test('bridge auto-closes ~700ms after delivering the handshake (no stuck popup)', async ({ context }) => {
+  test('bridge auto-closes ~700ms after delivering the handshake (no stuck popup)', async ({ context, baseURL }) => {
     // Round-9 followup: end-to-end validation that the bridge
     // actually closes itself after success. Without this the UX is
     // a perma-window — every soft-launch tester sees a stuck auth
@@ -198,13 +232,28 @@ test.describe('Extension auth handshake — /extension-auth bridge page', () => 
     // The demo-cookie fixture is inherited by every page in the
     // context, so the popup authenticates immediately on mount and
     // never shows the sign-in block.
+    // Round-84 fix: ORDER matters here.
+    //   1. Create the parent FIRST — `context.newPage()` itself fires
+    //      a 'page' event, so a waitForEvent registered before it
+    //      would resolve with the PARENT page (the popup then never
+    //      gets inspected; its URL stays about:blank in the probe).
+    //   2. Register waitForEvent AFTER the parent exists — the only
+    //      remaining 'page' event is the window.open popup.
+    //   3. setContent runs the inline script synchronously, so the
+    //      popup's 'page' event fires DURING setContent — the promise
+    //      is already attached, so it resolves with the popup.
+    //   4. The URL must be ABSOLUTE — a relative "/extension-auth"
+    //      resolves against the parent's about:blank base URL into a
+    //      broken target, so the popup never loads the bridge.
+    //      baseURL comes from playwright.config.js.
     const parent = await context.newPage()
+    const popupPromise = context.waitForEvent('page', { timeout: 15_000 })
     await parent.setContent(
-      '<!doctype html><html><body><script>window.open("/extension-auth")</script></body></html>',
+      `<!doctype html><html><body><script>window.open(${JSON.stringify(baseURL + '/extension-auth')})</script></body></html>`,
     )
     // Generous 15s budget — first compile + Mongo lookup can stretch
     // the deadline in dev.
-    const popup = await context.waitForEvent('page', { timeout: 15_000 })
+    const popup = await popupPromise
     // Happy-path short-circuit: cookie + profile → mint fires on
     // first paint without showing the sign-in block.
     await expect(popup.locator('[data-testid="extension-auth-root"]')).toHaveAttribute(

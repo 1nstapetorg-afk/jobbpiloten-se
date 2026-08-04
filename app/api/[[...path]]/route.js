@@ -22,7 +22,7 @@ import { STYLE_PRESETS } from '@/lib/style-presets.mjs';
 // 2026-08-03 (Round-81) — industry taxonomy. INDUSTRY_IDS drives the
 // profile POST/update validation, INDUSTRY_BOOLEAN_KEYS the new
 // industry-specific boolean fields. See lib/field-taxonomy.js.
-import { INDUSTRY_IDS, INDUSTRY_BOOLEAN_KEYS, sanitizeIndustryFields } from '@/lib/field-taxonomy';
+import { INDUSTRY_IDS, INDUSTRY_BOOLEAN_KEYS, STRUCTURED_TO_BOOLEAN, sanitizeIndustryFields, sanitizeRareFields } from '@/lib/field-taxonomy';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -649,6 +649,22 @@ export async function POST(req, ctx) {
             .filter((k) => Object.prototype.hasOwnProperty.call(source, k))
             .map((k) => [k, Boolean(source[k]) === true]),
         ),
+        // Round-84 — dual-write completeness. The structured taxonomy
+        // (STRUCTURED_TO_BOOLEAN) also maps answers onto legacy
+        // booleans that are NOT in INDUSTRY_BOOLEAN_KEYS — they predate
+        // Round-81 and live in the Round-12 registry
+        // (hasForkliftLicense, hasDriversLicense, hasCustomerExperience).
+        // Merge them with the SAME conditional pattern so an onboarding
+        // POST that carries the structured answers persists the legacy
+        // booleans the extension's pre-Round-83 fill path reads. Derived
+        // from STRUCTURED_TO_BOOLEAN minus the registry so the extra
+        // key list can never drift from the taxonomy.
+        ...Object.fromEntries(
+          Object.values(STRUCTURED_TO_BOOLEAN)
+            .filter((k) => !INDUSTRY_BOOLEAN_KEYS.includes(k))
+            .filter((k) => Object.prototype.hasOwnProperty.call(source, k))
+            .map((k) => [k, Boolean(source[k]) === true]),
+        ),
         // Round-83 — complete structured industry answers. The payload
         // carries the FLAT answers for the selected industry
         // ({ forklift_license: 'Ja', … }); the stored Mongo shape is
@@ -663,6 +679,16 @@ export async function POST(req, ctx) {
           ? { industryFields: INDUSTRY_IDS.includes(source.industry)
             ? { [source.industry]: sanitizeIndustryFields(source.industry, source.industryFields) }
             : {} }
+          : {}),
+        // Round-84 — Tier-3 rare-field answers ({ [rareFieldId]: string },
+        // keyed by the canonical ids in lib/field-taxonomy.js
+        // RARE_FIELDS). Sanitized (unknown ids dropped, non-string
+        // values rejected, 500-char cap). The onboarding wizard never
+        // collects these — they come from the extension popup's Tier-3
+        // prompt — so this is a conditional merge: an onboarding POST
+        // that omits rareFields never clobbers saved values.
+        ...(Object.prototype.hasOwnProperty.call(source, 'rareFields')
+          ? { rareFields: sanitizeRareFields(source.rareFields) }
           : {}),
         tier: source.tier || 'Professional',
         subscriptionStatus: source.subscriptionStatus || 'inactive',
@@ -801,6 +827,13 @@ export async function POST(req, ctx) {
         // below (industry-scoped: only the effective industry's field
         // ids survive).
         'industryFields',
+        // Round-84 — Tier-3 rare-field answers ({ [rareFieldId]: string },
+        // keyed by the canonical ids in lib/field-taxonomy.js
+        // RARE_FIELDS). Saved from the popup's Tier-3 prompt so a rare
+        // job-specific question is answered ONCE and autofilled on
+        // subsequent pages. Sanitized in the guard below (unknown ids
+        // dropped, non-string values rejected, 500-char cap).
+        'rareFields',
       ];
 
       // Build `$set` BEFORE any guard so the guards can reference it
@@ -951,6 +984,20 @@ export async function POST(req, ctx) {
           Object.keys(prev.industryFields).length > 0
         ) {
           $set.industryFields = {}
+        }
+      }
+      // Round-84 — Tier-3 rare-field answers (rareFields flat object
+      // { [rareFieldId]: string }). Sanitized against the canonical
+      // registry (lib/field-taxonomy.js RARE_FIELDS): unknown ids +
+      // non-string values are dropped, answers trimmed + capped at
+      // 500 chars. An empty result deletes the key (nothing valid to
+      // persist).
+      if (Object.prototype.hasOwnProperty.call($set, 'rareFields')) {
+        const cleaned = sanitizeRareFields($set.rareFields)
+        if (Object.keys(cleaned).length === 0) {
+          delete $set.rareFields
+        } else {
+          $set.rareFields = cleaned
         }
       }
       // Server-side guard for `profilePicture`. The client's settings

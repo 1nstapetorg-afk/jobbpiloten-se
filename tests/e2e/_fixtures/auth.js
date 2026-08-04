@@ -166,6 +166,18 @@ export const test = base.extend({
         // the API routes still auth the request; only client-side
         // useUser() would render without a user.
       }
+      // Round-84: seed the cookie-consent dismissal too so the fixed
+      // bottom CookieConsent banner never renders under the fixture
+      // and intercepts clicks on bottom-of-page controls (the GDPR
+      // delete section on /settings). Any non-null value suppresses
+      // the banner (components/CookieConsent.jsx reads the key
+      // directly); 'all' mirrors the "Acceptera alla" choice.
+      try {
+        window.localStorage.setItem('jobbpiloten-cookie-consent', 'all')
+      } catch (_) {
+        // privacy-mode localStorage throw — banner may render; the
+        // affected spec dismisses it defensively.
+      }
     }, demoClerkId)
 
     // Round-15: seed demo profile + 12 sample apps before specs.

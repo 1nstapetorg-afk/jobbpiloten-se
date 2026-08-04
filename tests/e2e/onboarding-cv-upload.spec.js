@@ -18,10 +18,20 @@ import { PDFDocument, StandardFonts } from 'pdf-lib'
 
 async function makeTextPdf(label) {
   const doc = await PDFDocument.create()
-  const page = doc.addPage([300, 200])
+  const page = doc.addPage([300, 400])
   const font = await doc.embedFont(StandardFonts.Helvetica)
-  page.drawText(label, { x: 30, y: 130, size: 16, font })
-  page.drawText('Stockholm, Sverige', { x: 30, y: 95, size: 12, font })
+  // Round-84: the upload route's TINY_PDF heuristic (Round-58 / Bug 3)
+  // rejects sub-8KB PDFs whose extracted text is <
+  // MIN_VALID_CV_TEXT_CHARS (50). These fixtures are ~0.9 KB, so the
+  // page must carry >= 50 chars of extractable text to pass the gate
+  // (the label alone is ~25).
+  const bodyLines = [
+    label,
+    'Stockholm, Sverige',
+    'Frontendutvecklare med 5+ års erfarenhet av React, Next.js och Node.js.',
+    'Tidigare roller hos Spotify och Klarna. CI/CD med Docker och AWS.',
+  ]
+  bodyLines.forEach((line, i) => page.drawText(line, { x: 30, y: 370 - i * 28, size: 12, font }))
   return await doc.save()
 }
 
@@ -74,16 +84,26 @@ test.describe.serial('Onboarding: CV upload', () => {
       buffer: Buffer.from(pdfBytes),
     })
 
-    // File card replaces the dropzone after a successful round-trip.
-    // This confirms: (a) the dropzone accepts the input event,
-    // (b) the upload endpoint writes cvText back, (c) the file card
-    // component reacts to the new profile state once it refetches.
-    // We deliberately DON'T click "Slutför" — that would trigger a
-    // dashboard redirect chain that belongs in a separate spec.
-    await page.waitForSelector('[data-testid="settings-cv-filecard"]', {
-      state: 'visible',
-      timeout: 20_000,
-    })
-    await expect(page.locator('[data-testid="settings-cv-filecard"]')).toContainText('cv-onboarding.pdf')
+    // Round-84 fix: the onboarding wizard intentionally passes an
+    // EMPTY profile to CVFileUpload (a brand-new user has no saved CV
+    // yet) and does NOT refetch after upload — the file card is
+    // profile-driven (`profile.cvFileName`) and only renders once the
+    // post-onboarding profile load picks the file up. So the upload
+    // contract is verified via the API round-trip instead: the file
+    // must be stored with its extracted text. (Settings, which
+    // refetches via SWR on `onChanged`, shows the card immediately —
+    // covered by cv-magic-bytes.spec.js.)
+    await expect
+      .poll(async () => {
+        const res = await page.request.get('/api/profile')
+        const body = await res.json()
+        const p = body.profile || body
+        return p.cvFileName
+      }, { timeout: 15_000, intervals: [200, 500, 1000] })
+      .toBe('cv-onboarding.pdf')
+    const res = await page.request.get('/api/profile')
+    const body = await res.json()
+    const p = body.profile || body
+    expect(p.cvText || '').toContain('Frontendutvecklare')
   })
 })

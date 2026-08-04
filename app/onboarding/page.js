@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ChevronRight, ChevronLeft, Check } from 'lucide-react'
 import ErrorBoundary from '@/components/ErrorBoundary'
 import CVFileUpload from '@/components/CVFileUpload'
+import IndustryFieldsForm from '@/components/IndustryFieldsForm'
 import { toast } from 'sonner'
 import { setDemoSessionCookie, hasDemoSessionCookie } from '@/lib/auth-cookie'
 // 2026-08-03 (Round-81/83) — industry taxonomy. INDUSTRIES feeds the
@@ -23,6 +24,9 @@ import { setDemoSessionCookie, hasDemoSessionCookie } from '@/lib/auth-cookie'
 // legacy flat booleans (INDUSTRY_BOOLEAN_KEYS) the extension reads.
 // See lib/field-taxonomy.js (single source of truth).
 import { INDUSTRIES, INDUSTRY_BOOLEAN_KEYS, structuredFieldsFor, industryFieldsToBooleans } from '@/lib/field-taxonomy'
+// Round-84 — structuredFieldsFor is now used by the shared
+// IndustryFieldsForm component; keep the import for hasStructuredAnswer
+// validation below.
 
 // Onboarding step labels — kept above the component so they can be referenced
 // by tests (e.g. tests/e2e/onboarding.spec.js) without unmounting the wizard.
@@ -166,26 +170,25 @@ function buildApiBody(form, user) {
     // `industryFields` carries the complete structured answers (nested
     // per field id) which the server sanitizes against the taxonomy.
     // Round-83 dual-write: the structured answers ALSO map onto the
-    // legacy flat booleans (INDUSTRY_BOOLEAN_KEYS) where a 1:1 mapping
-    // exists, so the pre-Round-83 extension fill + tests stay green
-    // (unanswered keys -> false -> the extension leaves the field
-    // untouched).
+    // legacy flat booleans where a 1:1 mapping exists, so the
+    // pre-Round-83 extension fill + tests stay green (unanswered keys
+    // -> false -> the extension leaves the field untouched). Iterate
+    // the DERIVED booleans (industryFieldsToBooleans) rather than
+    // INDUSTRY_BOOLEAN_KEYS so the three mapped keys missing from that
+    // registry (hasForkliftLicense, hasDriversLicense,
+    // hasCustomerExperience) are emitted too — the registry only lists
+    // the Round-81 toggle booleans while STRUCTURED_TO_BOOLEAN maps
+    // every structured answer. False-only (unanswered) keys are
+    // dropped so a partial answer set never force-overwrites a
+    // previously saved true back to false.
     industry: form.industry || '',
     industryFields: form.industry ? (form.industryFields || {}) : {},
     ...Object.fromEntries(
-      INDUSTRY_BOOLEAN_KEYS.map((k) => [k, industryFieldsToBooleans(form.industry, form.industryFields || {})[k] === true]),
+      Object.entries(industryFieldsToBooleans(form.industry, form.industryFields || {}))
+        .map(([k, v]) => [k, Boolean(v) === true]),
     ),
   }
 }
-
-/** testid slug — stable lowercase alnum slug for option testids
- *  ("Mindre än 1 år" → "mindre-an-1-ar"). Kept in the component
- *  file so the E2E spec can reference the same contract. */
-function testidSlug(s) {
-  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'x'
-}
-
-
 
 // NOTE: a `mergeProfileWithUser` helper used to live here but was dead code
 // (it was added speculatively as a future hook). The dashboard has its own
@@ -446,10 +449,28 @@ export default function OnboardingPage() {
               <Label>Bransch (välj den som passar din profil)</Label>
               <Select
                 value={formData.industry}
-                onValueChange={(v) => updateField('industry', v)}
-                data-testid="onboarding-industry"
+                onValueChange={(v) => {
+                  // Round-84 — wipe stale structured answers on industry
+                  // change (mirrors the settings page's
+                  // handleIndustryChange). Shared-key answers (e.g.
+                  // shift_work exists in lager/restaurang/industri) must
+                  // never leak from the previous industry into the new
+                  // one's question set — the server's stale-wipe guard
+                  // only covers profile-update patches that change the
+                  // industry WITHOUT carrying industryFields; the
+                  // onboarding POST always carries them, so the wipe
+                  // must happen here.
+                  updateField('industry', v)
+                  updateField('industryFields', {})
+                }}
               >
-                <SelectTrigger><SelectValue placeholder="Välj bransch" /></SelectTrigger>
+                {/* Round-84 fix: data-testid must sit on the TRIGGER —
+                    shadcn's <Select> root is a Radix context provider
+                    that renders no DOM node, so a testid there was
+                    invisible to getByTestId (the onboarding-industry
+                    spec could never click it). Mirrors the settings
+                    page + field-level *-trigger testids. */}
+                <SelectTrigger data-testid="onboarding-industry"><SelectValue placeholder="Välj bransch" /></SelectTrigger>
                 <SelectContent>
                   {INDUSTRIES.map((ind) => (
                     <SelectItem key={ind.id} value={ind.id} data-testid={`onboarding-industry-${ind.id}`}>{ind.label}</SelectItem>
@@ -468,77 +489,15 @@ export default function OnboardingPage() {
                 formData.industryFields[id] (string | array). Required
                 fields gate "Nästa" (see hasStructuredAnswer). */}
             {formData.industry && (
-              <div className="space-y-4 border-t border-dashed border-slate-200 pt-4" data-testid="onboarding-industry-fields">
-                <Label className="text-sm font-semibold text-slate-800">
-                  Frågor för {INDUSTRIES.find((i) => i.id === formData.industry)?.label || formData.industry}
-                </Label>
-                {structuredFieldsFor(formData.industry).map((f) => {
-                  const val = formData.industryFields?.[f.id]
-                  if (f.type === 'multiselect') {
-                    return (
-                      <div key={f.id} data-testid={`onboarding-industry-field-${f.id}`}>
-                        <Label className="text-sm text-slate-700">{f.label}</Label>
-                        <div className="grid grid-cols-2 gap-2 mt-1.5">
-                          {(f.options || []).map((opt) => {
-                            const isChecked = Array.isArray(val) && val.includes(opt)
-                            return (
-                              <label
-                                key={opt}
-                                className="flex items-center gap-2 text-sm text-slate-700 px-2.5 py-1.5 rounded-md border border-slate-200 hover:border-slate-300 hover:bg-slate-50 cursor-pointer transition-colors"
-                              >
-                                <Checkbox
-                                  checked={isChecked}
-                                  onCheckedChange={() => toggleIndustryMulti(f.id, opt)}
-                                  data-testid={`onboarding-industry-field-${f.id}-opt-${testidSlug(opt)}`}
-                                />
-                                <span className="text-xs">{opt}</span>
-                              </label>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )
-                  }
-                  if (f.type === 'select') {
-                    return (
-                      <div key={f.id} data-testid={`onboarding-industry-field-${f.id}`}>
-                        <Label className="text-sm text-slate-700">{f.label}</Label>
-                        <Select
-                          value={typeof val === 'string' ? val : ''}
-                          onValueChange={(v) => setIndustryAnswer(f.id, v)}
-                        >
-                          <SelectTrigger data-testid={`onboarding-industry-field-${f.id}-trigger`}>
-                            <SelectValue placeholder="Välj…" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {(f.options || []).map((opt) => (
-                              <SelectItem
-                                key={opt}
-                                value={opt}
-                                data-testid={`onboarding-industry-field-${f.id}-opt-${testidSlug(opt)}`}
-                              >
-                                {opt}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )
-                  }
-                  // text / url — plain input
-                  return (
-                    <div key={f.id}>
-                      <Label className="text-sm text-slate-700">{f.label}</Label>
-                      <Input
-                        type={f.type === 'url' ? 'url' : 'text'}
-                        value={typeof val === 'string' ? val : ''}
-                        onChange={(e) => setIndustryAnswer(f.id, e.target.value)}
-                        data-testid={`onboarding-industry-field-${f.id}`}
-                      />
-                    </div>
-                  )
-                })}
-              </div>
+              <IndustryFieldsForm
+                industry={formData.industry}
+                value={formData.industryFields || {}}
+                onChange={setIndustryAnswer}
+                onToggleMulti={toggleIndustryMulti}
+                testidPrefix="onboarding-industry-field"
+                wrapperTestid="onboarding-industry-fields"
+                heading={`Frågor för ${INDUSTRIES.find((i) => i.id === formData.industry)?.label || formData.industry}`}
+              />
             )}
             <div>
               <Label>Önskade orter (separera med komma)</Label>

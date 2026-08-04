@@ -108,21 +108,33 @@ test.describe('Dashboard: env-aware URL persistence on connect', () => {
           message: 'dashboard.connectExtension should fire BOTH JOBBPILOTEN_SET_DASHBOARD_URL AND JOBBPILOTEN_AUTH_SYNC',
         },
       )
-      .toEqual({ total: expect.any(Number), url: 1, auth: 1 })
+      // Round-84 fix: the dashboard's auto-sync effect (BUG A fix —
+      // see dashboard-auto-sync.spec.js, added AFTER this spec)
+      // fires connectExtension() — which posts BOTH messages — as
+      // soon as the extension flag flips in step 2. The manual click
+      // then posts a second pair, so the settled contract is
+      // auto-sync (url:1, auth:1) + click (url:1, auth:1) = 2+2.
+      // Exactly one auto-sync fire is guaranteed by
+      // autoSyncAttemptedRef, so the count is deterministic.
+      .toEqual({ total: expect.any(Number), url: 2, auth: 2 })
 
     // 6. Snapshot the captured messages now that both have fired.
     const messages = await page.evaluate(() => window.__capturedPostMessages || [])
     const urlMessages  = messages.filter((m) => m.type === 'JOBBPILOTEN_SET_DASHBOARD_URL')
     const authMessages = messages.filter((m) => m.type === 'JOBBPILOTEN_AUTH_SYNC')
 
-    // 7. SET_DASHBOARD_URL asserts:
-    //   • exactly one fire (idempotent — no double-click here)
+    // 7. SET_DASHBOARD_URL asserts. Round-84 fix: the auto-sync effect
+    //    (BUG A fix, dashboard-auto-sync.spec.js) ALSO posts a full
+    //    connectExtension — including SET_DASHBOARD_URL — when the
+    //    extension flag flips, so there are 2 fires (auto-sync + click).
+    //   • at least one fire; the LAST message is the manual click's
+    //     (fires after the auto-sync) — same payload shape either way
     //   • payload.url is a non-empty string equal to window.location.origin
     //   • targetOrigin (postMessage's 2nd arg) is the same origin
     //     — the content-script listener accepts only same-origin posts,
     //     so passing anything else would silently swallow the message.
-    expect(urlMessages).toHaveLength(1)
-    const setUrlMsg = urlMessages[0]
+    expect(urlMessages.length).toBeGreaterThanOrEqual(1)
+    const setUrlMsg = urlMessages[urlMessages.length - 1]
     expect(setUrlMsg.payload).toBeTruthy()
     expect(typeof setUrlMsg.payload.url).toBe('string')
     expect(setUrlMsg.payload.url.length).toBeGreaterThan(0)
@@ -130,12 +142,12 @@ test.describe('Dashboard: env-aware URL persistence on connect', () => {
     expect(setUrlMsg.targetOrigin).toBe(expectedOrigin)
 
     // 8. AUTH_SYNC asserts (companion contract):
-    //   • exactly one fire
+    //   • at least one fire; LAST message asserted (same shape as above)
     //   • payload carries token + profile
     //   • payload.baseUrl + payload.allowedOrigins are populated so
     //     the popup's fetch() can resolve without Tier-3 build-config.
-    expect(authMessages).toHaveLength(1)
-    const authMsg = authMessages[0]
+    expect(authMessages.length).toBeGreaterThanOrEqual(1)
+    const authMsg = authMessages[authMessages.length - 1]
     expect(authMsg.payload).toBeTruthy()
     expect(typeof authMsg.payload.token).toBe('string')
     expect(authMsg.payload.token.length).toBeGreaterThan(0)

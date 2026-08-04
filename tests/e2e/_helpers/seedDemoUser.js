@@ -210,21 +210,45 @@ export async function seedDemoUser(context) {
   // global demo user).
   const fullPayload = buildDemoProfilePayload()
 
-  try {
-    const profileRes = await context.request.post('/api/profile', {
-      headers: { 'Content-Type': 'application/json' },
-      data: fullPayload,
-    })
-    if (!profileRes.ok()) {
-      const msg = `[seedDemoUser] seed POST /api/profile returned ${profileRes.status()} — continuing without seeded profile. Likely causes: (a) catch-all route regression at app/api/[[...path]]/route.js removing the doc-merge loop; (b) Mongo unreachable; (c) auth cookie missing per-worker DEMO_CLERK_ID.`
-      if (isStrict()) throw new Error(msg)
-      console.warn(msg)
+  // Round-84.1 — transient network-error retry. Under full-suite load
+  // (2 workers hammering the prod server), a seed POST can hit a stale
+  // keep-alive socket and die with `read ECONNRESET` before the server
+  // ever sees the request (observed consistently on cv-extract-review
+  // in full-suite runs while the same spec passes alone). These are
+  // NETWORK errors, not app errors — the server was never hit, so the
+  // app is fine and the seed simply needs another attempt. Only
+  // retried for connection-level failures (ECONNRESET / ECONNREFUSED /
+  // ETIMEDOUT / socket hang-up); HTTP status responses still go
+  // straight to the strict throw / warn-and-continue path below.
+  const RETRYABLE_NET_ERRORS = /ECONNRESET|ECONNREFUSED|ETIMEDOUT|socket hang up|fetch failed/i
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const profileRes = await context.request.post('/api/profile', {
+        headers: { 'Content-Type': 'application/json' },
+        data: fullPayload,
+      })
+      if (!profileRes.ok()) {
+        const msg = `[seedDemoUser] seed POST /api/profile returned ${profileRes.status()} — continuing without seeded profile. Likely causes: (a) catch-all route regression at app/api/[[...path]]/route.js removing the doc-merge loop; (b) Mongo unreachable; (c) auth cookie missing per-worker DEMO_CLERK_ID.`
+        if (isStrict()) throw new Error(msg)
+        console.warn(msg)
+      }
+      break
+    } catch (e) {
+      const msg = String(e?.message || e)
+      // Retry once for a connection-level failure; anything else
+      // (e.g. an assertion-style error from a non-ok status in
+      // strict mode) propagates immediately.
+      if (attempt === 0 && RETRYABLE_NET_ERRORS.test(msg)) {
+        console.warn(`[seedDemoUser] seed POST /api/profile network error (attempt ${attempt + 1}): ${msg} — retrying`)
+        await new Promise((r) => setTimeout(r, 500))
+        continue
+      }
+      if (isStrict()) throw e
+      console.warn(
+        `[seedDemoUser] seed POST /api/profile threw: ${msg} — continuing without seeded profile`,
+      )
+      break
     }
-  } catch (e) {
-    if (isStrict()) throw e
-    console.warn(
-      `[seedDemoUser] seed POST /api/profile threw: ${e?.message || String(e)} — continuing without seeded profile`,
-    )
   }
 
   // 2. Defensive post-seed verify. A future regression that drops

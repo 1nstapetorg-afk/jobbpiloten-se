@@ -1168,4 +1168,82 @@ popup + content storage-key literals and the 9-industry key set).
 - New vm-locked matcher tests (extension-fill-vm.test.mjs) pin the
   single-keyword label matching + the per-type eligibility gate.
 
+---
+
+## 14. Round-84 — Settings industry form + Tier-3 rare-field answers (2026-08-03)
+
+### What changed
+- **Settings page now has the complete structured industry form**
+  (`app/settings/page.js`) — same components as onboarding via the new
+  shared `components/IndustryFieldsForm.jsx` (extracted so both
+  surfaces render identically: shadcn Selects, multiselect chips,
+  inputs, `testidPrefix` prop). Universal fields show above; industry
+  selector dropdown below; on change `handleIndustryChange` wipes
+  stale `industryFields` (Round-84) so shared-key answers never leak
+  into the new industry's question set. "Spara ändringar" POSTs the
+  full payload to /api/profile-update (legacy boolean + nested
+  `industryFields` + everything else). The settings boolean toggles
+  from before Round-81 are still present for the legacy keys.
+- **Onboarding industry switch wipes too** — the step-0 selector now
+  calls `updateField('industry', v)` + `updateField('industryFields',
+  {})` (matches settings). The server's stale-wipe guard only covers
+  profile-update patches that change `industry` WITHOUT a new
+  `industryFields` payload; onboarding always sends one, so the wipe
+  must happen client-side.
+- **Tier-3 rare-field answers (rareFields)** — the popup's Tier-3
+  prompt now renders per-detected-rare-field answer rows + a
+  "Spara svar för framtida ansökningar" checkbox. `saveTier3Answers()`
+  POSTs `{ rareFields }` to /api/profile-update (only checked fields
+  with a non-empty value; unchecked behaves like Förstått).
+- **Autofill-on-revisit** — `fillRareFields(profile, handledBooleanGroups)`
+  in content.js runs after the industry fill, label-matches host
+  inputs against `profile.rareFields` (canonical id → label via the
+  bundled `RARE_FIELDS` registry) and fills them; fields already
+  saved are filtered out of the popup prompt (no re-nag).
+- **API** — profile-update ALLOW list + POST /api/profile conditional
+  merge for `rareFields`, both sanitized via `sanitizeRareFields()`
+  (unknown ids dropped, non-string rejected, 500-char cap, empty
+  result deletes the key). The `RARE_FIELDS` registry lives in
+  `lib/field-taxonomy.js` (bundled mirror in
+  `extension/lib/field-taxonomy.js`, parity-locked).
+- **Extension v0.3.3** — popup + content + manifest bumped.
+- **pdfjs-dist externalized** — `next.config.js`
+  `serverExternalPackages` now includes `pdfjs-dist` (alongside
+  mongodb + @napi-rs/canvas). Webpack-bundling pdfjs broke
+  `getTextContent()` in the prod bundle (base-14 font decode aborted
+  → UNSUPPORTED_PDF_FORMAT on valid pdf-lib fixtures); externalized,
+  it runs native and extracts fine. This is the REAL fix behind the
+  green CV E2E specs.
+
+### E2E robustness fixes (all test-side, no app behaviour change)
+- **seedDemoUser retry-once** — transient `ECONNRESET`/`ECONNREFUSED`/
+  `ETIMEDOUT`/socket-hang-up on the seed POST retried once (500 ms)
+  before the strict-throw path. Safe against double-seed because
+  /api/profile is a doc-merge and `seedApplications()` is gated by
+  the `existingApps === 0` one-shot check server-side.
+- **dashboard-email-source `.first()`** — the per-test clerkId is
+  deterministic across runs (worker + title hash), so repeated
+  full-suite runs against persistent dev Mongo accumulate email rows
+  for the same test. `.first()` keeps the contract while tolerating
+  leftovers (CI fresh-DB behaviour unchanged).
+- **CV fixtures draw ≥50 chars** — 4 `makeTextPdf` copies extended
+  so the TINY_PDF gate (<8 KB + <50 chars) no longer rejects them.
+- **Stale contracts updated** — cv-magic-bytes/all-issues-smoke/
+  settings-cv-upload image-only expectations → the Round-58 TINY_PDF
+  400; invalid-extension copy → the 2026-08-02 message; the report
+  PDF assertion now parses with pdfjs (not pdf-parse); auto-sync +
+  env-aware dashboard specs updated for the auto-sync double-fire
+  (2+2 is the correct contract); extension-auth-handshake popup
+  ordering (newPage → waitForEvent) + init-script removal semantics.
+- `.gitignore` — `playwright-report/` added.
+
+### Testing
+- `yarn test:unit` — **1265 tests (1262 pass, 3 skipped, 0 fail)**.
+- E2E — **83/83 pass** (`npx playwright test tests/e2e/`, fresh prod
+  build, workers=2). One transient ECONNRESET (cv-extract-review
+  seed) fixed by the retry; re-verified green across the full suite.
+- Extension lints green: `validate:extension` (v0.3.3),
+  `lint:await-async`, `lint:field-patterns` (73 FIELD_PATTERNS /
+  70 profileKeys).
+
 *End of handoff. Good luck.*

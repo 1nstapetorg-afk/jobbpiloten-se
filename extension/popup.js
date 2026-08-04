@@ -129,7 +129,7 @@ const STORAGE_KEYS = {
   errors: 'jobbpiloten_errors',
 }
 const BUILD_CONFIG_FILE = 'build-config.json'
-const VERSION = '0.3.2'
+const VERSION = '0.3.3'
 
 // Round-52 / Issue 1 — Mejlutkast mode + heartbeat thresholds.
 const ACTIVE_MODE_FORMULAR = 'formular'
@@ -616,7 +616,7 @@ async function setStatus({ connected, profile, detected, error }) {
     renderUniversalFields(profile)
     renderIndustryPanel(profile)
     renderDetectedIndustry()
-    renderTier3Prompt()
+    renderTier3Prompt(profile)
   } else {
     dot.style.background = '#f59e0b'
     dot.style.boxShadow = '0 0 0 4px rgba(245,158,11,0.18)'
@@ -781,16 +781,32 @@ async function renderDetectedIndustry() {
   }
 }
 
-// ---- Round-82 — Tier 3 prompt-once panel ----
+// ---- Round-82/84 — Tier 3 prompt-once panel + manual-answer capture ----
 //
 // content.js's detectTier3Fields() writes `jobbpiloten_tier3Seen` as
-// an array of rare-field labels found on the page. The popup prompts
-// the user ONCE per page URL (dismissal is recorded under
-// `jobbpiloten_tier3Dismissed`) so a rare job-specific question never
-// nags repeatedly while the user is on the same job ad.
-async function renderTier3Prompt() {
+// an array of `{ id, label }` objects (canonical rare-field id +
+// label; Round-84 — older builds wrote plain label strings, handled
+// by normaliseTier3Seen below). The popup prompts the user ONCE per
+// page URL (dismissal is recorded under `jobbpiloten_tier3Dismissed`).
+// Round-84 adds manual-answer capture: one text input per detected
+// field; when the "Spara svar för framtida ansökningar" checkbox is
+// checked, the answers are POSTed to /api/profile-update under
+// `rareFields: { [id]: answer }` so the extension autofills the
+// question on future pages instead of prompting again. Fields that
+// ALREADY have a saved rareFields answer are filtered out (no
+// re-prompt).
+function normaliseTier3Seen(seen) {
+  if (!Array.isArray(seen)) return []
+  return seen
+    .map((s) => (typeof s === 'string' ? { id: s, label: s } : s))
+    .filter((s) => s && typeof s === 'object' && s.id && s.label)
+}
+
+async function renderTier3Prompt(profile) {
   const section = $('jp-tier3')
   const textEl = $('jp-tier3-text')
+  const answersBox = $('jp-tier3-answers')
+  const saveCheck = $('jp-tier3-save-check')
   if (!section || !textEl) return
   try {
     const data = await safeStorageGet([
@@ -798,27 +814,130 @@ async function renderTier3Prompt() {
       STORAGE_KEYS.tier3Dismissed,
       STORAGE_KEYS.pageIndustry,
     ])
-    const seen = data && Array.isArray(data[STORAGE_KEYS.tier3Seen])
-      ? data[STORAGE_KEYS.tier3Seen]
-      : []
+    const seen = normaliseTier3Seen(data && data[STORAGE_KEYS.tier3Seen])
     const dismissedUrl = (data && data[STORAGE_KEYS.tier3Dismissed]) || ''
     // The real job-page URL lives in the pageIndustry payload written
     // by content.js (NOT location.href — that's the popup's own
     // chrome-extension:// URL, constant across pages).
     const pageIndustry = data && data[STORAGE_KEYS.pageIndustry]
     const pageUrl = (pageIndustry && pageIndustry.url) || ''
+    // Round-84 — skip fields the user already answered (saved under
+    // profile.rareFields). Those are autofilled by content.js's
+    // fillRareFields pass instead of being re-prompted.
+    const savedRare = (profile && profile.rareFields && typeof profile.rareFields === 'object')
+      ? profile.rareFields
+      : {}
+    const open = seen.filter((s) => {
+      const v = savedRare[s.id]
+      return !(v != null && String(v).length > 0)
+    })
     // The payload must describe the ACTIVE tab (see activeTabUrl's
     // multi-tab guard) before the prompt-once check can apply.
-    if (seen.length > 0 && pageUrl && pageUrl === (await activeTabUrl()) && dismissedUrl !== pageUrl) {
+    if (open.length > 0 && pageUrl && pageUrl === (await activeTabUrl()) && dismissedUrl !== pageUrl) {
       textEl.textContent =
-        'Den här annonsen frågar om sällsynta fält: ' + seen.join(', ') +
-        '. Svara på dessa manuellt i ansökan eller lägg till dem i din profil i Inställningar.'
+        'Den här annonsen frågar om sällsynta fält: ' + open.map((s) => s.label).join(', ') +
+        '. Svara på dem här — om du bockar i rutan sparas svaren för framtida ansökningar.'
+      // Render one text input per detected field, prefilled with the
+      // saved rareFields answer (when present) so the user can edit
+      // rather than retype.
+      if (answersBox) {
+        answersBox.innerHTML = ''
+        for (const s of open) {
+          const row = document.createElement('div')
+          row.className = 'jp-tier3-answer-row'
+          const label = document.createElement('label')
+          label.className = 'jp-tier3-answer-label'
+          label.textContent = s.label
+          const input = document.createElement('input')
+          input.type = 'text'
+          input.className = 'jp-tier3-answer-input'
+          input.dataset.rareId = s.id
+          input.dataset.testid = 'jp-tier3-answer-' + s.id
+          input.placeholder = 'Ditt svar…'
+          const prev = savedRare[s.id]
+          if (prev != null) input.value = String(prev)
+          row.appendChild(label)
+          row.appendChild(input)
+          answersBox.appendChild(row)
+        }
+      }
+      if (saveCheck) saveCheck.checked = false
       section.hidden = false
     } else {
       section.hidden = true
     }
   } catch (_) {
     section.hidden = true
+  }
+}
+
+// ---- Round-84 — Tier 3 save handler ----
+//
+// Collects the answers typed into the per-field inputs and POSTs them
+// to /api/profile-update under `rareFields` (canonical ids). Only
+// fields with a non-empty answer are sent; only if the
+// "Spara svar för framtida ansökningar" checkbox is checked. On
+// success the local profile is refreshed so the extension + popup
+// immediately treat the fields as answered.
+async function saveTier3Answers() {
+  const answersBox = $('jp-tier3-answers')
+  const saveCheck = $('jp-tier3-save-check')
+  const section = $('jp-tier3')
+  try {
+    const save = saveCheck && saveCheck.checked === true
+    if (!save) {
+      // Checkbox unchecked → behave like Förstått (dismiss only).
+      const pageUrl = await activeTabUrl()
+      if (pageUrl) await chrome.storage.local.set({ [STORAGE_KEYS.tier3Dismissed]: pageUrl })
+      if (section) section.hidden = true
+      return
+    }
+    const rareFields = {}
+    if (answersBox) {
+      for (const input of answersBox.querySelectorAll('.jp-tier3-answer-input')) {
+        const id = input.dataset && input.dataset.rareId
+        const value = String(input.value || '').trim()
+        if (id && value) rareFields[id] = value
+      }
+    }
+    if (Object.keys(rareFields).length === 0) {
+      // Nothing typed — nothing to save; dismiss like Förstått.
+      const pageUrl = await activeTabUrl()
+      if (pageUrl) await chrome.storage.local.set({ [STORAGE_KEYS.tier3Dismissed]: pageUrl })
+      if (section) section.hidden = true
+      return
+    }
+    const { token } = await loadStorage()
+    if (!token) {
+      // No token — can't persist; still dismiss to avoid a nag loop.
+      if (section) section.hidden = true
+      return
+    }
+    const dashboardOrigin = await resolveEnvAuthBaseUrl()
+    const url = dashboardOrigin + '/api/profile-update'
+    await assertOriginAllowed(url)
+    const res = await fetchWithRetry(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + token,
+      },
+      body: JSON.stringify({ rareFields }),
+    })
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}))
+      throw new Error((json && json.error) || ('Servern returnerade ' + res.status))
+    }
+    // Persist the dismissal + refresh the profile so the saved answers
+    // are immediately visible (popup status + content-script autofill).
+    const pageUrl = await activeTabUrl()
+    if (pageUrl) await chrome.storage.local.set({ [STORAGE_KEYS.tier3Dismissed]: pageUrl })
+    await refreshProfile()
+  } catch (e) {
+    console.warn('[jobbpiloten popup] Tier 3 save failed:', e && e.message ? e.message : e)
+    // Dismiss anyway — the user can answer manually; a failed save must
+    // not nag them again on this page.
+    if (section) section.hidden = true
   }
 }
 
@@ -947,6 +1066,16 @@ function setupIndustryPanel() {
       } catch (_) { /* best-effort */ }
       const t3 = $('jp-tier3')
       if (t3) t3.hidden = true
+    })
+  }
+
+  // Round-84 — Tier 3 Spara svar button → saveTier3Answers().
+  const saveBtn = $('jp-tier3-save-btn')
+  if (saveBtn) {
+    saveBtn.addEventListener('click', () => {
+      saveTier3Answers().catch((e) => {
+        console.warn('[jobbpiloten popup] saveTier3Answers threw:', e && e.message ? e.message : e)
+      })
     })
   }
 }

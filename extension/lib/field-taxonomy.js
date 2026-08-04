@@ -229,6 +229,23 @@ const FIELD_TAXONOMY = {
     const s = String(answer).toLowerCase().trim()
     return !['nej', 'ingen', 'inget', 'no', 'none', 'inte', 'pågående'].includes(s)
   },
+  // ---- Round-84 — Tier-3 (rare, job-specific) fields ----
+  //
+  // Mirror of lib/field-taxonomy.js RARE_FIELDS (app side source of
+  // truth). Labels MUST stay byte-identical to content.js
+  // TIER3_KEYWORDS `label` values — the content script matches host
+  // inputs by label keyword and the popup saves answers keyed by id.
+  rareFields: [
+    { id: 'standig_natt', label: 'Ständig natt' },
+    { id: 'standig_kvall', label: 'Ständig kväll' },
+    { id: 'skiftgang', label: 'Skiftgång (2-/3-skift)' },
+    { id: 'alla_tider', label: 'Tillgänglig alla tider' },
+    { id: 'referensperson', label: 'Referensperson' },
+    { id: 'uppsagningstid', label: 'Uppsägningstid' },
+    { id: 'tidigare_arbetsgivare', label: 'Tidigare arbetsgivare' },
+    { id: 'utbildningshistorik', label: 'Utbildningshistorik' },
+    { id: 'verksamhetssystem', label: 'Verksamhetssystem (Combine/Cosmic)' },
+  ],
 }
 
 // Convenience helpers (no global pollution — this file is bundled into

@@ -37,6 +37,9 @@ import {
   sanitizeIndustryFields,
   industryFieldsToBooleans,
   structuredAnswerToBoolean,
+  RARE_FIELDS,
+  RARE_FIELD_LABELS,
+  sanitizeRareFields,
 } from '../../lib/field-taxonomy.js'
 import { ROUND12_BOOLEAN_KEYS } from '../../lib/extension-profile-fields.js'
 
@@ -251,4 +254,23 @@ test('lager structured spot check: truckkörkort + fysiskt arbete + skift with o
   assert.equal(byId.shift_work.required, true, 'skiftarbete is required for lager')
   assert.equal(byId.forklift_types.type, 'multiselect')
   assert.ok(byId.forklift_types.options.includes('D1 - skjutstativtruck'))
+})
+
+test('RARE_FIELDS: 9 canonical ids with unique, byte-stable labels + sanitizer behaviour', () => {
+  assert.equal(RARE_FIELDS.length, 9, 'the rare-field registry must cover the 9 detection rules')
+  const ids = RARE_FIELDS.map((r) => r.id)
+  assert.equal(new Set(ids).size, ids.length, 'rare-field ids must be unique')
+  for (const r of RARE_FIELDS) {
+    assert.equal(typeof r.label, 'string')
+    assert.ok(r.label.length > 0)
+  }
+  // Label↔id mapping helper works for the popup + fill pass.
+  assert.equal(RARE_FIELD_LABELS.uppsagningstid, 'Uppsägningstid')
+  assert.equal(RARE_FIELD_LABELS.referensperson, 'Referensperson')
+  // Sanitizer: drops unknown ids + non-strings + empties; trims + caps.
+  assert.deepEqual(sanitizeRareFields({ bogus: 'x' }), {})
+  assert.deepEqual(sanitizeRareFields({ uppsagningstid: '' }), {})
+  assert.deepEqual(sanitizeRareFields({ uppsagningstid: 7 }), {})
+  assert.deepEqual(sanitizeRareFields({ uppsagningstid: '  2 veckor  ' }), { uppsagningstid: '2 veckor' })
+  assert.equal(sanitizeRareFields({ uppsagningstid: 'x'.repeat(600) }).uppsagningstid.length, 500)
 })

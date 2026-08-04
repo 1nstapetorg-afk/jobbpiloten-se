@@ -704,6 +704,64 @@ html, body {
   text-decoration: underline;
 }
 
+/* Round-84 — Tier 3 manual-answer capture. One labelled text input per
+   detected rare field, a save checkbox, and the Spara/Förstått row.
+   Compact so the popup stays scrollable on small screens. */
+.jp-tier3-answers {
+  margin: 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.jp-tier3-answer-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.jp-tier3-answer-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #78350f;
+}
+.jp-tier3-answer-input {
+  width: 100%;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid #fbbf24;
+  background: #fff;
+  color: #1f2937;
+}
+.jp-tier3-save-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #78350f;
+  cursor: pointer;
+  margin: 4px 0;
+}
+.jp-tier3-save-row input[type='checkbox'] {
+  accent-color: #f59e0b;
+  width: 13px;
+  height: 13px;
+}
+.jp-tier3-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+}
+.jp-tier3-save {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: #f59e0b;
+  color: #fff;
+  border: 1px solid #d97706;
+}
+
   .jp-detected {
     background: #1f2937;
     border-color: #334155;
@@ -741,6 +799,21 @@ html, body {
   }
   .jp-tier3-dismiss {
     color: #fbbf24;
+  }
+  .jp-tier3-answer-label {
+    color: #fde68a;
+  }
+  .jp-tier3-answer-input {
+    background: #111827;
+    color: var(--jp-slate-100);
+    border-color: #92400e;
+  }
+  .jp-tier3-save-row {
+    color: #fde68a;
+  }
+  .jp-tier3-save {
+    background: #d97706;
+    border-color: #92400e;
   }
   .jp-status-line {
     color: var(--jp-slate-100);
