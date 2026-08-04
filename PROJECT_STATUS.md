@@ -592,3 +592,90 @@ Locked by `tests/unit/jobs-location-hard-filter.test.mjs`.
 | **Round-80 final** | **1190** | **+7 files / +11 tests** |
 
 All run via `yarn test:unit` (node --test, ~28s); 0 failures.
+
+---
+
+## Round-84 (2026-08-03) — Settings industry form + Tier-3 rare-field answers
+
+Round-84 closes the industry-taxonomy loop started in Round-81/83:
+/settings now carries the same complete structured industry form as
+onboarding, and the extension's Tier-3 rare-field detection can save
+the user's manual answers so they are autofilled on future pages.
+
+### A. Settings page — complete structured industry form
+
+`app/settings/page.js` renders the shared
+`components/IndustryFieldsForm.jsx` (extracted from onboarding — the
+same shadcn Selects / multiselect chips / inputs render on both
+surfaces via a `testidPrefix` prop). The industry selector's
+`handleIndustryChange` wipes stale `industryFields` on change so
+shared-key answers (e.g. `shift_work` in lager/restaurang/industri)
+never leak into the new industry's question set. "Spara ändringar"
+POSTs the full payload to `/api/profile-update`. The onboarding
+step-0 selector got the same wipe (Round-84) — the server's
+stale-wipe guard only covers profile-update patches that change
+`industry` without a new `industryFields` payload, and onboarding
+always sends one, so the wipe must be client-side.
+
+### B. Tier-3 rare-field answers (`rareFields`)
+
+- **Capture** — the popup's Tier-3 prompt (Round-82) now renders one
+text input per detected rare field + a "Spara svar för framtida
+ansökningar" checkbox. `saveTier3Answers()` POSTs
+`{ rareFields: { [id]: answer } }` to `/api/profile-update` (only
+checked fields with non-empty trimmed values; unchecked behaves like
+Förstått — dismiss only).
+- **Autofill-on-revisit** — `fillRareFields(profile,
+handledBooleanGroups)` in content.js label-matches host inputs
+against `profile.rareFields` (canonical id → label via the bundled
+`RARE_FIELDS` registry), fills text-ish inputs / <select> only
+(never radios/checkboxes), honours the shared `handledBooleanGroups`
+dedup set, and is fail-safe (no-match page adds 0). Fields already
+saved are filtered out of the popup prompt — no re-nag.
+- **API** — `rareFields` added to the profile-update ALLOW list and
+POST /api/profile conditional merge, both sanitized by
+`sanitizeRareFields()` (unknown ids dropped, non-strings rejected,
+500-char cap, empty result deletes the key). `RARE_FIELDS` registry
+in `lib/field-taxonomy.js` + bundled mirror (parity-locked).
+
+### C. pdfjs-dist externalized (real prod-bundle fix)
+
+`next.config.js` `serverExternalPackages` now includes `pdfjs-dist`
+(alongside `mongodb` + `@napi-rs/canvas`). Webpack-bundling pdfjs
+broke `getTextContent()` in the prod server bundle — base-14 font
+decode aborted and every valid pdf-lib fixture returned
+`UNSUPPORTED_PDF_FORMAT`. Externalized, pdfjs runs natively and
+extraction works — this is the fix behind the now-green CV E2E specs.
+
+### D. E2E robustness + stale-contract fixes (test-side only)
+
+- `seedDemoUser` retries once on transient `ECONNRESET` /
+`ECONNREFUSED` / `ETIMEDOUT` / socket-hang-up before the strict-throw
+path. Safe against double-seed: `/api/profile` is a doc-merge and
+`seedApplications()` is gated by the `existingApps === 0` one-shot.
+- `dashboard-email-source` asserts the Mail tag via `.first()` — the
+per-test clerkId (worker + title hash) is deterministic across runs,
+so repeated full-suite runs against persistent dev Mongo accumulate
+email rows for the same test.
+- CV fixtures draw ≥50 chars (the TINY_PDF gate rejects sub-8 KB
+PDFs with <50 extracted chars). Stale contracts updated: image-only
+→ the Round-58 TINY_PDF 400, invalid-extension copy → the 2026-08-02
+message, report-PDF assertion parses with pdfjs (not pdf-parse),
+auto-sync/env-aware dashboard specs accept the auto-sync double-fire
+(2+2 is the correct contract), extension-auth-handshake popup
+ordering (newPage → waitForEvent) + init-script removal semantics.
+- `.gitignore` gains `playwright-report/`.
+
+### E. Net test count
+
+| Round | Tests | Delta |
+|---|---|---|
+| Pre-Round-80 | ~1172 | — |
+| Round-80 | 1190 | +7 files / +11 tests |
+| Round-83 | 1257 | industry taxonomy (structured schema) |
+| **Round-84 final** | **1284** | **+19 tests** (rare-fields vm round-trip) |
+
+E2E: **83/83 pass** (`npx playwright test tests/e2e/`, fresh prod
+build). Extension lints green: `validate:extension` (v0.3.3),
+`lint:await-async`, `lint:field-patterns` (73 FIELD_PATTERNS / 70
+profileKeys).
