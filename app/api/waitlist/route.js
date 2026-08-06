@@ -47,7 +47,55 @@ const WaitlistSchema = z.object({
   email: z.string().trim().min(1).max(EMAIL_MAX).email('Ogiltig e-postadress'),
 });
 
+// ---- Round-91 (P1 #2) — POST rate limit ----
+// /api/waitlist is a PUBLIC write endpoint (the landing form is
+// unauthenticated), which made it the one public write route without
+// abuse protection — every sibling public route (/api/track, the
+// extension/* bearer endpoints) carries a rate limit. A spammer
+// could otherwise fill the `waitlist` collection freely.
+//
+// Mirrors the in-memory IP-bucket pattern from app/api/track/route.js
+// (checkRateLimit + module-scoped Map). ~10 submissions/hour/IP is
+// generous for a landing-page form (a real user submits once) while
+// making bulk signup scripts impractical. The bucket is process-local:
+// acceptable for a soft-launch write endpoint — a future hard launch
+// can swap this for a shared Redis/Upstash limiter behind the same
+// checkRateLimit() call site.
+const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+const RATE_LIMIT_MAX = 10; // ~10 submissions / hour / IP
+const buckets = new Map(); // ip -> [ts]
+
+function checkRateLimit(ip) {
+  const now = Date.now();
+  const arr = buckets.get(ip) || [];
+  const fresh = arr.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+  if (fresh.length >= RATE_LIMIT_MAX) return false;
+  fresh.push(now);
+  buckets.set(ip, fresh);
+  return true;
+}
+
+function getIp(request) {
+  // x-forwarded-for is the canonical Vercel / proxy header. The
+  // first IP in the chain is the client (left-most). Falls back to a
+  // single 'unknown' bucket so the limit stays per-route rather than
+  // per-IP for clients behind stripped proxies.
+  const xff = request.headers.get('x-forwarded-for') || '';
+  return xff.split(',')[0]?.trim() || 'unknown';
+}
+
 export async function POST(request) {
+  // Round-91 (P1 #2) — rate-limit FIRST, before body parsing or any
+  // DB access (cheapest possible rejection for a spammer; mirrors
+  // /api/track's checkRateLimit placement at the top of the handler).
+  const ip = getIp(request);
+  if (!checkRateLimit(ip)) {
+    return NextResponse.json(
+      { ok: false, error: 'För många försök. Försök igen om en stund.' },
+      { status: 429 },
+    );
+  }
+
   let body;
   try {
     body = await request.json();

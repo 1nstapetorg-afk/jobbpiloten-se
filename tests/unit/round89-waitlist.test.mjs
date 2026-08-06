@@ -100,8 +100,17 @@ function makeDbSpy({ upsertedCount = 1, entries = [] } = {}) {
   return { db, calls }
 }
 
-const reqWithBody = (body) => ({ json: async () => body })
-const reqBadJson = { json: async () => { throw new Error('bad body') } }
+// Round-91 (P1 #2) — the route now reads request.headers for the
+// x-forwarded-for IP (rate-limit bucket key). The harness requests
+// carry a minimal headers stub so getIp() never throws.
+const reqWithBody = (body, ip) => ({
+  json: async () => body,
+  headers: { get: (k) => (k === 'x-forwarded-for' ? ip || null : null) },
+})
+const reqBadJson = {
+  json: async () => { throw new Error('bad body') },
+  headers: { get: () => null },
+}
 
 // ---------------------------------------------------------------------------
 // 1. POST valid email → 201 + normalized upsert shape
@@ -295,4 +304,66 @@ test('Round-89 waitlist: route must use $setOnInsert upsert on the waitlist coll
 test('Round-89 waitlist: POST must validate with zod before any DB access', () => {
   assert.match(ROUTE_SRC, /z\.object\(\{\s*email:/, 'schema must validate the email field with zod')
   assert.match(ROUTE_SRC, /safeParse/, 'the route must safeParse (never throw) the payload')
+})
+
+// ---------------------------------------------------------------------------
+// 9. Round-91 (P1 #2) — POST rate limit (in-memory IP bucket)
+// ---------------------------------------------------------------------------
+
+test('Round-91 waitlist: 11th POST from the same IP within the window → 429', async () => {
+  const { db, calls } = makeDbSpy({ upsertedCount: 1 })
+  const { POST } = await buildHarness({ clerkId: null, db })
+
+  // 10 allowed requests all succeed (each is a fresh unique email so
+  // the upsert returns upsertedCount 1 → 201). The 11th within the
+  // same 1-hour window must be rejected BEFORE any DB call.
+  for (let i = 0; i < 10; i++) {
+    const res = await POST(reqWithBody({ email: `rate${i}@example.com` }, '203.0.113.7'))
+    assert.equal(res.status, 201, `request ${i + 1} must be allowed`)
+  }
+
+  const res11 = await POST(reqWithBody({ email: 'rate10@example.com' }, '203.0.113.7'))
+  assert.equal(res11.status, 429)
+  assert.match((await res11.json()).error, /För många försök/)
+
+  // The 429 must not have touched Mongo — exactly 10 updateOne calls
+  // (one per allowed request), zero for the rejected one.
+  assert.equal(calls.length, 10, 'rate-limited request must be rejected before any DB call')
+})
+
+test('Round-91 waitlist: different IPs get independent buckets', async () => {
+  const { db } = makeDbSpy({ upsertedCount: 1 })
+  const { POST } = await buildHarness({ clerkId: null, db })
+
+  // Fill user A's bucket to the limit.
+  for (let i = 0; i < 10; i++) {
+    const res = await POST(reqWithBody({ email: `a${i}@example.com` }, '198.51.100.1'))
+    assert.equal(res.status, 201)
+  }
+  // User B, a different IP, must still be allowed (independent bucket).
+  const resB = await POST(reqWithBody({ email: 'b@example.com' }, '198.51.100.2'))
+  assert.equal(resB.status, 201)
+})
+
+test('Round-91 waitlist: no x-forwarded-for header falls back to the unknown bucket', () => {
+  assert.match(ROUTE_SRC, /\|\|\s*['"]unknown['"]/, 'getIp must fall back to the \'unknown\' bucket when the header is missing')
+})
+
+test('Round-91 waitlist: rate-limit constants mirror the track-route pattern', () => {
+  assert.match(ROUTE_SRC, /RATE_LIMIT_WINDOW_MS\s*=\s*60\s*\*\s*60\s*\*\s*1000/, 'the window must be 1 hour (60*60*1000 ms)')
+  assert.match(ROUTE_SRC, /RATE_LIMIT_MAX\s*=\s*10/, 'the cap must be 10 requests/hour/IP')
+  assert.match(ROUTE_SRC, /const\s+buckets\s*=\s*new\s+Map\(\)/, 'the buckets must be a module-scoped Map')
+  assert.match(ROUTE_SRC, /checkRateLimit\(ip\)/, 'the route must define + call checkRateLimit(ip)')
+  assert.match(ROUTE_SRC, /status:\s*429/, 'the rejection must use HTTP 429')
+})
+
+test('Round-91 waitlist: rate limit runs before body parsing + validation', () => {
+  // The check must sit at the TOP of POST — before request.json() —
+  // so a spammer is rejected without even sending a valid body.
+  const postStart = ROUTE_SRC.indexOf('export async function POST(request)')
+  const postBody = ROUTE_SRC.slice(postStart, postStart + 700)
+  const jsonIdx = postBody.indexOf('request.json()')
+  const rlIdx = postBody.indexOf('checkRateLimit(ip)')
+  assert.ok(rlIdx > -1 && jsonIdx > -1, 'POST must contain both the rate-limit call and request.json()')
+  assert.ok(rlIdx < jsonIdx, 'checkRateLimit must run BEFORE request.json() so the 429 needs no body parse')
 })
