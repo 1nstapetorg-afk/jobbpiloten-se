@@ -40,6 +40,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useUser } from '@/hooks/useAuth'
 import { isClerkConfiguredClient as isClerkConfigured } from '@/lib/clerk-config'
+// Round-88 — demo connect fix. The mint endpoint authenticates via
+// the demoUserId cookie (server-side getDemoUserId); signInDemo must
+// set it directly because DemoAuthProvider's cookie re-bootstrap only
+// runs when Clerk keys are ABSENT (see app/providers.js).
+import { setDemoSessionCookie } from '@/lib/auth-cookie'
 
 // 2026-07-12 — Lazy-load Clerk's SignIn. The /extension-auth page is
 // a small popup window; we only want the (large, JS-heavy) Clerk
@@ -80,6 +85,23 @@ async function signInDemo() {
       createdAt: new Date().toISOString(),
     }
     localStorage.setItem('demoUser', JSON.stringify(demoUser))
+    // Round-88 — demo connect fix (Clerk-configured dev/staging).
+    // Previously this only wrote localStorage:
+    //   • The SERVER authenticates POST /api/extension/token via the
+    //     demoUserId cookie (lib/auth.js getDemoUserId) — without the
+    //     cookie the mint 401'd and "Anslut till profil" failed.
+    //   • DemoAuthProvider re-bootstraps the cookie ONLY when Clerk
+    //     keys are absent, so a Clerk-configured non-production env
+    //     never got one. Writing the cookie here (30-day TTL via the
+    //     shared helper) matches the Round-85 server-side demo
+    //     fallback: non-production accepts the demo identity even
+    //     with Clerk configured.
+    setDemoSessionCookie(demoUser.id)
+    // Force-demo flag consumed by hooks/useAuth.js (non-production
+    // only): with Clerk configured but NO Clerk session, the demo
+    // user from localStorage wins so the page can mint. Production
+    // ignores the flag entirely — Clerk remains the only auth.
+    localStorage.setItem('jobbpiloten_forceDemo', '1')
   } catch (_) {
     // Older browsers without localStorage — fall through, the
     // and user can refresh manually.
@@ -307,10 +329,19 @@ export default function ExtensionAuthPage() {
       return
     }
     if (user) {
-      console.info('[extension-auth] step b: signed in — minting token')
+      console.info('[extension-auth] step b: signed in — minting token', {
+        clerkConfigured: isClerkConfigured(),
+      })
       mintAndDeliver()
     } else {
-      console.info('[extension-auth] step b: not signed in — rendering SignIn widget')
+      // Round-88 — log WHY the page lands on SIGN_IN so a tester can
+      // tell a Clerk-widget-only env (keys configured) from pure demo
+      // mode without opening the network tab.
+      console.info('[extension-auth] step b: not signed in — rendering SignIn widget', {
+        clerkConfigured: isClerkConfigured(),
+        nodeEnv: process.env.NODE_ENV,
+        demoButtonVisible: !isClerkConfigured() || process.env.NODE_ENV !== 'production',
+      })
       setPhase(PHASE.SIGN_IN)
     }
   }, [isLoaded, user, mintAndDeliver])
@@ -439,6 +470,17 @@ export default function ExtensionAuthPage() {
  * is the soft-launch shortcut for friends-&-family testers.
  */
 function SignInBlock({ onDemoSignIn }) {
+  // Round-88 — demo connect fix (Clerk-configured non-production).
+  // Round-85 made the SERVER accept the demo identity in any
+  // non-production deploy even when Clerk keys are set (lib/auth.js
+  // demo fallback); the page here was the client-side gap — with
+  // Clerk keys inlined it rendered ONLY the Clerk widget, so a
+  // tester without a Clerk account could never complete
+  // "Anslut till profil". `showDemo` mirrors the server model:
+  // production stays strict Clerk-only; every other env also offers
+  // the soft-launch demo button.
+  const showDemo = !isClerkConfigured() || process.env.NODE_ENV !== 'production'
+
   // Clerk mode — render the inline widget so the user completes
   // auth IN this same window. The SignIn component's
   // `forceRedirectUrl` brings them back to /extension-auth where
@@ -456,6 +498,16 @@ function SignInBlock({ onDemoSignIn }) {
             signInForceRedirectUrl="/extension-auth"
           />
         </div>
+        {showDemo && (
+          <button
+            type="button"
+            className="ea-demo-btn"
+            onClick={onDemoSignIn}
+            data-testid="ea-demo-signin-btn"
+          >
+            Logga in som demo-användare
+          </button>
+        )}
       </div>
     )
   }

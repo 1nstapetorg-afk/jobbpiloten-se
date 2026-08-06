@@ -779,6 +779,17 @@ async function writeStorage({ token, profile }) {
 
 async function handleAuthSync(payload) {
   if (!payload || typeof payload !== 'object') return
+  // Round-88 — auth-sync receipt log (devtools trace). A tester who
+  // clicks "Anslut till profil" and sees "Inte ansluten" can open the
+  // auth window's devtools and confirm this line fired — proving the
+  // content-script bridge (Path 2 of the handshake) received the
+  // bundle. Token is NEVER logged — only its presence + shape.
+  console.info('[JobbPiloten ext] received auth-sync', {
+    hasToken: !!payload.token,
+    tokenShape: typeof payload.token === 'string' && payload.token.length,
+    profileKeys: payload.profile && typeof payload.profile === 'object' ? Object.keys(payload.profile).length : 0,
+    source: payload.source || 'dashboard',
+  })
   // SECURITY: ignore payload.baseUrl / payload.allowedOrigins.
   // A malicious host page can fire postMessage with attacker-controlled
   // values; if we persisted them, the popup's next refresh would

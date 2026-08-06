@@ -1314,9 +1314,14 @@ function setupAuthHandshakeReceiver() {
   // null and the page falls back to a wildcard targetOrigin broadcast
   // — we still validate origin on receive so neither side has to
   // coordinate the target explicitly.
+  console.info('[jobbpiloten popup] auth-handshake receiver mounted (Round-88 trace)')
   window.addEventListener('message', (ev) => {
     if (!ev || !ev.data || typeof ev.data !== 'object') return
     if (ev.data.type !== HANDSHAKE_TYPE) return
+    console.info('[jobbpiloten popup] handshake received', {
+      origin: (ev.origin || '').slice(0, 60),
+      ok: ev.data.ok === true,
+    })
     handleAuthHandshake(ev).catch((e) => {
       console.warn('[jobbpiloten popup] handshake handler threw:', e?.message || e)
     })

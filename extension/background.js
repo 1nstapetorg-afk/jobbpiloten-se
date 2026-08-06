@@ -54,6 +54,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'JOBBPILOTEN_BROADCAST_AUTH') {
     ;(async () => {
       const tabs = await chrome.tabs.query({})
+      let delivered = 0
       for (const tab of tabs) {
         if (!tab.id) continue
         try {
@@ -61,12 +62,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             type: 'JOBBPILOTEN_AUTH_SYNC',
             payload: message.payload,
           })
+          delivered += 1
         } catch (_) {
           // Tab without a content script (chrome:// pages, the
           // Chrome Web Store, etc.) — silent skip is fine.
         }
       }
-      sendResponse({ ok: true, broadcastTo: tabs.length })
+      // Round-88 — broadcast log for the connect-flow trace
+      // (dashboard tab → background → content scripts). Token is
+      // never logged — only counts + source.
+      console.info('[jobbpiloten bg] broadcast auth-sync', {
+        tabs: tabs.length,
+        delivered,
+        source: message.payload?.source || 'dashboard',
+      })
+      sendResponse({ ok: true, broadcastTo: tabs.length, delivered })
     })()
     return true
   }
