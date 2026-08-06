@@ -1011,10 +1011,18 @@ Execution happens in this batch — this section is the persisted plan.
   `${source}-${id}` composite keys, slice(3), jobs-load-more-hint
   guard). Split pinned by
   `tests/unit/round88-dashboard-split.test.mjs`.
-- [ ] **#9 Cleanup of legacy files + `.gitignore` entries** — not
-  started.
-- [ ] **#10 Doc correction: native `mongodb` driver (not mongoose)**
-  — not started.
+- [x] **#9 Cleanup of legacy files + `.gitignore` entries** —
+  completed in Round-89 (T4): no `.bak-final`/backup/
+  `last_response.txt` files existed; `.gitignore` now covers
+  `*.bak-final`, `*.bak`, `jobbpiloten-complete-backup.zip`,
+  `last_response.txt`.
+- [x] **#10 Doc correction: native `mongodb` driver (not mongoose)**
+  — completed in Round-90: re-verified zero `mongoose` imports in
+  `app/` + `lib/`, zero in `package.json`; the only stale reference
+  was a test title in `tests/unit/route-precedence.test.mjs`
+  ("Mongo/Mongoose compat") → renamed to "native mongodb driver
+  compat". Repo docs (HANDOFF §1/§4, PROJECT_STATUS Tech Stack)
+  already say "native `mongodb` driver / NO Mongoose".
 
 **Net test count:** unit suite **1370 pass / 0 fail / 3 skipped**
 (+9 Stripe webhook contract tests, +1 updated Round-80 lock, +4
@@ -1099,3 +1107,34 @@ Plausible tags.
 
 **Net test count:** unit suite **1381 pass / 0 fail / 3 skipped**
 (+11 waitlist contract tests; 3 skips are pre-existing env-gated).
+
+---
+
+## Round-90 (2026-08-06, continuation) — P2 #10 doc correction + status sweep
+
+Continuation session after Round-89: closed the last open
+code-level item from the Round-88 batch plan.
+
+- **P2 #10 doc correction landed** — re-verified zero `mongoose`
+  imports in `app/` + `lib/`, zero in `package.json` (native
+  `mongodb` driver is the only DB layer). The only stale reference
+  was a test title in `tests/unit/route-precedence.test.mjs`
+  ("Mongo/Mongoose compat") → renamed to "native mongodb driver
+  compat" (title-only edit, no behavior change). Repo docs
+  (HANDOFF §1/§4, this file's Tech Stack) already said "NO
+  Mongoose" — the item was about the round prompts' wording, now
+  documented as resolved.
+- **Status markers corrected** — Round-88 execution status in this
+  file + HANDOFF §18 now mark P2 #9 (cleanup, actually completed in
+  Round-89 T4) and P2 #10 as done.
+- **Full validation re-run (green):** unit suite **1381 pass / 0 fail
+  / 3 skipped** via `yarn test:unit`; lint:scope /
+  lint:await-async / lint:field-patterns green; validate:extension
+  OK (1 expected warning — 4 `.md` files excluded from packaging).
+
+**All Round-88 batch items are now closed. What remains is
+entirely external/human:** Vercel deploy + cron smoke (P1 #4),
+invites (P1 #5), CWS upload of `dist/extension-1.0.0-cws.zip`
+(P1 #2 tail) + post-review `NEXT_PUBLIC_EXTENSION_PUBLISHED=1` /
+`NEXT_PUBLIC_EXTENSION_STORE_URL` in `.env.production`, and real
+Stripe price IDs in `.env` before checkout works in prod.

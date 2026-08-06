@@ -1413,9 +1413,15 @@ status.
    components → `components/DashboardCards.jsx` ('use client'). All
    test-locked patterns stayed in `app/dashboard/page.js`; split
    pinned by `tests/unit/round88-dashboard-split.test.mjs`.
-9. ⏳ Cleanup of legacy files + `.gitignore` entries — not started.
-10. ⏳ Doc correction: native `mongodb` driver (not mongoose) — not
-   started.
+9. ✅ Cleanup of legacy files + `.gitignore` entries — completed in
+   Round-89 (T4): no `.bak-final`/backup/`last_response.txt` files
+   existed; `.gitignore` now covers `*.bak-final`, `*.bak`,
+   `jobbpiloten-complete-backup.zip`, `last_response.txt`.
+10. ✅ Doc correction: native `mongodb` driver (not mongoose) —
+   completed in Round-90: re-verified zero `mongoose` imports in
+   `app/` + `lib/` (and zero in `package.json`); renamed the stale
+   test title in `tests/unit/route-precedence.test.mjs` to "native
+   mongodb driver compat". Repo docs already said "NO Mongoose".
 
 Unit suite at batch end: **1370 pass / 0 fail / 3 skipped**
 (`yarn test:unit`). Extension lints green: `validate:extension`

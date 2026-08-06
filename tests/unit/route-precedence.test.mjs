@@ -82,7 +82,7 @@ test('app/api/applications/email/route.js must export async function POST', () =
   )
 })
 
-test('app/api/applications/email/route.js must declare nodejs runtime (for Mongo/Mongoose compat)', () => {
+test('app/api/applications/email/route.js must declare nodejs runtime (for native mongodb driver compat)', () => {
   // `runtime = 'nodejs'` is required for the top-level
   // `await import('mongodb')` lazy singleton — the Edge runtime
   // doesn't support Node-built-in modules like `crypto` and
