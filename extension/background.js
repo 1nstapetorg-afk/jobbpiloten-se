@@ -18,9 +18,10 @@
  * lifetime — same as classic scripts.
  */
 
-// Round-93 — synced to manifest `x_jp_version`. The install-time
-// jobbpiloten_version stamp + the popup's stale-install check both
-// read this build tag.
+// Round-93-fix — synced to extension/version.json (the manifest
+// custom key `x_jp_version` was removed — Chrome warns on
+// unrecognized top-level keys). The install-time jobbpiloten_version
+// stamp + the popup's stale-install check both read this build tag.
 const JOBBPILOTEN_EXTENSION_VERSION = '1.0.0-93'
 
 // Atomic fill-rate-limit slot acquisition — content scripts ask

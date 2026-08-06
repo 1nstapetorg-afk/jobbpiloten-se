@@ -130,11 +130,36 @@ const STORAGE_KEYS = {
 }
 const BUILD_CONFIG_FILE = 'build-config.json'
 const VERSION = '1.0.0'
-// Round-93 — human-facing build tag (manifest `x_jp_version`).
-// MUST match extension/manifest.json's `x_jp_version` field AND
-// the /api/extension/version route — locked by
-// tests/unit/round93-version-endpoint.test.mjs.
+// Round-93-fix — human-facing build tag. Originally stored on the
+// manifest as `x_jp_version`, but Chrome warns about unrecognized
+// top-level manifest keys and Chrome Web Store review can reject the
+// listing over them. The tag now lives in extension/version.json
+// (`{ "version": "1.0.0-93" }`) — the SAME file the popup's
+// stale-install check compares against the server, so the bundle
+// self-describes its build. loadBuildVersion() fetches it via
+// chrome.runtime.getURL (works in MV3 extension pages); BUILD_VERSION
+// stays as the synchronous fallback so the footer stamp / update
+// check never depend on an async read completing.
+const BUILD_VERSION_FILE = 'version.json'
 const BUILD_VERSION = '1.0.0-93'
+
+// Round-93-fix — read the build tag from extension/version.json.
+// The file is bundled with the extension (it sits next to
+// build-config.json), so chrome.runtime.getURL resolves it. Returns
+// the BUILD_VERSION constant on any failure so the footer stamp and
+// the update check are never stranded by a missing/corrupt file.
+async function loadBuildVersion() {
+  try {
+    const url = chrome.runtime.getURL(BUILD_VERSION_FILE)
+    const res = await fetch(url, { cache: 'no-cache' })
+    if (!res.ok) return BUILD_VERSION
+    const json = await res.json().catch(() => ({}))
+    const v = String(json && json.version || '').trim()
+    return v || BUILD_VERSION
+  } catch (_) {
+    return BUILD_VERSION
+  }
+}
 
 // Round-52 / Issue 1 — Mejlutkast mode + heartbeat thresholds.
 const ACTIVE_MODE_FORMULAR = 'formular'
@@ -3820,9 +3845,10 @@ function setSettingsStatus(el, msg, kind) {
 // "I reloaded the extension but it still doesn't connect" class of
 // reports — the popup now tells the user the build is stale instead
 // of leaving them to guess.
-function renderFooterVersion() {
+async function renderFooterVersion() {
   const el = $('jp-footer-version')
-  if (el) el.textContent = `v${BUILD_VERSION}`
+  if (!el) return
+  el.textContent = `v${await loadBuildVersion()}`
 }
 
 async function checkForUpdate() {
@@ -3840,7 +3866,11 @@ async function checkForUpdate() {
     if (!res.ok) return
     const json = await res.json().catch(() => ({}))
     const serverVersion = String(json && json.version || '')
-    if (serverVersion && serverVersion !== BUILD_VERSION) {
+    // Round-93-fix — compare against the version.json build tag (the
+    // same source the footer stamp uses), not the manifest key that
+    // Chrome warns about.
+    const buildVersion = await loadBuildVersion()
+    if (serverVersion && serverVersion !== buildVersion) {
       banner.hidden = false
     }
   } catch (_) { /* network off / preview down — banner stays hidden */ }
@@ -3858,8 +3888,9 @@ async function populateDiagnostics() {
   const pre = $('jp-diagnostics-pre')
   if (!pre) return
   const lines = []
-  // 1. Version
-  lines.push(`Version: v${BUILD_VERSION}`)
+  // 1. Version — Round-93-fix: from extension/version.json via
+  // loadBuildVersion() (fallback const), matching the footer stamp.
+  lines.push(`Version: v${await loadBuildVersion()}`)
   // 2. Connection status
   lines.push(`Status: ${connected ? 'Ansluten' : 'Inte ansluten'}`)
   // 3. Resolved dashboard URL

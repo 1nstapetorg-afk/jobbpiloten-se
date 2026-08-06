@@ -3247,10 +3247,12 @@ function startObserver() {
  * (currently: AI-adaptive fills).
  */
 function getExtensionVersion() {
-  // Round-93 — synced to manifest `x_jp_version` (the human-facing
-  // build tag). The dashboard reads this via the
-  // data-jobbpiloten-ext-version attribute for feature gating; the
-  // popup's update-check compares it against /api/extension/version.
+  // Round-93-fix — synced to extension/version.json (the human-facing
+  // build tag; the manifest custom key `x_jp_version` was removed
+  // because Chrome warns on unrecognized top-level keys). The
+  // dashboard reads this via the data-jobbpiloten-ext-version
+  // attribute for feature gating; the popup's update-check compares
+  // it against /api/extension/version.
   return '1.0.0-93'
 }
 

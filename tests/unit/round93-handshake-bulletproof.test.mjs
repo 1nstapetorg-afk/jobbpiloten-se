@@ -6,9 +6,11 @@
 // the postMessage delivery raced the content-script injection).
 //
 // This suite locks the four bulletproofing pillars:
-//   1. VERSION DETECTION — manifest `x_jp_version` + /api/extension/version
-//      endpoint + popup footer stamp + the yellow "Uppdatering
-//      tillgänglig" banner (stale-install detection).
+//   1. VERSION DETECTION — extension/version.json build tag (Round-93-fix:
+//      moved off the manifest custom key `x_jp_version`, which Chrome
+//      warns about) + /api/extension/version endpoint + popup footer
+//      stamp + the yellow "Uppdatering tillgänglig" banner
+//      (stale-install detection).
 //   2. MULTI-PATH DELIVERY — Path B (jp_ext_token cookie fallback),
 //      Path C (2 s storage poll with 30 s timeout), Path D (manual
 //      token paste under Avancerat).
@@ -33,6 +35,7 @@ const CONTENT_JS = fs.readFileSync(path.join(ROOT, 'extension/content.js'), 'utf
 const DASHBOARD_JS = fs.readFileSync(path.join(ROOT, 'app/dashboard/page.js'), 'utf-8')
 const VERSION_ROUTE = fs.readFileSync(path.join(ROOT, 'app/api/extension/version/route.js'), 'utf-8')
 const MANIFEST = JSON.parse(fs.readFileSync(path.join(ROOT, 'extension/manifest.json'), 'utf-8'))
+const VERSION_JSON = JSON.parse(fs.readFileSync(path.join(ROOT, 'extension/version.json'), 'utf-8'))
 
 const XP_VERSION = '1.0.0-93'
 
@@ -40,23 +43,45 @@ const XP_VERSION = '1.0.0-93'
 // 1. Version detection
 // =============================================================================
 
-test('Round-93: manifest.json declares x_jp_version build tag', () => {
-  assert.equal(MANIFEST.x_jp_version, XP_VERSION,
-    'manifest.json must declare "x_jp_version" matching the popup BUILD_VERSION — the popup update-check reads this')
+test('Round-93-fix: manifest.json must NOT declare the custom x_jp_version key', () => {
+  // Chrome warns about unrecognized top-level manifest keys and the
+  // Chrome Web Store review can reject a listing over them — this is
+  // the whole Round-93-fix. If the key ever comes back, the warning
+  // returns with it.
+  assert.equal(MANIFEST.x_jp_version, undefined,
+    'manifest.json must NOT contain "x_jp_version" — custom top-level keys trigger a Chrome warning and CWS can reject the listing (build tag lives in extension/version.json)')
 })
 
-test('Round-93: popup.js BUILD_VERSION matches the manifest x_jp_version', () => {
+test('Round-93-fix: extension/version.json declares the build tag', () => {
+  assert.equal(VERSION_JSON.version, XP_VERSION,
+    'extension/version.json must declare the build tag — the popup footer + update check + /api/extension/version all read it')
+})
+
+test('Round-93-fix: popup.js BUILD_VERSION matches extension/version.json', () => {
   const m = POPUP_JS.match(/const BUILD_VERSION\s*=\s*'([^']+)'/)
   assert.ok(m, 'popup.js must declare `const BUILD_VERSION`')
   assert.equal(m[1], XP_VERSION,
-    'BUILD_VERSION must equal manifest x_jp_version — drift makes the stale-install check always fire')
+    'BUILD_VERSION must equal extension/version.json version — drift makes the stale-install check always fire')
 })
 
-test('Round-93: /api/extension/version reads x_jp_version from manifest.json', () => {
-  assert.ok(VERSION_ROUTE.includes('extension/manifest.json'),
-    'the version route must read extension/manifest.json at runtime (no hard-coded drift source)')
-  assert.ok(VERSION_ROUTE.includes('x_jp_version'),
-    'the route must read the manifest x_jp_version field')
+test('Round-93-fix: popup reads the version from version.json via chrome.runtime.getURL', () => {
+  assert.ok(POPUP_JS.includes("const BUILD_VERSION_FILE = 'version.json'"),
+    'popup.js must declare the version.json filename constant')
+  assert.ok(POPUP_JS.includes('chrome.runtime.getURL(BUILD_VERSION_FILE)'),
+    'loadBuildVersion must resolve version.json via chrome.runtime.getURL (the bundled file next to build-config.json)')
+  assert.ok(POPUP_JS.includes('async function loadBuildVersion()'),
+    'popup.js must define loadBuildVersion()')
+  assert.ok(POPUP_JS.includes('await loadBuildVersion()'),
+    'the footer stamp / update check / diagnostics must await loadBuildVersion()')
+})
+
+test('Round-93-fix: /api/extension/version reads version.json, not the manifest', () => {
+  assert.ok(VERSION_ROUTE.includes('extension/version.json'),
+    'the version route must read extension/version.json at runtime (the build-tag source of truth)')
+  assert.doesNotMatch(VERSION_ROUTE, /readFileSync\(join\(process\.cwd\(\), 'extension\/manifest\.json'\)/,
+    'the route must not read the manifest for the build tag (the manifest custom key is gone)')
+  assert.doesNotMatch(VERSION_ROUTE, /manifest\.x_jp_version/,
+    'the route must not access a manifest.x_jp_version property')
   assert.ok(VERSION_ROUTE.includes('no-store'),
     'the route must set Cache-Control: no-store so a re-installed extension sees the fresh version')
 })
@@ -66,8 +91,11 @@ test('Round-93: popup renders the version stamp in the footer', () => {
     'popup.html must define #jp-footer-version (small gray footer stamp)')
   assert.ok(POPUP_JS.includes('renderFooterVersion()'),
     'popup.js must call renderFooterVersion() at boot')
-  assert.ok(/v\$\{BUILD_VERSION\}/.test(POPUP_JS),
-    'renderFooterVersion must stamp `v${BUILD_VERSION}` into the footer')
+  // Round-93-fix — the stamp now reads the version.json build tag via
+  // loadBuildVersion() (the manifest custom key is gone). The template
+  // is `v${await loadBuildVersion()}`.
+  assert.match(POPUP_JS, /`v\$\{await\s+loadBuildVersion\(\)\}`/,
+    'renderFooterVersion must stamp `v${await loadBuildVersion()}` into the footer')
 })
 
 test('Round-93: popup has the stale-install update banner + checks /api/extension/version', () => {

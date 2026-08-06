@@ -3,7 +3,6 @@
   "name": "__MSG_extName__",
   "short_name": "JobbPiloten",
   "version": "1.0.0",
-  "x_jp_version": "1.0.0-93",
   "description": "__MSG_extDescription__",
   "default_locale": "sv",
   "icons": {
