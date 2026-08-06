@@ -16,6 +16,7 @@ import ErrorBoundary from '@/components/ErrorBoundary'
 import CVFileUpload from '@/components/CVFileUpload'
 import IndustryFieldsForm from '@/components/IndustryFieldsForm'
 import { toast } from 'sonner'
+import { trackPlausible } from '@/lib/analytics'
 import { setDemoSessionCookie, hasDemoSessionCookie } from '@/lib/auth-cookie'
 // 2026-08-03 (Round-81/83) — industry taxonomy. INDUSTRIES feeds the
 // onboarding dropdown; structuredFieldsFor() + industryFieldsToBooleans()
@@ -346,6 +347,17 @@ export default function OnboardingPage() {
       // toast.error below so both branches use the same channel; the
       // previous browser `alert()` was jarring and inconsistent with the
       // rest of the app.
+      // Round-89 — Plausible funnel events. 'sign_up' fires once per
+      // browser (localStorage gate): onboarding completion IS the
+      // sign-up completion in this app (Clerk redirects new accounts
+      // here), so firing it on every profile save would over-count
+      // returning users re-running the wizard. 'onboarding_complete'
+      // fires every time the wizard finishes.
+      if (typeof localStorage !== 'undefined' && !localStorage.getItem('jobbpiloten_signup_fired')) {
+        localStorage.setItem('jobbpiloten_signup_fired', '1')
+        trackPlausible('sign_up')
+      }
+      trackPlausible('onboarding_complete')
       toast.success('Profil skapad — tar dig till dashboarden')
       router.push('/dashboard')
     } catch (err) {

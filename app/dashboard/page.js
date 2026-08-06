@@ -33,6 +33,7 @@ import {
 import { motion } from 'framer-motion'
 import ErrorBoundary from '@/components/ErrorBoundary'
 import { toast } from 'sonner'
+import { trackPlausible } from '@/lib/analytics'
 import { SUPPORT_EMAIL, VAPID_PUBLIC_KEY, EXTENSION_PUBLISHED, EXTENSION_STORE_URL } from '@/lib/siteConfig'
 import { buildBlocketSearchUrl, buildJobSafariSearchUrl, buildLedigaJobbSearchUrl } from '@/lib/jobScraper'
 import { locationsToLänCodes, doesJobMatchUserLocation } from '@/lib/swedishLocations'
@@ -625,6 +626,9 @@ function DashboardContent() {
         // has them empty (e.g. an account created before this fix).
         setPrepProfile(mergeProfileWithUser(profile, user))
         setShowPrep(true)
+        // Round-89 — Plausible funnel event: an AI cover letter was
+        // generated for a job (the apply-now response carries it).
+        trackPlausible('cover_letter_generated')
         setAvailableJobs(prev => prev.filter(j => j.id !== job.id))
       } else {
         toast.error(json.error || 'Oj, något gick fel')
@@ -718,6 +722,9 @@ function DashboardContent() {
         // The "Mark as applied" button transforms to a disabled ✓ state.
         setAppliedSuccess(true)
         toast.success('Ansökan markerad som skickad!')
+        // Round-89 — Plausible funnel event: the user actually sent an
+        // application (mark-applied success).
+        trackPlausible('job_applied')
         await load()
       } else {
         toast.error(json.error || 'Oj, något gick fel')

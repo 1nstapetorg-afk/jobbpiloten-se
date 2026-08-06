@@ -1,5 +1,42 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630">
-  <rect width="1200" height="630" fill="#2563eb"/>
-  <text x="50%" y="45%" text-anchor="middle" fill="white" font-size="80" font-family="Arial, sans-serif" font-weight="bold">JobbPiloten</text>
-  <text x="50%" y="60%" text-anchor="middle" fill="white" font-size="40" font-family="Arial, sans-serif">Låt AI söka jobben åt dig</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#312e81"/>
+      <stop offset="0.5" stop-color="#4338ca"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.82" cy="0.2" r="0.6">
+      <stop offset="0" stop-color="#fbbf24" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#fbbf24" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="logo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fbbf24"/>
+      <stop offset="1" stop-color="#f97316"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <!-- dot-grid texture -->
+  <g fill="#ffffff" fill-opacity="0.05">
+    <circle cx="60" cy="60" r="3"/><circle cx="160" cy="60" r="3"/><circle cx="260" cy="60" r="3"/><circle cx="360" cy="60" r="3"/><circle cx="460" cy="60" r="3"/><circle cx="560" cy="60" r="3"/><circle cx="660" cy="60" r="3"/><circle cx="760" cy="60" r="3"/><circle cx="860" cy="60" r="3"/><circle cx="960" cy="60" r="3"/><circle cx="1060" cy="60" r="3"/><circle cx="1140" cy="60" r="3"/>
+    <circle cx="60" cy="160" r="3"/><circle cx="160" cy="160" r="3"/><circle cx="260" cy="160" r="3"/><circle cx="360" cy="160" r="3"/><circle cx="460" cy="160" r="3"/><circle cx="560" cy="160" r="3"/><circle cx="660" cy="160" r="3"/><circle cx="760" cy="160" r="3"/><circle cx="860" cy="160" r="3"/><circle cx="960" cy="160" r="3"/><circle cx="1060" cy="160" r="3"/><circle cx="1140" cy="160" r="3"/>
+    <circle cx="60" cy="260" r="3"/><circle cx="160" cy="260" r="3"/><circle cx="260" cy="260" r="3"/><circle cx="360" cy="260" r="3"/><circle cx="460" cy="260" r="3"/><circle cx="560" cy="260" r="3"/><circle cx="660" cy="260" r="3"/><circle cx="760" cy="260" r="3"/><circle cx="860" cy="260" r="3"/><circle cx="960" cy="260" r="3"/><circle cx="1060" cy="260" r="3"/><circle cx="1140" cy="260" r="3"/>
+    <circle cx="60" cy="360" r="3"/><circle cx="160" cy="360" r="3"/><circle cx="260" cy="360" r="3"/><circle cx="360" cy="360" r="3"/><circle cx="460" cy="360" r="3"/><circle cx="560" cy="360" r="3"/><circle cx="660" cy="360" r="3"/><circle cx="760" cy="360" r="3"/><circle cx="860" cy="360" r="3"/><circle cx="960" cy="360" r="3"/><circle cx="1060" cy="360" r="3"/><circle cx="1140" cy="360" r="3"/>
+    <circle cx="60" cy="460" r="3"/><circle cx="160" cy="460" r="3"/><circle cx="260" cy="460" r="3"/><circle cx="360" cy="460" r="3"/><circle cx="460" cy="460" r="3"/><circle cx="560" cy="460" r="3"/><circle cx="660" cy="460" r="3"/><circle cx="760" cy="460" r="3"/><circle cx="860" cy="460" r="3"/><circle cx="960" cy="460" r="3"/><circle cx="1060" cy="460" r="3"/><circle cx="1140" cy="460" r="3"/>
+    <circle cx="60" cy="560" r="3"/><circle cx="160" cy="560" r="3"/><circle cx="260" cy="560" r="3"/><circle cx="360" cy="560" r="3"/><circle cx="460" cy="560" r="3"/><circle cx="560" cy="560" r="3"/><circle cx="660" cy="560" r="3"/><circle cx="760" cy="560" r="3"/><circle cx="860" cy="560" r="3"/><circle cx="960" cy="560" r="3"/><circle cx="1060" cy="560" r="3"/><circle cx="1140" cy="560" r="3"/>
+  </g>
+
+  <!-- Logo mark: rounded square + paper-plane -->
+  <g transform="translate(150 150)">
+    <rect width="330" height="330" rx="72" fill="url(#logo)"/>
+    <path d="M247 83 118 212l53 21-36 44 14 14 44-36 21 53 129-129c17-17 14-44-4-62-18-18-45-21-62-4z" fill="#ffffff"/>
+  </g>
+
+  <text x="520" y="245" fill="#ffffff" font-size="96" font-family="Arial, Helvetica, sans-serif" font-weight="bold">JobbPiloten</text>
+  <text x="524" y="330" fill="#c7d2fe" font-size="44" font-family="Arial, Helvetica, sans-serif" font-weight="600">AI-driven jobbsökning</text>
+
+  <line x1="524" y1="375" x2="1050" y2="375" stroke="#818cf8" stroke-width="4" stroke-linecap="round"/>
+  <text x="524" y="430" fill="#e0e7ff" font-size="30" font-family="Arial, Helvetica, sans-serif">Hitta matchande jobb · AI-skrivna personliga brev</text>
+  <text x="524" y="478" fill="#e0e7ff" font-size="30" font-family="Arial, Helvetica, sans-serif">Aktivitetsrapport till Arbetsförmedlingen</text>
 </svg>

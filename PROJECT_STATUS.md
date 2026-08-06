@@ -1022,3 +1022,80 @@ middleware resource-auth locks, +5 dashboard-split locks; the 3
 skips are pre-existing env-gated cases). `next build` compiles
 `/dashboard` with the extracted modules; lint:scope /
 lint:await-async / lint:field-patterns green.
+
+---
+
+## Round-89 (2026-08-06) — Soft-Launch Prep
+
+Soft-launch prep batch: landing SEO + waitlist, health probe, deploy
+prep, and the P2 #9 cleanup.
+
+- **Extension connection (T1) — verified by code trace + tests.** Full
+  flow intact: popup `jp-connect-btn` → `openAuthFlow()` +
+  opens `/dashboard` (env-aware URL) → dashboard mount fires
+  `JOBBPILOTEN_AUTH_SYNC` postMessage with the opaque 90-day token
+  from `POST /api/extension/token` (Clerk/demo session-authorized) →
+  content.js `handleAuthSync` writes profile+token to
+  `chrome.storage.local` (background re-broadcasts cross-origin via
+  `chrome.tabs.sendMessage`) → popup `loadAndPaint` shows the
+  "Ansluten" pill. host_permissions cover `https://jobbpiloten.se/*`
+  + localhost + vercel + github.dev. Bearer-token auth on extension
+  API calls + console handshake logging in place. Locked by
+  `tests/unit/round88-extension-connect-fix.test.mjs` +
+  e2e `extension-auth-handshake.spec.js`. (A live browser click needs
+  Chrome on a workstation.)
+- **Landing SEO (T2A)** — `app/layout.js` metadata: title
+  "JobbPiloten — AI-driven jobbsökning", Swedish description ≤160
+  chars, `alternates.canonical '/'`, OpenGraph (url, siteName,
+  og-image.png 1200×630, locale sv_SE), Twitter
+  summary_large_image, and a `SoftwareApplication` JSON-LD block in
+  `<head>`.
+- **OG image (T2B)** — `public/og-image.svg` redesigned (brand
+  gradient, logo mark, tagline "AI-driven jobbsökning") +
+  `public/og-image.png` rasterized at exactly 1200×630 (sharp).
+- **Waitlist API (T2C)** — `app/api/waitlist/route.js`: POST validates
+  with zod (400 on invalid/non-JSON), normalizes email to lowercase,
+  upserts `{ email, createdAt, source: 'landing' }` via `$setOnInsert`
+  → 201 on `upsertedCount===1`, 409 on duplicate; structured Swedish
+  503 on Mongo getDb/write/read failure (no HTML-500 throws). GET is
+  admin-only (`ADMIN_USER_IDS` allow-list) → newest-first list, `_id`
+  stripped. 11 contract tests in
+  `tests/unit/round89-waitlist.test.mjs` (vm harness, real zod,
+  mocked getDb/resolveClerkId). Landing section with email input +
+  "Få tidig tillgång" button + sonner toasts (`waitlist-section`
+  testids).
+- **Analytics (T2D)** — Plausible script in layout head
+  (`data-domain=jobbpiloten.se`); `lib/analytics.js#trackPlausible`
+  helper; custom events wired: `sign_up` (onboarding complete,
+  localStorage-gated once per browser), `onboarding_complete`,
+  `cover_letter_generated` (prep-modal success),
+  `job_applied` (mark-applied success), `waitlist_signup`.
+- **Deploy prep (T3)** — `next build`: **zero warnings, zero errors**
+  (34.6s). Secret audit: no `NEXT_PUBLIC_*` secret names; client
+  bundle contains only the Clerk SDK's `process.env.CLERK_SECRET_KEY`
+  name string (resolves undefined) — zero real values (gsk_/
+  mongodb+srv/sk_ formats). `app/api/health/route.js`: public GET
+  `{ status, db, groq, timestamp }` — db via Mongo ping, groq via
+  `probeGroqHealth` with a **60s TTL cache + 5s timeout** (review
+  fix: a public endpoint must not burn Groq TPD quota per hit).
+  `.env.template` now documents every required var (ADMIN_USER_IDS,
+  STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_*, CRON_SECRET, CORS_ORIGINS,
+  extension-publish flags, test-only SKIP_LLM_E2E, …). Extension
+  zip rebuilt at `extension-v1.0.0.zip` (29 entries, all version
+  literals 1.0.0).
+- **Cleanup (T4 / P2 #9)** — no `.bak-final`/backup/`last_response.txt`
+  files existed; `.gitignore` now covers `*.bak-final`, `*.bak`,
+  `jobbpiloten-complete-backup.zip`, `last_response.txt`. Lint
+  scripts green (lint:scope / await-async / field-patterns /
+  validate:extension).
+- **Still external:** Vercel deploy + cron verification (P1 #4),
+  invites (P1 #5), CWS upload of the extension zip (P1 #2 tail).
+
+**Live verification (local dev server):** `/api/health` →
+`{"status":"ok","db":true,"groq":true,"timestamp":…}` HTTP 200;
+waitlist POST valid → 201, duplicate → 409, invalid → 400; landing
+HTML carries title/description/canonical/og:/twitter:/JSON-LD/
+Plausible tags.
+
+**Net test count:** unit suite **1381 pass / 0 fail / 3 skipped**
+(+11 waitlist contract tests; 3 skips are pre-existing env-gated).

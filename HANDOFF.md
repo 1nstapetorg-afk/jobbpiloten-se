@@ -1422,4 +1422,39 @@ Unit suite at batch end: **1370 pass / 0 fail / 3 skipped**
 (v1.0.0), `lint:await-async`, `lint:field-patterns`. `next build`
 compiles `/dashboard` with the extracted modules; lint:scope green.
 
+## 19. Round-89 — Soft-Launch Prep (2026-08-06)
+
+Landing SEO + waitlist, public health probe, deploy prep, P2 #9
+cleanup. See `PROJECT_STATUS.md §Round-89` for the full execution
+status. Highlights:
+
+- **Extension connection — VERIFIED** (code trace + tests; live click
+  needs Chrome): popup → `/dashboard` → `POST /api/extension/token`
+  → `JOBBPILOTEN_AUTH_SYNC` postMessage → content.js
+  `handleAuthSync` → `chrome.storage.local` → "Ansluten" pill.
+  host_permissions include `https://jobbpiloten.se/*` + localhost.
+- **SEO** — layout metadata: title "JobbPiloten — AI-driven
+  jobbsökning", SV description, canonical '/', OG + Twitter cards,
+  SoftwareApplication JSON-LD in `<head>`; `public/og-image.png`
+  1200×630 (sharp) + redesigned SVG.
+- **Waitlist** — `app/api/waitlist/route.js` (zod POST → 201/409,
+  admin GET) + 11 vm-harness contract tests
+  (`tests/unit/round89-waitlist.test.mjs`) + landing form section.
+- **Analytics** — Plausible script + `trackPlausible()`; events
+  `sign_up`, `onboarding_complete`, `cover_letter_generated`,
+  `job_applied`, `waitlist_signup`.
+- **Health** — `app/api/health/route.js` public `{ status, db, groq,
+  timestamp }`; probe cached 60s + 5s timeout (no quota burn per hit).
+- **Deploy prep** — `next build` ZERO warnings; client-bundle secret
+  scan clean; `.env.template` fully documented; extension zip rebuilt
+  (v1.0.0).
+- **Cleanup (P2 #9)** — gitignore entries for bak/backup/session files
+  (none existed to delete).
+- **Live checks (dev server):** `/api/health` 200
+  `{db:true,groq:true}`; waitlist 201/409/400; landing OG tags
+  present.
+
+Unit suite at batch end: **1381 pass / 0 fail / 3 skipped**
+(`yarn test:unit`).
+
 *End of handoff. Good luck.*

@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useUser } from '@/hooks/useAuth'
 import dynamic from 'next/dynamic'
-import { trackEventClient } from '@/lib/analytics'
+import { trackEventClient, trackPlausible } from '@/lib/analytics'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
@@ -54,6 +56,9 @@ export default function LandingPage() {
   // no client-side body, so a single useEffect with [] deps is the
   // right pattern (no need to refetch on user state change).
   const [publicStats, setPublicStats] = useState(null)
+  // Round-89 — waitlist form state ('idle' | 'loading' | 'done').
+  const [waitlistEmail, setWaitlistEmail] = useState('')
+  const [waitlistState, setWaitlistState] = useState('idle')
   const { isSignedIn, user } = useUser()
   const router = useRouter()
 
@@ -105,6 +110,39 @@ export default function LandingPage() {
     } catch (e) {
       alert('Fel: ' + e.message)
       setLoadingTier(null)
+    }
+  }
+
+  // Round-89 — waitlist signup. POSTs to /api/waitlist (public route):
+  // 201 = added, 409 = already queued (both land on the success state),
+  // anything else surfaces a Swedish error toast and keeps the form
+  // editable so the visitor can retry.
+  const handleWaitlist = async (e) => {
+    e.preventDefault()
+    const email = waitlistEmail.trim()
+    if (!email) return
+    setWaitlistState('loading')
+    try {
+      const res = await fetch('/api/waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.status === 201) {
+        setWaitlistState('done')
+        trackPlausible('waitlist_signup')
+        toast.success('Du är med! Vi hör av oss när det är din tur.')
+      } else if (res.status === 409) {
+        setWaitlistState('done')
+        toast.success('Du finns redan i kön — vi hör av oss snart.')
+      } else {
+        setWaitlistState('idle')
+        toast.error(data?.error || 'Något gick fel — försök igen.')
+      }
+    } catch (err) {
+      setWaitlistState('idle')
+      toast.error('Kunde inte nå servern — försök igen.')
     }
   }
 
@@ -741,6 +779,33 @@ export default function LandingPage() {
               {primaryCtaLabel} <ArrowRight className="ml-2 w-4 h-4" />
             </Button>
           </Link>
+        </div>
+      </section>
+
+      {/* Waitlist (Round-89) — tidig tillgång. The email form POSTs to
+          /api/waitlist (public, zod-validated, dup-guarded with 409) and
+          the button toggles its own loading/done states so a visitor
+          can't double-submit. testids are locked by the landing e2e. */}
+      <section className="bg-white py-16" data-testid="waitlist-section">
+        <div className="container mx-auto px-4 max-w-2xl text-center">
+          <Badge variant="secondary" className="mb-4 bg-indigo-50 text-indigo-700 border-indigo-100">Tidig tillgång</Badge>
+          <h2 className="text-3xl font-bold text-slate-900">Få tidig tillgång</h2>
+          <p className="mt-3 text-slate-600">Vi släpper i vågor under betan. Lämna din e-post så får du en inbjudan så snart det är din tur.</p>
+          <form className="mt-6 flex flex-col sm:flex-row gap-3 max-w-md mx-auto" onSubmit={handleWaitlist} data-testid="waitlist-form">
+            <Input
+              type="email"
+              required
+              placeholder="din@epost.se"
+              value={waitlistEmail}
+              onChange={(e) => setWaitlistEmail(e.target.value)}
+              disabled={waitlistState === 'done'}
+              data-testid="waitlist-email"
+              className="h-12 flex-1"
+            />
+            <Button type="submit" disabled={waitlistState === 'loading' || waitlistState === 'done'} className="h-12 bg-slate-900 hover:bg-slate-800" data-testid="waitlist-submit">
+              {waitlistState === 'loading' ? 'Skickar…' : waitlistState === 'done' ? 'Du är med ✓' : 'Få tidig tillgång'}
+            </Button>
+          </form>
         </div>
       </section>
 
