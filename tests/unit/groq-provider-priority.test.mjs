@@ -271,18 +271,28 @@ test('Round-80: daysUntilDecommission returns days-left for scheduled models and
 test('Round-80: every LLM call site routes through createChatWithFallback, not raw client calls', () => {
   // The five generation paths (cover letter, answer, adaptive answer,
   // email body, generateText) must ALL go through the fallback chain.
-  // A single raw `client.chat.completions.create` in a generation path
-  // would silently bypass the decommission resilience. Comments may
+  // A raw `client.chat.completions.create` in a generation path would
+  // silently bypass the decommission resilience. Comments may
   // reference the raw call (doc examples), so we count only lines that
   // are NOT comment/doc lines.
   const rawCallLines = SRC.split('\n').filter(
     (l) => l.includes('client.chat.completions.create') && !l.trim().startsWith('//') && !l.trim().startsWith('*'),
   )
-  // Exactly one executable raw call remains: inside createChatWithFallback.
+  // Two executable raw calls are legitimate, both documented:
+  //   1. createChatWithFallback — the shared choke point every
+  //      generation surface funnels through.
+  //   2. probeGroqHealth (Round-88 / /api/admin/ai-status) — the
+  //      quota health probe DELIBERATELY bypasses the fallback chain:
+  //      it must observe the RAW provider error (TPD quota 429 vs
+  //      model-level rejection vs unreachable) to classify the
+  //      outage for an operator. Routing it through
+  //      createChatWithFallback would mask a TPD-exhaustion 429 as a
+  //      successful retry and hide the very signal the probe exists
+  //      to surface.
   assert.equal(
     rawCallLines.length,
-    1,
-    `expected 1 executable raw call (inside the helper), found ${rawCallLines.length}:\n${rawCallLines.join('\n')}`,
+    2,
+    `expected exactly 2 executable raw calls (createChatWithFallback + probeGroqHealth), found ${rawCallLines.length}:\n${rawCallLines.join('\n')}`,
   )
   const fallbackCalls = SRC.match(/createChatWithFallback\(/g) || []
   assert.ok(fallbackCalls.length >= 5, `all 5 generation paths must use createChatWithFallback — found ${fallbackCalls.length}`)
