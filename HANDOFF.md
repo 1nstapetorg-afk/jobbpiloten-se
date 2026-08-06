@@ -1399,15 +1399,27 @@ status.
    external (needs deploy access).
 5. ⏳ Invites (~30 people) — human step.
 
-**Priority 2 — tech debt (not started)**
-6. Clerk `createRouteMatcher` deprecation → resource-based auth.
-7. E2E env contract → `scripts/e2e.sh` + `test:e2e:ci`.
-8. Dashboard monolith extraction (2899-line `app/dashboard/page.js`).
-9. Cleanup of legacy files + `.gitignore` entries.
-10. Doc correction: native `mongodb` driver (not mongoose).
+**Priority 2 — tech debt**
+6. ✅ Clerk `createRouteMatcher` deprecation → resource-based auth:
+   `middleware.js` now uses framework-native `req.nextUrl.pathname`
+   matching (Clerk 7.5.21 deprecation, per official upgrade guide);
+   every Round-85 dual-auth contract preserved + locked by
+   `tests/unit/round88-middleware-resource-auth.test.mjs`.
+7. ✅ E2E env contract → `scripts/e2e.sh` (SKIP_LLM_E2E=true,
+   NODE_ENV=test, Clerk keys blanked for demo mode) wired as
+   `yarn test:e2e:ci`.
+8. ✅ Dashboard monolith split: 2899 → ~2560 lines. Pure helpers →
+   `lib/dashboard-helpers.js` (React-free); leaf presentational
+   components → `components/DashboardCards.jsx` ('use client'). All
+   test-locked patterns stayed in `app/dashboard/page.js`; split
+   pinned by `tests/unit/round88-dashboard-split.test.mjs`.
+9. ⏳ Cleanup of legacy files + `.gitignore` entries — not started.
+10. ⏳ Doc correction: native `mongodb` driver (not mongoose) — not
+   started.
 
-Unit suite at batch end: **1358 pass / 0 fail / 3 skipped**
+Unit suite at batch end: **1370 pass / 0 fail / 3 skipped**
 (`yarn test:unit`). Extension lints green: `validate:extension`
-(v1.0.0), `lint:await-async`, `lint:field-patterns`.
+(v1.0.0), `lint:await-async`, `lint:field-patterns`. `next build`
+compiles `/dashboard` with the extracted modules; lint:scope green.
 
 *End of handoff. Good luck.*

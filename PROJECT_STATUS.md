@@ -976,14 +976,49 @@ Execution happens in this batch — this section is the persisted plan.
   Checklist.
 - [ ] **#5 Invites (~30 people)** — external / human step.
 
-**Priority 2 — Technical debt (not yet started this batch)**
+**Priority 2 — Technical debt**
 
-6. Clerk `createRouteMatcher` deprecation → resource-based auth.
-7. `scripts/e2e.sh` env contract → `test:e2e:ci`.
-8. Dashboard monolith extraction (`app/dashboard/page.js` 2899 lines).
-9. Cleanup of legacy files + `.gitignore` entries.
-10. Doc correction: native `mongodb` driver (not mongoose).
+- [x] **#6 Clerk `createRouteMatcher` deprecation → resource-based
+  auth** — committed: `middleware.js` migrated from the deprecated
+  matcher (Clerk 7.5.21 logs a deprecation warning on EVERY
+  construction; it will be removed in the next major) to
+  framework-native `req.nextUrl.pathname` matching, per Clerk's
+  official upgrade guide. Every Round-85 dual-auth contract
+  preserved: demo-cookie pass-throughs on both the main and
+  catch paths, the `'/sign-in(.*)'` / `'/sign-up(.*)'` literals,
+  `auth.protect()` + the JSON 401 contract. Locked by
+  `tests/unit/round88-middleware-resource-auth.test.mjs`.
+- [x] **#7 E2E env-contract footgun** — committed: `scripts/e2e.sh`
+  sets `SKIP_LLM_E2E=true` (Round-87 mock mode, so no Groq quota
+  burn), `NODE_ENV=test`, and blanks the Clerk keys (process.env
+  precedence beats .env → suite boots in demo mode) before
+  delegating to `playwright test --workers=1`. Wired as
+  `yarn test:e2e:ci`.
+- [x] **#8 Dashboard monolith split** — committed:
+  `app/dashboard/page.js` went 2899 → ~2560 lines. Pure helpers
+  (readJsonSafely, readClerkEmail/FullName/Phone,
+  mergeProfileWithUser, fmtDate, monthNames, nextCronAt,
+  fmtTimeUntil, getMonthlyTrend, STATUS_MAP) moved to
+  `lib/dashboard-helpers.js` (React-free, node-testable — same
+  precedent as lib/af-compliance.js); leaf presentational
+  components (TrendBadge, NextCronBanner, AnimatedCounter,
+  CompanyLogo, StatusPill, BroaderSearchCard) moved to
+  `components/DashboardCards.jsx` ('use client'). Every
+  test-locked pattern stayed in the page (Tag signature, the 3-tier
+  resolveApplicationUrl chain, SOURCE_FALLBACKS,
+  resolveSearchFallback, buildGoogleSearchUrl, matchesJobSource,
+  HAS_URL_VIEW, FILTERS, all 8 af-compliance testids, the
+  `${source}-${id}` composite keys, slice(3), jobs-load-more-hint
+  guard). Split pinned by
+  `tests/unit/round88-dashboard-split.test.mjs`.
+- [ ] **#9 Cleanup of legacy files + `.gitignore` entries** — not
+  started.
+- [ ] **#10 Doc correction: native `mongodb` driver (not mongoose)**
+  — not started.
 
-**Net test count:** unit suite **1358 pass / 0 fail / 3 skipped**
-(+9 Stripe webhook contract tests +1 updated Round-80 lock; the 3
-skips are pre-existing env-gated cases).
+**Net test count:** unit suite **1370 pass / 0 fail / 3 skipped**
+(+9 Stripe webhook contract tests, +1 updated Round-80 lock, +4
+middleware resource-auth locks, +5 dashboard-split locks; the 3
+skips are pre-existing env-gated cases). `next build` compiles
+`/dashboard` with the extracted modules; lint:scope /
+lint:await-async / lint:field-patterns green.
