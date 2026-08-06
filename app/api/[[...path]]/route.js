@@ -1813,6 +1813,20 @@ export async function POST(req, ctx) {
 
     return NextResponse.json({ error: 'Not found', path }, { status: 404 });
   } catch (err) {
+    // Round-87 — prompt-echo (LLM reproduced the prompt instead of
+    // generating): a provider-degradation signal, not a code bug.
+    // Surface a retryable 503 with clear Swedish copy so the
+    // dashboard AI surfaces (cover-letter generation flows through
+    // this catch-all) never show the raw prompt or a generic 500.
+    if (err?.code === 'PROMPT_ECHO' || err?.error === 'PROMPT_ECHO') {
+      return NextResponse.json(
+        {
+          error: 'AI-tjänsten är tillfälligt överbelastad. Försök igen om en stund.',
+          code: 'PROMPT_ECHO',
+        },
+        { status: 503 },
+      );
+    }
     console.error('POST error', path, err);
     // Round-86 / Bug 2 — the onboarding "Slutför" flow surfaced raw
     // `connect ECONNREFUSED` / empty-body JSON parse errors when

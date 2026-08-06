@@ -384,6 +384,19 @@ export async function POST(request) {
       monthKey: m,
     })
   } catch (err) {
+    // Round-87 — prompt-echo: the LLM reproduced the prompt. That is
+    // a provider-degradation signal, not a transient blip — tell the
+    // user the AI is overloaded and retryable instead of a generic
+    // 500.
+    if (err?.code === 'PROMPT_ECHO' || err?.error === 'PROMPT_ECHO') {
+      return NextResponse.json(
+        {
+          error: 'AI-tjänsten är tillfälligt överbelastad. Försök igen om en stund.',
+          code: 'PROMPT_ECHO',
+        },
+        { status: 503 },
+      )
+    }
     console.error('[email-draft] generateEmailBody failed:', err?.message)
     return NextResponse.json(
       { error: 'Tillfälligt fel — försök igen om en stund.' },

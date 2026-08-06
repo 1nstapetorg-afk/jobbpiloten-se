@@ -104,7 +104,35 @@ test.describe.serial('Mejlutkast API: /api/applications/recent', () => {
   })
 })
 
+// Round-87 — the 429 rate-limit test below fires 20 sequential
+// /api/email-draft calls. Against the real Groq API each call either
+// burns quota or (when the TPD daily quota is exhausted) waits on the
+// 429 fail-fast — together they blew the 60s default test timeout in
+// the Round-86 full-suite run. Two fixes: (1) a generous timeout, and
+// (2) mock mode. The server-side mock short-circuits in lib/groq.js
+// when SKIP_LLM_E2E=true or CI=true (non-production) is visible to
+// the Next SERVER process.
+//
+// IMPORTANT (the operative mechanism): this spec runs in the Playwright
+// RUNNER process — setting the env var here does NOT reach the server
+// subprocess (Playwright boots `yarn dev`/`next start` separately). To
+// actually enable the mock, run the suite as
+// `SKIP_LLM_E2E=true yarn test:e2e` (playwright.config.js forwards the
+// flag to the webServer env), or rely on CI=true in GitHub Actions
+// (where the default webServer is `yarn dev`, NODE_ENV=development,
+// so the CI branch of isLlmMockMode fires). Without the flag, this
+// spec exercises the REAL provider and may burn quota / time out.
+test.beforeAll(() => {
+  process.env.SKIP_LLM_E2E = 'true'
+})
+
 test.describe.serial('Mejlutkast API: /api/email-draft', () => {
+  // Round-87: the 20-request loop + the 21st-call assertion can run
+  // long against a real (slow / quota-exhausted) provider — give this
+  // describe's tests a 2-minute budget so the rate-limit contract is
+  // what's being tested, not the provider latency.
+  test.setTimeout(120_000)
+
   test('returns 401 when no Authorization header is supplied', async ({ page }) => {
     const res = await apiFetch(page, '/api/email-draft', {
       method: 'POST',

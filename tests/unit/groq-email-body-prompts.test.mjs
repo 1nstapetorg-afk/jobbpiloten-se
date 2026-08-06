@@ -225,7 +225,26 @@ test('Round-49: generateEmailBody must NOT throw ReferenceError when profile.cvS
   // cleanly. With no LLM key in CI the function falls through to
   // `fallbackEmailBody({...})` returning a body — the test asserts
   // the call completes with a non-empty body rather than an exception.
-  const { generateEmailBody } = await import('../../lib/groq.js')
+  // Round-87 hardening: this regression lock only needs the module's
+  // fallback path (no LLM key in the unit process ⇒ client is null ⇒
+  // straight to fallbackEmailBody). The dev shell may export
+  // GROQ_API_KEY etc., which would make this a REAL network call
+  // (flaky under parallel load — the 429 retries stretched the test
+  // to 7s in the full-suite run). Strip the keys for this import so
+  // the test is deterministic, then restore.
+  const prevKeys = ['GROQ_API_KEY', 'OPENAI_API_KEY', 'EMERGENT_LLM_KEY', 'OPENROUTER_API_KEY']
+    .map((k) => [k, process.env[k]])
+  for (const [k] of prevKeys) delete process.env[k]
+  let mod
+  try {
+    mod = await import('../../lib/groq.js')
+  } finally {
+    for (const [k, v] of prevKeys) {
+      if (v === undefined) delete process.env[k]
+      else process.env[k] = v
+    }
+  }
+  const { generateEmailBody } = mod
   let result
   try {
     result = await generateEmailBody({
@@ -349,4 +368,181 @@ test('Round-86 followup: generateEmailBody acceptance guard references isPromptE
     /!containsPlaceholder\(text\)\s*&&\s*!isPromptEcho\(text\)/,
     'generateEmailBody must reject prompt echoes via !isPromptEcho(text) in the same guard as !containsPlaceholder(text)',
   )
+})
+
+// =====================================================================
+// Round-87 — prompt-echo edge cases, PROMPT_ECHO throw contract, and
+// E2E mock mode. The echo guard moved UP into the shared
+// createChatWithFallback choke point so every generation surface is
+// protected; generators rethrow the PROMPT_ECHO error instead of
+// masking it with their rule-based fallback, and the routes map it
+// to a retryable 503. Mock mode (SKIP_LLM_E2E=true / CI=true) keeps
+// the E2E suite quota-free and deterministic.
+// =====================================================================
+
+test('Round-87: isPromptEcho edge cases — prompt words in a real email are fine, signature phrases are not', async () => {
+  const { isPromptEcho } = await importGroqHelpers()
+  // A genuine email that happens to mention CV / annons words must
+  // never be flagged (the signatures are the prompt's meta-INSTruction
+  // phrases, not its subject nouns).
+  const realEmailMentioningCvWords =
+    'Hej,\n\nJag såg er annons för tjänsten och vill gärna skicka in min ansökan. ' +
+    'I mitt CV beskriver jag erfarenhet av React, TypeScript och Next.js, och jag är van att arbeta i team. ' +
+    'Jag bifogar mitt CV och personliga brev.\n\nMed vänliga hälsningar,\nAnna Andersson'
+  assert.equal(isPromptEcho(realEmailMentioningCvWords), false,
+    'a real email mentioning CV/annons words must not be flagged')
+  // A response quoting ONE signature phrase (the prompt role line) is
+  // echo-class even if the rest looks like prose — the phrase never
+  // appears in real generation.
+  const echoesRoleLineOnly =
+    'Tack för möjligheten. Rollen passar mig väl. "Du är en svensk jobbansökningsexpert" — ' +
+    'det var uppmaningen jag fick, och här är mitt svar: jag har fem års erfarenhet av att leverera resultat i team.'
+  assert.equal(isPromptEcho(echoesRoleLineOnly), true,
+    'a response that quotes the prompt role line must be flagged as an echo')
+})
+
+test('Round-87: isLlmMockMode is env-gated (SKIP_LLM_E2E / CI, CI never in production)', async () => {
+  const { isLlmMockMode } = await importGroqHelpers()
+  const prevSkip = process.env.SKIP_LLM_E2E
+  const prevCi = process.env.CI
+  const prevNodeEnv = process.env.NODE_ENV
+  try {
+    process.env.NODE_ENV = 'development'
+    delete process.env.SKIP_LLM_E2E
+    process.env.CI = ''
+    assert.equal(isLlmMockMode(), false, 'mock mode must be OFF by default')
+    process.env.SKIP_LLM_E2E = 'true'
+    assert.equal(isLlmMockMode(), true, 'SKIP_LLM_E2E=true must enable mock mode (explicit opt-in)')
+    delete process.env.SKIP_LLM_E2E
+    process.env.CI = 'true'
+    assert.equal(isLlmMockMode(), true, 'CI=true outside production must enable mock mode (GitHub Actions on the dev webServer)')
+    // Round-87 code-review hardening: CI=true must NEVER mock in a
+    // production runtime (Vercel build env / CD runtimes set CI=true
+    // too — a prod server must not serve the canned mock text).
+    process.env.NODE_ENV = 'production'
+    assert.equal(isLlmMockMode(), false, 'CI=true in production must NOT enable mock mode')
+    process.env.SKIP_LLM_E2E = 'true'
+    assert.equal(isLlmMockMode(), true, 'SKIP_LLM_E2E=true is honoured even in production (explicit opt-in)')
+    process.env.NODE_ENV = 'development'
+    process.env.SKIP_LLM_E2E = 'false'
+    process.env.CI = 'false'
+    assert.equal(isLlmMockMode(), false, 'explicit "false" values must NOT enable mock mode')
+  } finally {
+    if (prevSkip === undefined) delete process.env.SKIP_LLM_E2E
+    else process.env.SKIP_LLM_E2E = prevSkip
+    if (prevCi === undefined) delete process.env.CI
+    else process.env.CI = prevCi
+    if (prevNodeEnv === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = prevNodeEnv
+  }
+})
+
+test('Round-87: mockChatCompletion returns valid wire shape + prompt-aware JSON for cv-extract', async () => {
+  const { mockChatCompletion, isPromptEcho } = await importGroqHelpers()
+  const textRes = mockChatCompletion({
+    messages: [{ role: 'user', content: 'Du är en svensk jobbansökningsexpert. Företag: Acme AB' }],
+  })
+  const text = textRes?.choices?.[0]?.message?.content
+  assert.equal(typeof text, 'string', 'mock must return the OpenAI wire shape the generators read')
+  assert.ok(text.length > 80, 'mock text must pass the email-body length guard')
+  assert.match(text, /Hej|Med vänliga hälsningar|annons/i, 'mock text must satisfy the E2E greeting assertion')
+  assert.equal(isPromptEcho(text), false, 'mock text must never be flagged as a prompt echo')
+
+  const jsonRes = mockChatCompletion({
+    messages: [{ role: 'user', content: 'Extrahera följande från CV:t\nCV-TEXT:\nFrontend…\nJSON:' }],
+  })
+  const parsed = JSON.parse(jsonRes.choices[0].message.content)
+  assert.ok(Array.isArray(parsed.skills) && parsed.skills.length > 0,
+    'cv-extract mock must be valid JSON carrying a non-empty skills array')
+  assert.equal(typeof parsed.experience, 'string', 'cv-extract mock must carry the experience field')
+})
+
+test('Round-87: createChatWithFallback throws PROMPT_ECHO when the response echoes the prompt (source lock)', () => {
+  assert.match(
+    GROQ_SRC,
+    /if \(content && isPromptEcho\(content\)\) \{[\s\S]{0,200}?throw promptEchoError\(\)/,
+    'createChatWithFallback must throw promptEchoError() when the response content echoes the prompt',
+  )
+  assert.match(GROQ_SRC, /err\.code = PROMPT_ECHO_ERROR_CODE/,
+    'promptEchoError must set code = PROMPT_ECHO_ERROR_CODE')
+  assert.match(GROQ_SRC, /'LLM returned prompt echo — retrying'/,
+    'the echo error must carry the exact retry message')
+})
+
+test('Round-87: every generator rethrows PROMPT_ECHO instead of soft-failing (source lock)', () => {
+  // generateCoverLetter's catch sits ~14k chars into the function
+  // (the prompt array is huge), so a fixed slice would miss it.
+  // Slice each generator from its own `async function` header to the
+  // NEXT generator's header instead.
+  const generators = ['generateCoverLetter', 'generateAnswer', 'generateAdaptiveAnswer', 'generateEmailBody', 'generateText']
+  const starts = generators.map((fn) => GROQ_SRC.indexOf(`async function ${fn}`))
+  for (let i = 0; i < generators.length; i++) {
+    assert.ok(starts[i] > 0, `must locate ${generators[i]}`)
+    const body = GROQ_SRC.slice(starts[i], i + 1 < generators.length ? starts[i + 1] : GROQ_SRC.length)
+    assert.ok(
+      /if \(error\?\.code === PROMPT_ECHO_ERROR_CODE\) throw error/.test(body),
+      `${generators[i]} must rethrow PROMPT_ECHO before its rule-based fallback so the route can surface the 503`,
+    )
+  }
+})
+
+test('Round-87: LLM-surfacing routes map PROMPT_ECHO to 503 with the canonical Swedish message (source lock)', () => {
+  const routeFiles = [
+    ['catch-all POST (cover letter)', path.join(__dirname, '../..', 'app', 'api', '[[...path]]', 'route.js')],
+    ['email-draft', path.join(__dirname, '../..', 'app', 'api', 'email-draft', 'route.js')],
+    ['extension/answer', path.join(__dirname, '../..', 'app', 'api', 'extension', 'answer', 'route.js')],
+    ['extension/email-body', path.join(__dirname, '../..', 'app', 'api', 'extension', 'email-body', 'route.js')],
+  ]
+  for (const [label, file] of routeFiles) {
+    const src = fs.readFileSync(file, 'utf8')
+    assert.match(src, /'AI-tjänsten är tillfälligt överbelastad\. Försök igen om en stund\.'/
+      , `${label} must carry the canonical overloaded-503 Swedish message`)
+    assert.match(src, /code: 'PROMPT_ECHO'/, `${label} must carry code:'PROMPT_ECHO'`)
+    assert.match(src, /status: 503/, `${label} must return HTTP 503`)
+  }
+})
+
+test('Round-87: generateEmailBody propagates PROMPT_ECHO (not soft-fail) when the provider echoes the prompt (behavioral, stubbed fetch)', async () => {
+  // The unit-test process has no .env, so no provider is configured
+  // and `client` is null — the LLM branch never runs. Set a fake key
+  // so the OpenAI-compatible client exists, then stub global fetch to
+  // return an echo as the provider response. Mock mode must be OFF.
+  const prevKey = process.env.GROQ_API_KEY
+  const prevSkip = process.env.SKIP_LLM_E2E
+  const prevCi = process.env.CI
+  process.env.GROQ_API_KEY = 'test-mock-key-000'
+  delete process.env.SKIP_LLM_E2E
+  process.env.CI = ''
+  const origFetch = globalThis.fetch
+  globalThis.fetch = async () => new Response(
+    JSON.stringify({
+      id: 'chatcmpl-mock',
+      object: 'chat.completion',
+      created: 1,
+      model: 'mock',
+      choices: [{
+        index: 0,
+        message: { role: 'assistant', content: ECHO_BODY },
+        finish_reason: 'stop',
+      }],
+      usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 },
+    }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  )
+  try {
+    const mod = await import(`../../lib/groq.js?t=${Date.now()}-${Math.random()}`)
+    await assert.rejects(
+      () => mod.generateEmailBody({ jobTitle: 'Frontendutvecklare', company: 'Acme AB', profile: { fullName: 'Anna Test' } }),
+      (err) => err?.code === 'PROMPT_ECHO',
+      'generateEmailBody must propagate the PROMPT_ECHO error (not soft-fail to the fallback) when the LLM echoes the prompt',
+    )
+  } finally {
+    globalThis.fetch = origFetch
+    if (prevKey === undefined) delete process.env.GROQ_API_KEY
+    else process.env.GROQ_API_KEY = prevKey
+    if (prevSkip === undefined) delete process.env.SKIP_LLM_E2E
+    else process.env.SKIP_LLM_E2E = prevSkip
+    if (prevCi === undefined) delete process.env.CI
+    else process.env.CI = prevCi
+  }
 })

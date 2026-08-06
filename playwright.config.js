@@ -139,6 +139,15 @@ export default defineConfig({
     timeout: 120_000,
     stdout: 'ignore',
     stderr: 'pipe',
-    env: { PORT },
+    // Round-87: forward SKIP_LLM_E2E (when set by the operator) so
+    // the webServer subprocess's lib/groq.js mock short-circuit fires
+    // — `SKIP_LLM_E2E=true yarn test:e2e` keeps the suite quota-free
+    // and deterministic. CI=true is inherited automatically via
+    // process.env (Playwright merges this object into the child env),
+    // which is how GitHub Actions runs get mock mode for free.
+    env: {
+      PORT,
+      ...(process.env.SKIP_LLM_E2E ? { SKIP_LLM_E2E: process.env.SKIP_LLM_E2E } : {}),
+    },
   },
 })

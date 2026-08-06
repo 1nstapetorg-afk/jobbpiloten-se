@@ -407,6 +407,21 @@ export async function POST(request) {
       monthKey: m,
     })
   } catch (err) {
+    // Round-87 — prompt-echo: the LLM reproduced the prompt. Surface
+    // the canonical overloaded-503 contract BEFORE the generic
+    // AI_FALLBACK branch so the popup can distinguish "degraded
+    // provider" from "generation failed" (both stay retryable).
+    if (err?.code === 'PROMPT_ECHO' || err?.error === 'PROMPT_ECHO') {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: 'PROMPT_ECHO',
+          error: 'AI-tjänsten är tillfälligt överbelastad. Försök igen om en stund.',
+          retryable: true,
+        },
+        { status: 503 },
+      )
+    }
     console.error('[extension/email-body] generateEmailBody failed:', err?.message)
     // 2026-07-21 (Round-72.2 / BUG 4) — actionable Swedish copy
     // on AI-generation failure. Pre-fix shape returned a generic

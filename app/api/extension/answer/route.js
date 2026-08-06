@@ -248,6 +248,17 @@ export async function POST(request) {
       styleUsed: styleOverride || profile?.stylePreference || 'lagom',
     });
   } catch (err) {
+    // Round-87 — prompt-echo: provider-degradation, surface a
+    // retryable 503 with clear Swedish copy instead of a generic 500.
+    if (err?.code === 'PROMPT_ECHO' || err?.error === 'PROMPT_ECHO') {
+      return NextResponse.json(
+        {
+          error: 'AI-tjänsten är tillfälligt överbelastad. Försök igen om en stund.',
+          code: 'PROMPT_ECHO',
+        },
+        { status: 503 },
+      );
+    }
     console.error('[extension/answer] generateAnswer failed:', err?.message);
     return NextResponse.json(
       { error: 'Tillfälligt fel — försök igen om en stund.' },

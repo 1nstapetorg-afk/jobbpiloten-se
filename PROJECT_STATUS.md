@@ -768,7 +768,9 @@ of JSON input`.
   bracket-free, so it sailed past the old guards. Prompt-echo output
   now degrades to the rule-based fallback instead of leaking the raw
   prompt to a job-seeker. Same protection for the extension
-  email-body path (shared choke point).
+  email-body path (shared choke point). Round-87 (below) moves this
+  guard UP into `createChatWithFallback` so every generation surface
+  is covered, and routes map it to a retryable 503.
 
 **Tests:** `tests/unit/groq-tpd-quota.test.mjs` (4: real-payload
 detection, non-TPD negative cases, quota parse, source-lock),
@@ -795,3 +797,81 @@ Round-86 email-preview spec), and the demo-cookie/auth-contract specs
 require a demo-mode build (Clerk keys blanked) — a Clerk-keyed build
 renders Clerk's own sign-in paths, which the demo suite is not
 written for.
+
+---
+
+## Round-87 (2026-08-04) — E2E LLM mock mode + prompt-echo guard extended to every Groq path
+
+Three-part round: (1) commit the Round-85/86 bundle (`4b1c85b`), (2) fix
+the mejlutkast-api 429 E2E timeout without burning Groq quota, (3)
+extend the prompt-echo guard beyond email-preview to every Groq
+powered surface. **Round-87 changes are uncommitted** (unit
+**1305 pass / 0 fail / 3 skipped**, E2E **84/84** — the previously
+failing 429 test included, in 2.6m mock-mode run).
+
+### A. E2E LLM mock mode (quota-free, deterministic suite)
+- `lib/groq.js` — `isLlmMockMode()` short-circuits `createChatWithFallback`
+  before any network call when `SKIP_LLM_E2E=true` (explicit local
+  opt-in, always honoured) or `CI=true` **and** `NODE_ENV !== 'production'`
+  (code-review hardening: CI=true leaks into Vercel build envs / CD
+  runtimes — a production server must never serve canned mock text;
+  GitHub Actions E2E still gets mock mode because playwright boots
+  `yarn dev` = NODE_ENV=development). Emits
+  `[E2E] Groq call mocked — <trigger> active`.
+- `mockChatCompletion(params)` returns the OpenAI wire shape
+  (`{ choices: [{ message: { content } }] }`) the generators read —
+  prompt-aware: lib/cv-extract.js's strict-JSON prompt
+  (`CV-TEXT:` → `JSON:`) gets a valid JSON extraction object; every
+  other surface gets a plausible Swedish application-email text that
+  passes the length/placeholder/echo guards AND the
+  onboarding-email-preview greeting assertion.
+- `tests/e2e/mejlutkast-api.spec.js` — `test.setTimeout(120_000)` on the
+  email-draft describe (the 429 test fires 20 sequential calls) +
+  `beforeAll` setting `SKIP_LLM_E2E` (runner-process marker; the
+  operative mechanism is `SKIP_LLM_E2E=true yarn test:e2e` —
+  `playwright.config.js` forwards the flag to the webServer env).
+- **Verified:** the 429 test now passes in **905 ms** (was >60 s
+  timeout); full suite 84/84 in 2.6 m with **zero** `api.groq.com`
+  calls (30 mocked calls logged).
+
+### B. Prompt-echo guard extended to every Groq text-generation path
+- **Shared choke point** — `createChatWithFallback` now throws
+  `promptEchoError()` (`code`/`error` = `'PROMPT_ECHO'`, message
+  "LLM returned prompt echo — retrying") when a successful response's
+  content matches `isPromptEcho()`. Every generation surface funnels
+  through this one function: cover letter, answers, adaptive answers,
+  email body, and `generateText` → cv-extract / cv-enhance.
+- **Generators rethrow** — generateCoverLetter / generateAnswer /
+  generateAdaptiveAnswer / generateEmailBody / generateText propagate
+  `PROMPT_ECHO` before their rule-based fallbacks, so the routes can
+  decide the UX.
+- **Routes → 503** — the catch-all POST handler (cover-letter paths),
+  `/api/email-draft`, `/api/extension/answer`, and
+  `/api/extension/email-body` return HTTP 503 with
+  `"AI-tjänsten är tillfälligt överbelastad. Försök igen om en stund."`
+  + `code:'PROMPT_ECHO'` when they catch it.
+- **Deliberate exceptions (documented):** email-preview keeps the
+  Round-86 soft-fail contract (its catch returns the rule-based
+  fallback body with HTTP 200 — the preview surface must never
+  error); cv-extract (upload-cv) and cv-enhance soft-fail to their
+  pure fallbacks (an upload that succeeded must not 503; extraction
+  is a soft feature by design). The echo still never reaches the
+  client on any of these paths.
+
+### C. Tests
+- `tests/unit/groq-email-body-prompts.test.mjs` +7: isPromptEcho edge
+  cases (prompt words in a real email pass, quoting a signature
+  phrase fails), isLlmMockMode env-gating incl. the production guard,
+  mockChatCompletion shape + prompt-aware JSON, PROMPT_ECHO throw
+  source lock, all-generators-rethrow source lock, routes-503 source
+  lock, and a **behavioral** stubbed-fetch test proving
+  generateEmailBody propagates PROMPT_ECHO instead of soft-failing.
+  Round-49's lock was hardened to strip API keys before import (it
+  previously made a real Groq call — flaky under parallel load).
+
+### D. Net test counts
+| Round | Unit | E2E |
+|---|---|---|
+| Round-84 | 1284 | 83/83 |
+| Round-85/86 (`4b1c85b`) | 1298 | 83/84 (429 test env-latency) |
+| **Round-87 final** | **1305 pass / 0 fail / 3 skip** | **84/84** (2.6 m, mock mode) |
