@@ -875,3 +875,52 @@ failing 429 test included, in 2.6m mock-mode run).
 | Round-84 | 1284 | 83/83 |
 | Round-85/86 (`4b1c85b`) | 1298 | 83/84 (429 test env-latency) |
 | **Round-87 final** | **1305 pass / 0 fail / 3 skip** | **84/84** (2.6 m, mock mode) |
+
+---
+
+## Round-88 (2026-08-06) — Batch-1 plan (persisted before execution)
+
+Plan generated from the Round-87 wrap-up review of `PROJECT_STATUS.md`
+(§Soft-launch Checklist) + `HANDOFF.md` (§7 Known Bugs / TODOs).
+Execution happens in this batch — this section is the persisted plan.
+
+### Priority 1 — Soft-launch blockers (checklist open items)
+1. **Groq TPD quota** — the single biggest recurring risk (caused the
+   Round-86 "502", the Round-87 mejlutkast timeout, and degrades
+   manual checks). Upgrade the Groq tier OR add a quota health check
+   (we already log `TPD QUOTA EXHAUSTED` with limit/used/percent).
+   → `/api/admin/ai-status` (Clerk-admin GET; 1-token Groq probe;
+   mockMode detection; never leaks the API key).
+2. **Chrome extension publish** — bump to v1.0.0, audit permissions,
+   store-assets (screenshots 1280×800 / promo 440×280),
+   STORE_DESCRIPTION.md (SV title ≤45 chars, SV+EN ≤1000 chars,
+   5 bullets each), extension privacy policy page, build the zip,
+   then upload to CWS (`NEXT_PUBLIC_EXTENSION_PUBLISHED=1` +
+   `NEXT_PUBLIC_EXTENSION_STORE_URL` after review).
+3. **Stripe test checkout E2E** — price IDs still placeholders; the
+   webhook route was merged from two contributors in the Round-87
+   rebase → lock its behavior with contract tests
+   (`stripe.webhooks.generateTestHeaderString` + mocked
+   `getStripe()`/`getDb()`): valid sig → 200 upsert, invalid sig →
+   400, unknown event → 200 no-op, null-guard → Swedish 500.
+4. **Vercel deploy + cron** — verify `vercel.json` cron at 09:00 CEST,
+   run the documented cron smoke test, confirm the push notification
+   arrives, inspect `cron_logs` for `action: cron_run`.
+5. **Invites** (~30 people).
+
+### Priority 2 — Technical debt
+6. **Clerk `createRouteMatcher` deprecation** (warning in every dev
+   log) — migrate middleware to resource-based auth checks.
+7. **E2E env-contract footgun** — the suite only runs green with a
+   demo-mode build + `SKIP_LLM_E2E=true`; `yarn test:e2e` alone hits
+   real Groq. → `scripts/e2e.sh` (sets `SKIP_LLM_E2E=true`,
+   `NODE_ENV=test`, blanks Clerk keys) wired as `test:e2e:ci`.
+8. **Dashboard monolith** — `app/dashboard/page.js` (2899 lines) is
+   the extraction candidate (stats / applications table / cron).
+9. **Cleanup** — `app/dashboard/page.js.bak-final` +
+   `jobbpiloten-complete-backup.zip` + `last_response.txt`;
+   add `.gitignore` entries (`*.bak-final`, `*.bak`,
+   `jobbpiloten-complete-backup.zip`, `last_response.txt`).
+10. **Doc correction** — the round prompts say "MongoDB (mongoose)"
+    but the codebase uses the native `mongodb` driver everywhere
+    (verified: zero mongoose imports in app/ + lib/).

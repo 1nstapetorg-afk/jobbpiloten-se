@@ -1374,4 +1374,26 @@ popup + content storage-key literals and the 9-industry key set).
   Run the suite with `SKIP_LLM_E2E=true yarn test:e2e` (or rely on
   CI=true in GitHub Actions) to keep it quota-free and deterministic.
 
+## 18. Round-88 — Soft-Launch Blockers (plan, persisted 2026-08-06)
+
+Plan generated from the Round-87 wrap-up review. Executed in this
+batch; see `PROJECT_STATUS.md §Round-88` for the full 10-item plan.
+
+**Priority 1 — soft-launch blockers**
+1. Groq TPD quota → `/api/admin/ai-status` health check (1-token
+   probe, mockMode detection, no key leak).
+2. Chrome extension publish → v1.0.0, permission audit, store-assets,
+   STORE_DESCRIPTION, extension privacy page, zip.
+3. Stripe webhook contract tests (`generateTestHeaderString` + mocked
+   deps) — the route was merged from two contributors in the rebase.
+4. Vercel deploy + cron verification + smoke test + push check.
+5. Invites (~30 people).
+
+**Priority 2 — tech debt**
+6. Clerk `createRouteMatcher` deprecation → resource-based auth.
+7. E2E env contract → `scripts/e2e.sh` + `test:e2e:ci`.
+8. Dashboard monolith extraction (2899-line `app/dashboard/page.js`).
+9. Cleanup of legacy files + `.gitignore` entries.
+10. Doc correction: native `mongodb` driver (not mongoose).
+
 *End of handoff. Good luck.*
