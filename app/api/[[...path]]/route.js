@@ -1340,8 +1340,27 @@ export async function POST(req, ctx) {
     if (path === 'checkout') {
       const body = await req.json();
       const { tier, interval } = body; // tier: 'Basic'|'Professional'|'Elite', interval: 'month'|'year'
-      const priceId = PRICE_MAP[`${tier}:${interval}`];
-      if (!priceId) return NextResponse.json({ error: 'Invalid tier/interval' }, { status: 400 });
+      const priceKey = `${tier}:${interval}`;
+      // Round-91 (P1 #3) — fail-closed on unconfigured pricing. Two
+      // DISTINCT failure modes collapse into one `!priceId` check:
+      //   • an invalid tier/interval combo  → 400 (client bug, stays 400)
+      //   • a VALID combo whose STRIPE_PRICE_* env var is unset
+      //     → 503 PRICING_NOT_CONFIGURED (deploy gap)
+      // Pre-fix, a valid combo with an unset env var hit Stripe with
+      // `undefined` price and surfaced a raw English Stripe error to
+      // the user. `hasOwnProperty` on PRICE_MAP tells the two apart:
+      // the key exists only for the 6 canonical combos, and its value
+      // is undefined exactly when the env is missing.
+      if (!Object.prototype.hasOwnProperty.call(PRICE_MAP, priceKey)) {
+        return NextResponse.json({ error: 'Invalid tier/interval' }, { status: 400 });
+      }
+      const priceId = PRICE_MAP[priceKey];
+      if (!priceId) {
+        return NextResponse.json(
+          { error: 'Prenumerationer är inte konfigurerade ännu — försök igen senare.', code: 'PRICING_NOT_CONFIGURED' },
+          { status: 503 },
+        );
+      }
 
       // Look up existing customer if any
       const profile = await db.collection('profiles').findOne({ clerkId });
