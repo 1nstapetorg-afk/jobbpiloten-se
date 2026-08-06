@@ -679,3 +679,119 @@ E2E: **83/83 pass** (`npx playwright test tests/e2e/`, fresh prod
 build). Extension lints green: `validate:extension` (v0.3.3),
 `lint:await-async`, `lint:field-patterns` (73 FIELD_PATTERNS / 70
 profileKeys).
+
+---
+
+## Round-85 (2026-08-04) — Demo-identity fallback in Clerk-configured dev
+
+**Bug:** manual testers running the app in a Clerk-configured dev
+environment (real keys in `.env`) got 401 on every onboarding API call:
+`"Förhandsvisa AI-mejl" → Unauthorized` and
+`"Slutför" → "Kunde inte spara profilen: Unauthorized"`.
+
+**Root cause:** the onboarding wizard authenticates via the demo cookie
+(`demoUserId`), but `resolveAuthState` (lib/auth.js) and the middleware
+only accepted Clerk sessions once Clerk keys were configured — the demo
+cookie was silently ignored, so a tester without a real Clerk session
+was 401'd everywhere.
+
+**Fix (non-production only — production keeps strict Clerk-only auth):**
+- `lib/auth.js` — `resolveAuthState` now falls back to
+  `getDemoUserId(request)` when Clerk IS configured but yields no
+  session, gated by `NODE_ENV !== 'production'`. A real Clerk session
+  always wins when present.
+- `middleware.js` — the `/api/*` gate AND the page-route
+  `auth.protect()` skip for demo-identity requests, on BOTH the main
+  clerkMw path and the Clerk-SDK-throw catch path, non-production
+  only. The middleware imports the shared `getDemoUserId` helper
+  (no re-implemented cookie parsing).
+- Production is never affected: `NODE_ENV === 'production'` keeps the
+  strict 401 / protect() behaviour (see `lib/clerk-config.js` — the
+  demo cookie is a dev/test affordance, not an auth boundary).
+
+**Locked by** `tests/unit/round85-auth-demo-fallback.test.mjs` (6
+source-pattern locks: Clerk branch intact, fallback gated, helper
+shared via import, /api pass-through on both paths, page-route skip
+before protect(), and a sweep asserting every getDemoUserId call site
+is env-gated).
+
+## Round-86 (2026-08-04) — Onboarding Step-4 bug pair: email-preview 502 + empty-body toast
+
+**Reported:** `"Förhandsvisa AI-mejl" → Servern returnerade 502` and
+`"Slutför" → Failed to execute 'json' on 'Response': Unexpected end
+of JSON input`.
+
+**Four root causes** (from the dev-server log):
+1. **Groq daily-token quota exhausted** — every LLM call 429'd
+   (`TPD: Limit 200000, Used 199741`). Survivable (soft-fails to the
+   rule-based template) but invisible to the operator.
+2. **`trackEvent` returned `undefined`** — the email routes chained
+   `trackEvent(...).catch(...)`; `.catch` on undefined threw a
+   TypeError INSIDE the AI-generation path.
+3. **`getDb()` + `requireCompleteProfile()` sat outside any try/catch**
+   in `/api/email-preview` — a Mongo blip escaped as an unhandled
+   throw → 502 instead of JSON.
+4. **Bare `res.json()`** in the onboarding client — any empty/HTML
+   body leaked the raw English JSON parse error.
+
+**Fixes:**
+- `lib/analytics.js` — `trackEvent` always returns `Promise.resolve()`
+  on every exit path (never `undefined`), so `.catch` chains at every
+  call site are safe.
+- `app/api/email-preview/route.js` — `getDb()` + the profile lookup
+  wrapped in try/catch; any failure degrades to the rule-based
+  fallback body with `source:'fallback'` and HTTP 200 (never 502).
+- `app/onboarding/page.js` — `handleSubmit` parses defensively via
+  `res.json().catch(() => ({}))` and re-throws the server's own
+  Swedish message (no double-prefix, no raw parse error).
+- `app/api/[[...path]]/route.js` — the POST catch-all translates
+  Mongo connection failures into a friendly Swedish **503
+  `DB_UNAVAILABLE`** JSON body (mirrors the upload-cv contract; never
+  an empty body or raw ECONNREFUSED).
+- `app/api/upload-cv/route.js` + `lib/mongo.js` — carried over from
+  the in-flight Round-84 bundle and committed now: upload-cv returns
+  the same friendly 503 `DB_UNAVAILABLE` instead of raw connection
+  noise as a 400; the Mongo singleton's `serverSelectionTimeoutMS`
+  now fail-fast (5s dev / 10s prod, tunable via
+  `MONGO_SERVER_SELECTION_TIMEOUT_MS`) so a down DB surfaces as a
+  fast user-friendly error instead of a 30s silent hang.
+- `lib/groq.js` — new `isTpdQuotaError(msg)` + `parseTpdQuota(msg)`
+  pure helpers; `createChatWithFallback` emits a LOUD
+  `[groq] ⚠ TPD QUOTA EXHAUSTED` operator warning (with limit/used/
+  percent) before rethrowing, so a streak of fallback-template
+  responses is diagnosable without grepping raw 429s.
+- `lib/groq.js` (Round-86 followup) — new exported `isPromptEcho(text)`
+  pure guard wired into `generateEmailBody`'s acceptance check
+  (`!containsPlaceholder(text) && !isPromptEcho(text)`). The full-suite
+  E2E run caught a degraded fallback provider REPRODUCING the prompt
+  as the preview body ("1. **Analyze User Input:** …") — long +
+  bracket-free, so it sailed past the old guards. Prompt-echo output
+  now degrades to the rule-based fallback instead of leaking the raw
+  prompt to a job-seeker. Same protection for the extension
+  email-body path (shared choke point).
+
+**Tests:** `tests/unit/groq-tpd-quota.test.mjs` (4: real-payload
+detection, non-TPD negative cases, quota parse, source-lock),
+`tests/unit/round86-email-preview-502-fix.test.mjs` (4 source locks:
+Promise contract, preview try/catch fallback, defensive parse,
+DB_UNAVAILABLE 503), and `tests/e2e/onboarding-email-preview.spec.js`
+(the first E2E spec covering both Step-4 buttons: preview renders a
+usable body — AI or fallback — and Slutför saves + redirects).
+
+**Net test count:** unit suite **1298 pass / 0 fail / 3 skipped**
+(+14 tests since Round-84's 1284 — Round-85 locks, Round-86 locks,
+TPD detector, prompt-echo guard) via `yarn test:unit`. Full E2E suite
+in the suite's intended config (demo-mode prod build, matching
+Round-84's methodology): **83/84 pass** — the sole failure is the
+mejlutkast-api 429 rate-limit test timing out because Groq's TPD quota
+is exhausted (each of 20 sequential LLM-touching calls waits for the
+429 fail-fast); route + test logic are sound and it passes once Groq
+is healthy. The LLM prompt-echo flake observed in that same run is
+fixed by the `isPromptEcho` guard (verified: the spec then passed
+repeatedly, including twice in one run). E2E env notes: specs that click through the onboarding
+wizard now type the full name on step 1 (demo-mode fixture only
+pre-fills the field when Clerk keys are absent — same pattern as the
+Round-86 email-preview spec), and the demo-cookie/auth-contract specs
+require a demo-mode build (Clerk keys blanked) — a Clerk-keyed build
+renders Clerk's own sign-in paths, which the demo suite is not
+written for.

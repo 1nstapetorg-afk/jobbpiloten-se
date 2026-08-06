@@ -422,19 +422,33 @@ test('Lock 8: fatal-error branch (PASSWORD_PROTECTED / CORRUPT_DOCX) parses + ha
 // safety net" that surfaces a Mongo blip, a non-categorised
 // extraction throw, or any unanticipated failure. The lock
 // ensures it parses + has the right shape.
+//
+// Round-84 (2026-08-04): the outer catch now has TWO return paths.
+//   \u2022 DB_UNAVAILABLE \u2014 when the thrown error is a Mongo
+//     connection failure (MongoServerSelectionError / ECONNREFUSED /
+//     ECONNRESET / ETIMEDOUT / server-selection timeout), the route
+//     returns HTTP 503 with a friendly Swedish message + code
+//     'DB_UNAVAILABLE' instead of leaking raw connection noise as a
+//     400 (the "CV upload shows connect ECONNREFUSED" bug).
+//   \u2022 Generic fallthrough \u2014 everything else still returns 400
+//     with `error:` (unchanged contract).
+// The lock below asserts BOTH branches: the 503 DB_UNAVAILABLE body
+// parses + carries `error` + `code`, AND the final 400 fallthrough
+// (the LAST NextResponse.json in the catch slice) still returns
+// status 400 with an `error` key.
 // =====================================================================
 
-test('Lock 9: outer catch fallthrough parses + has 400 + error key', () => {
-  // Anchor on the LAST \u0060catch (\u0060 LITERAL since nested catch
+test('Lock 9: outer catch has DB_UNAVAILABLE 503 branch + 400 fallthrough with error key', () => {
+  // Anchor on the LAST `catch (` LITERAL since nested catch
   // blocks come BEFORE the outer catch in source order. Robust to
   // refactors that ADD new return statements after the catch
   // (which would break a brittle LAST-`return NextResponse.json`
   // anchor): adding a new return does NOT introduce a new catch
   // block.
   // Documented limitations:
-  //   - Misses ES2019 \u0060catch { \u0060 optional-binding form
+  //   - Misses ES2019 `catch { ` optional-binding form
   //     (not used in route.js, would only break if refactored).
-  //   - If a JSDoc-style \u0060@example catch (e) {\u0060 comment
+  //   - If a JSDoc-style `@example catch (e) {` comment
   //     precedes a return, comment-text could match. route.js has
   //     no JSDoc near the outer catch so this is hypothetical.
   const catchMatches = [...SRC.matchAll(/catch\s*\(\s*\w+\s*\)\s*\{/g)]
@@ -446,14 +460,28 @@ test('Lock 9: outer catch fallthrough parses + has 400 + error key', () => {
     'outer catch block must contain a return NextResponse.json(...) after its closing brace.',
   )
   const bodies = extractAllNextResponseBodies(SRC.slice(sliceFrom))
-  const catchBody = bodies[0]
-  assert.ok(catchBody, 'outer catch body must be parseable')
-  parseOnly(catchBody.body)
-  for (const canonical of ['error']) {
+  assert.ok(bodies.length >= 2, 'outer catch must contain at least 2 NextResponse.json returns (DB_UNAVAILABLE + fallthrough)')
+
+  // --- DB_UNAVAILABLE branch (Round-84) ---
+  const dbBody = bodies[0]
+  assert.ok(dbBody, 'DB_UNAVAILABLE body must be parseable')
+  parseOnly(dbBody.body)
+  for (const canonical of ['error', 'code']) {
     assert.ok(
-      hasKeyAtKeyPosition(catchBody.body, canonical),
-      `outer catch body must include key "${canonical}" at a KEY position.\n\nBody:\n${catchBody.body}`,
+      hasKeyAtKeyPosition(dbBody.body, canonical),
+      `DB_UNAVAILABLE body must include key "${canonical}" at a KEY position.\n\nBody:\n${dbBody.body}`,
     )
   }
-  assert.match(catchBody.statusChunk, /status:\s*400/, 'outer catch must return status 400')
+  assert.match(dbBody.body, /['"]DB_UNAVAILABLE['"]/, "DB_UNAVAILABLE body's `code` key must be the literal string 'DB_UNAVAILABLE'.")
+  assert.match(dbBody.statusChunk, /status:\s*503/, 'DB_UNAVAILABLE must return status 503 (Service Unavailable)')
+
+  // --- Generic 400 fallthrough (last return in the catch) ---
+  const fallbackBody = bodies[bodies.length - 1]
+  assert.ok(fallbackBody, 'outer catch fallthrough body must be parseable')
+  parseOnly(fallbackBody.body)
+  assert.ok(
+    hasKeyAtKeyPosition(fallbackBody.body, 'error'),
+    `outer catch fallthrough body must include key "error" at a KEY position.\n\nBody:\n${fallbackBody.body}`,
+  )
+  assert.match(fallbackBody.statusChunk, /status:\s*400/, 'outer catch fallthrough must return status 400')
 })

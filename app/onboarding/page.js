@@ -322,10 +322,24 @@ export default function OnboardingPage() {
         body: JSON.stringify(apiBody),
       })
 
-      const data = await res.json()
+      // Round-86 / Bug 2 — pre-fix this was a bare `await res.json()`:
+      // when the server died mid-request (Mongo outage, dev-server
+      // restart) the response body was empty and res.json() threw
+      // "Failed to execute 'json' on 'Response': Unexpected end of JSON
+      // input", which leaked as the raw English toast. Parsing
+      // defensively turns an empty/HTML body into `{}` so the user gets
+      // the Swedish fallback copy below instead.
+      const data = await res.json().catch(() => ({}))
 
       if (!res.ok) {
-        throw new Error(data.error || 'Kunde inte spara profilen')
+        // Round-86 / Bug 2: throw WITHOUT re-prefixing so the catch's
+        // `'Kunde inte spara profilen: ' + err.message` doesn't produce
+        // the redundant double-message toast ("...: Kunde inte spara
+        // profilen: ..."). data.error comes from the server's JSON body
+        // (e.g. the friendly DB_UNAVAILABLE 503 message). String()
+        // guard keeps a malformed non-string `error` from rendering
+        // "[object Object]" in the toast.
+        throw new Error(typeof data.error === 'string' ? data.error : 'Försök igen om en stund.')
       }
 
       // Success — small Sonner confirmation then redirect. Pairs with the

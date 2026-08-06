@@ -1814,6 +1814,27 @@ export async function POST(req, ctx) {
     return NextResponse.json({ error: 'Not found', path }, { status: 404 });
   } catch (err) {
     console.error('POST error', path, err);
+    // Round-86 / Bug 2 — the onboarding "Slutför" flow surfaced raw
+    // `connect ECONNREFUSED` / empty-body JSON parse errors when
+    // Mongo was down. Always return valid JSON (never an empty body),
+    // and translate Mongo connection failures into a friendly Swedish
+    // 503 the client can render directly (mirrors the upload-cv
+    // DB_UNAVAILABLE contract).
+    const msg = String(err?.message || err || '')
+    if (
+      err?.name === 'MongoServerSelectionError' ||
+      err?.name === 'MongoNetworkError' ||
+      err?.name === 'MongoTimeoutError' ||
+      /ECONNREFUSED|ECONNRESET|ETIMEDOUT|server selection timed out|timed out after/i.test(msg)
+    ) {
+      return NextResponse.json(
+        {
+          error: 'Vi kunde inte nå databasen just nu. Försök igen om en stund.',
+          code: 'DB_UNAVAILABLE',
+        },
+        { status: 503 },
+      )
+    }
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

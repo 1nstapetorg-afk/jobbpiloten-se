@@ -62,10 +62,19 @@ test.describe.serial('Onboarding: CV upload', () => {
       timeout: 20_000,
     })
 
-    // Click through to step 3 (Granska). The wizard advances on click;
-    // we don't fill any of the early-step fields — `Nästa` is just a
-    // stepper advance in this implementation, not a submit.
-    for (let i = 0; i < 3; i++) {
+    // Click through to step 3 (Granska). Step 1 (Personuppgifter)
+    // validates that a full name exists before advancing. In pure
+    // demo mode the fixture's localStorage.demoUser pre-fills the
+    // field; in a Clerk-keyed dev env useUser() returns the Clerk
+    // session (null for a fixture without a real Clerk account) so
+    // the demo-user fallback is NOT available client-side — type it
+    // to pass validation deterministically in BOTH auth modes (same
+    // pattern as onboarding-email-preview.spec.js).
+    await page.locator('button:has-text("Nästa")').click()
+    await page.waitForTimeout(150)
+    const nameInput = page.locator('input:below(:text("Fullständigt namn"))').first()
+    await nameInput.fill('Anna Test')
+    for (let i = 0; i < 2; i++) {
       await page.locator('button:has-text("Nästa")').click()
       // Brief settle so DOM reconciliation finishes before the next click.
       await page.waitForTimeout(150)

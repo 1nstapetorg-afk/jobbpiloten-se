@@ -1246,4 +1246,76 @@ popup + content storage-key literals and the 9-industry key set).
   `lint:await-async`, `lint:field-patterns` (73 FIELD_PATTERNS /
   70 profileKeys).
 
+## 15. Round-85 — Demo-identity fallback in Clerk-configured dev (2026-08-04)
+
+### What changed
+- **Bug:** in a Clerk-configured dev env (real keys in `.env`), the
+  onboarding wizard's demo-cookie auth was ignored — every onboarding
+  API call 401'd (`"Förhandsvisa AI-mejl" → Unauthorized`,
+  `"Slutför" → Kunde inte spara profilen: Unauthorized`).
+- **lib/auth.js** — `resolveAuthState` falls back to
+  `getDemoUserId(request)` when Clerk IS configured but yields no
+  session (non-production only; a real Clerk session always wins).
+- **middleware.js** — `/api/*` gate + page-route `auth.protect()` skip
+  for demo-identity requests on the main clerkMw path AND the
+  Clerk-SDK-throw catch path (non-production only). Imports the
+  shared `getDemoUserId` helper rather than re-parsing cookies.
+- **Production is never weakened** — every demo fallback is gated by
+  `NODE_ENV !== 'production'`; the demo cookie remains a dev/test
+  affordance, not an auth boundary (see lib/clerk-config.js).
+
+### Testing
+- `tests/unit/round85-auth-demo-fallback.test.mjs` — 6 source-pattern
+  locks (Clerk branch intact / fallback env-gated / shared import /
+  both middleware paths / page-route skip ordering / all call sites
+  env-gated sweep).
+
+## 16. Round-86 — Onboarding Step-4 bug pair: email-preview 502 + empty-body toast (2026-08-04)
+
+### What changed
+- **Bug pair:** `"Förhandsvisa AI-mejl" → Servern returnerade 502` and
+  `"Slutför" → Failed to execute 'json' on 'Response'`.
+- **lib/analytics.js** — `trackEvent` always returns
+  `Promise.resolve()` (never `undefined`), so the
+  `trackEvent(...).catch(...)` chains in the email routes can't throw
+  "Cannot read properties of undefined (reading 'catch')".
+- **app/api/email-preview/route.js** — `getDb()` + profile lookup
+  wrapped in try/catch; any failure soft-fails to the rule-based
+  fallback body (`source:'fallback'`, HTTP 200) — never a 502.
+- **app/onboarding/page.js** — `res.json().catch(() => ({}))`
+  defensive parse; error toast uses the server's own Swedish message
+  without double-prefixing.
+- **app/api/[[...path]]/route.js** — POST catch-all returns friendly
+  Swedish **503 `DB_UNAVAILABLE`** JSON on Mongo connection errors.
+- **app/api/upload-cv/route.js** + **lib/mongo.js** — same
+  DB_UNAVAILABLE 503 for upload-cv; Mongo singleton fail-fast
+  `serverSelectionTimeoutMS` (5s dev / 10s prod,
+  `MONGO_SERVER_SELECTION_TIMEOUT_MS` tunable) so a down DB never
+  hangs the UI for 30s.
+- **lib/groq.js** — `isTpdQuotaError()` + `parseTpdQuota()` pure
+  helpers; `createChatWithFallback` logs a loud
+  `TPD QUOTA EXHAUSTED` operator warning with limit/used/percent.
+- **lib/groq.js (followup)** — `isPromptEcho()` guard wired into
+  `generateEmailBody`'s acceptance check. The full-suite E2E run
+  caught a degraded provider echoing the raw prompt as the preview
+  body; it now degrades to the rule-based fallback (shared choke
+  point also protects the extension email-body path).
+
+### Testing
+- Unit: **1298 pass / 0 fail / 3 skipped** (`yarn test:unit`),
+  +14 vs Round-84 (groq-tpd-quota 4 + round86 locks 4 + round85
+  locks 6 + prompt-echo 3 = 17 new, 3 pre-existing skips).
+- **New E2E spec** `tests/e2e/onboarding-email-preview.spec.js`
+  (both Step-4 buttons end-to-end). Full suite in demo-mode prod
+  build: **83/84 pass** — sole failure is the mejlutkast-api 429
+  rate-limit test timing out on 20 sequential LLM calls while Groq's
+  TPD quota is exhausted (env latency, not a code issue; passes with
+  a healthy Groq quota).
+- **E2E env notes** (this sandbox): the demo-cookie suite requires a
+  **demo-mode build** (Clerk keys blanked) — a Clerk-keyed build
+  renders Clerk's sign-in paths. The onboarding specs now type the
+  full name on step 1 to pass validation in both auth modes (same
+  pattern as the Round-86 email-preview spec). MongoDB runs via
+  Docker: `docker start jobbpiloten-mongo` (mongo:7, port 27017).
+
 *End of handoff. Good luck.*

@@ -1082,6 +1082,29 @@ export async function POST(request) {
     });
   } catch (e) {
     console.error('upload-cv error', e);
+    // Round-84 fix (2026-08-04, "CV upload shows raw ECONNREFUSED"):
+    // when MongoDB is unreachable, getDb() throws a
+    // MongoServerSelectionError whose message is raw connection noise
+    // ("connect ECONNREFUSED ::1:27017, connect ECONNREFUSED
+    // 127.0.0.1:27017") — useless to a job-seeker. Detect Mongo
+    // connection failures by error name / message and surface a
+    // friendly Swedish message with HTTP 503 (Service Unavailable,
+    // correct for a dependency outage) instead of the raw stack text
+    // as a 400. Everything else keeps its existing 400 + message.
+    const rawMsg = String(e?.message || e || '')
+    const isMongoUnreachable =
+      /MongoServerSelectionError|MongoNetworkError|MongoTimeoutError/.test(e?.name || '') ||
+      /ECONNREFUSED|ECONNRESET|ETIMEDOUT|server selection timed out|timed out after/.test(rawMsg)
+    if (isMongoUnreachable) {
+      return NextResponse.json(
+        {
+          error:
+            'Vi kunde inte nå databasen just nu — filen sparades inte. Försök igen om en liten stund.',
+          code: 'DB_UNAVAILABLE',
+        },
+        { status: 503 },
+      )
+    }
     return NextResponse.json(
       { error: e?.message || 'Kunde inte bearbeta CV-filen.' },
       { status: 400 },

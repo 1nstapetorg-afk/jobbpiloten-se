@@ -63,10 +63,19 @@ test.describe.serial('Onboarding: industry selection', () => {
     await page.getByTestId('onboarding-industry-field-forklift_types-opt-a1-l-glyftande').click()
 
     // --- Step 1 → 3: click through the remaining steps ---
-    // Step 1 (Personuppgifter): demo user has fullName, so no input
-    // needed. Step 2 (Preferenser): no validation. Step 3 (Granska):
-    // "Slutför" submits.
-    for (let i = 0; i < 3; i++) {
+    // Step 1 (Personuppgifter): the demo user's fullName pre-fills the
+    // field in pure demo mode, but in a Clerk-keyed dev env useUser()
+    // returns the Clerk session (null for a fixture without a real
+    // Clerk account) so the client-side fallback is unavailable — type
+    // it to pass step-1 validation deterministically in BOTH auth modes
+    // (same pattern as onboarding-email-preview.spec.js). Step 2
+    // (Preferenser): no validation. Step 3 (Granska): "Slutför"
+    // submits.
+    await page.locator('button:has-text("Nästa")').click()
+    await page.waitForTimeout(150)
+    const nameInput = page.locator('input:below(:text("Fullständigt namn"))').first()
+    await nameInput.fill('Anna Test')
+    for (let i = 0; i < 2; i++) {
       await page.locator('button:has-text("Nästa")').click()
       await page.waitForTimeout(150)
     }

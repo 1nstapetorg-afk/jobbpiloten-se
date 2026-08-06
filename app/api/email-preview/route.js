@@ -137,20 +137,44 @@ export async function POST(request) {
     )
   }
 
-  const db = await getDb()
-  // Bug 1 (2026-07-20): replaced inline `findOne + isProfilePresent`
-  // check with `requireCompleteProfile()` so the "complete enough to
-  // use AI" predicate lives in one place. The previous local check
-  // here treated "profile doc exists" as required; the new helper
-  // additionally allows past-tense docs that have at least fullName
-  // OR email set (per tester spec: "treat as complete when basic
-  // fields are filled — /settings may have saved them through a
-  // different write path").
-  const lookup = await requireCompleteProfile(db, auth.userId)
-  if (!lookup.ok) {
-    return lookup.error
+  // Round-86 / Bug 1 — the pre-fix code called `getDb()` +
+  // `requireCompleteProfile()` OUTSIDE any try/catch. When Mongo was
+  // slow or down, the unhandled throw escaped the route handler and
+  // the onboarding preview surfaced "Servern returnerade 502" (the
+  // user's exact report). Both are now wrapped: any failure degrades
+  // to the rule-based fallback body with source:'fallback' — the
+  // route can no longer crash into a non-JSON 502/500.
+  let db
+  let profile = null
+  try {
+    db = await getDb()
+    // Bug 1 (2026-07-20): replaced inline `findOne + isProfilePresent`
+    // check with `requireCompleteProfile()` so the "complete enough to
+    // use AI" predicate lives in one place. The previous local check
+    // here treated "profile doc exists" as required; the new helper
+    // additionally allows past-tense docs that have at least fullName
+    // OR email set (per tester spec: "treat as complete when basic
+    // fields are filled — /settings may have saved them through a
+    // different write path").
+    const lookup = await requireCompleteProfile(db, auth.userId)
+    if (!lookup.ok) {
+      return lookup.error
+    }
+    profile = lookup.profile
+  } catch (dbErr) {
+    console.error('[email-preview] DB/profile lookup failed — soft-failing to fallback:', {
+      message: dbErr?.message || String(dbErr),
+      stack: dbErr?.stack || '(no stack)',
+      userId: auth.userId,
+    })
+    return NextResponse.json({
+      body: fallbackEmailBody({ jobTitle: parsed.data.jobTitle || '', company: parsed.data.company || '' }),
+      source: 'fallback',
+      cvShortWarning: true,
+      remaining: null,
+      monthKey: monthKey(),
+    })
   }
-  const profile = lookup.profile
 
   // Server-side toggle gate — mirrors the extension endpoint. A
   // user who flipped email-body OFF in /settings must still be

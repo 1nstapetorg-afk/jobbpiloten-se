@@ -34,6 +34,15 @@
 
 import { NextResponse } from 'next/server';
 import { isClerkConfiguredServer } from '@/lib/clerk-config';
+// Round-85 fix (2026-08-04, "onboarding shows Unauthorized"): the
+// middleware's Clerk-mode /api/* gate must let demo-identity requests
+// (x-demo-user-id header or demoUserId cookie — set by the onboarding
+// wizard, sign-in demo button, and e2e fixtures) through to the route's
+// own requireAuth, which now resolves the demo user when Clerk yields no
+// session. Pre-fix, this gate 401'd every onboarding POST (/api/profile,
+// /api/email-preview) in Clerk-configured dev even though the demo
+// cookie was present.
+import { getDemoUserId } from '@/lib/auth';
 
 export default async function middleware(req) {
   // If Clerk is not configured, skip all auth protection (demo mode)
@@ -96,11 +105,38 @@ export default async function middleware(req) {
       const url = new URL(req.url);
       if (url.pathname.startsWith('/api/')) {
         if (!auth.userId) {
+          // Round-85: demo-identity fallback. When Clerk has no session
+          // for this request but a demo cookie/header is present, pass
+          // through — the route's own requireAuth (lib/auth.js) resolves
+          // the demo user (non-production only). Without this, every
+          // onboarding POST 401'd in Clerk-configured dev despite the
+          // demo cookie the wizard set.
+          //
+          // NOTE on the NODE_ENV gate: this applies to ANY non-
+          // production deploy (dev, staging, Vercel preview, internal
+          // test envs), not just local dev — consistent with the
+          // codebase's existing `NODE_ENV !== 'production'` patterns
+          // (e.g. upload-cv logging). Production is always strict
+          // Clerk-only.
+          if (process.env.NODE_ENV !== 'production' && getDemoUserId(req)) {
+            return NextResponse.next();
+          }
           return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
         // Authenticated API request — pass through; the route's own
         // requireAuth (demo-cookie OR Clerk session) does the final gate.
-        return;
+        return NextResponse.next();
+      }
+      // Round-85 (page routes, non-production only): a demo-identity
+      // request skips auth.protect() so the post-onboarding redirect to
+      // /dashboard, /settings, etc. renders for a demo-cookie tester in
+      // a Clerk-configured dev/staging environment (the wizard +
+      // sign-in demo button authenticate via the demo cookie, not a
+      // Clerk session). Production keeps strict Clerk protection — the
+      // demo cookie is not an auth boundary there (see
+      // lib/clerk-config.js).
+      if (process.env.NODE_ENV !== 'production' && getDemoUserId(req)) {
+        return NextResponse.next();
       }
       await auth.protect();
     }
@@ -141,7 +177,18 @@ export default async function middleware(req) {
       // route already 401s JSON for the same shape).
       const url = new URL(req.url);
       if (url.pathname.startsWith('/api/')) {
+        // Round-85: same demo-identity pass-through as the main path —
+        // a Clerk-SDK throw must not 401 an otherwise-valid demo-cookie
+        // onboarding request in dev.
+        if (process.env.NODE_ENV !== 'production' && getDemoUserId(req)) {
+          return NextResponse.next();
+        }
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+      // Round-85: same demo pass-through for page routes on the
+      // Clerk-SDK-throw fallback path (dev only).
+      if (process.env.NODE_ENV !== 'production' && getDemoUserId(req)) {
+        return NextResponse.next();
       }
       const signInUrl = new URL('/sign-in', req.url);
       return NextResponse.redirect(signInUrl);

@@ -292,3 +292,61 @@ test('Round-49: generateEmailBody prompt builder must read PROMPT_CV_CHAR_CAP fr
   assert.ok(declIdx > 0 && emailBodyIdx > declIdx,
     'PROMPT_CV_CHAR_CAP declaration must appear BEFORE generateEmailBody (consts aren\'t hoisted)')
 })
+
+// =====================================================================
+// Round-86 followup — prompt-echo guard. The full-suite E2E run
+// observed the LLM reproduce the email-body prompt verbatim as the
+// preview body ("1. **Analyze User Input:** ... Write a short email
+// draft in Swedish...") when Groq's TPD quota is exhausted and a weak
+// fallback provider answers. The guard (isPromptEcho) must reject that
+// class so generateEmailBody degrades to the rule-based fallback.
+// =====================================================================
+
+// The verbatim echo class from the Round-86 full-suite failure.
+const ECHO_BODY =
+  '1.  **Analyze User Input:**\n   - **Role:** Swedish job application expert\n   - **Task:** Write a short email draft in Swedish to be pasted into an email client\n   - **Company:** företaget (placeholder, but I should use it as is or adapt naturally)'
+
+// A real application email (the rule-based fallback shape) must NEVER
+// be rejected by the echo guard.
+const REAL_EMAIL =
+  'Hej,\n\nJag såg er annons för tjänsten och vill gärna skicka in min ansökan via e-post.\n\nJag bifogar mitt CV och personliga brev.\n\nMed vänliga hälsningar,\nAnna Andersson'
+
+// Same fresh-load dance as groq-tpd-quota.test.mjs: import the module
+// with fetch blocked so pickProvider()'s startup side effects can't
+// hit the network. isPromptEcho is pure — no fetch ever happens.
+async function importGroqHelpers() {
+  const origFetch = globalThis.fetch
+  globalThis.fetch = () => Promise.reject(new Error('TEST_NETWORK_BLOCKED'))
+  try {
+    return await import(`../../lib/groq.js?t=${Date.now()}-${Math.random()}`)
+  } finally {
+    globalThis.fetch = origFetch
+  }
+}
+
+test('Round-86 followup: isPromptEcho rejects the observed prompt-echo body class', async () => {
+  const { isPromptEcho } = await importGroqHelpers()
+  assert.equal(isPromptEcho(ECHO_BODY), true, 'the verbatim prompt echo from the E2E run must be flagged')
+  assert.equal(isPromptEcho(new String(ECHO_BODY)), true, 'must also handle a String object')
+})
+
+test('Round-86 followup: isPromptEcho never flags a real application email', async () => {
+  const { isPromptEcho } = await importGroqHelpers()
+  assert.equal(isPromptEcho(REAL_EMAIL), false, 'a normal Swedish application email must pass')
+  assert.equal(isPromptEcho('Kort text'), false, 'sub-80-char inputs are never emails and must not be flagged')
+  assert.equal(isPromptEcho(''), false, 'empty string must not be flagged')
+  assert.equal(isPromptEcho(undefined), false, 'undefined must not be flagged (String() guard)')
+  assert.equal(isPromptEcho(null), false, 'null must not be flagged')
+})
+
+test('Round-86 followup: generateEmailBody acceptance guard references isPromptEcho (source lock)', () => {
+  // The guard is the single choke point for the email body: if a
+  // future refactor drops the echo check, the degraded-model prompt
+  // leak returns silently. Lock the reference next to the length +
+  // placeholder guards it extends.
+  assert.match(
+    GROQ_SRC,
+    /!containsPlaceholder\(text\)\s*&&\s*!isPromptEcho\(text\)/,
+    'generateEmailBody must reject prompt echoes via !isPromptEcho(text) in the same guard as !containsPlaceholder(text)',
+  )
+})
