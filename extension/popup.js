@@ -2471,7 +2471,16 @@ async function setupMejlutkastPanel() {
 
   async function refreshRecentJobs() {
     const { token } = await loadStorage()
-    if (!token) return
+    if (!token) {
+      // Round-92 — a missing token must not leave the picker as a
+      // silent blank (the pre-fix `return` kept the bare HTML
+      // placeholder with zero feedback). Render the actionable empty
+      // state so the user sees WHY there are no jobs + gets the
+      // "Ladda om" retry affordance.
+      recentJobs = []
+      populatePicker([])
+      return
+    }
     try {
       const dashboardOrigin = await resolveEnvAuthBaseUrl()
       const url = dashboardOrigin + '/api/applications/recent'
@@ -2514,6 +2523,14 @@ async function setupMejlutkastPanel() {
     }
   }
 
+  // Round-92 — register the refresh fn on the module-scoped hook so
+  // switchMode() can re-populate the picker the moment the Mejlkast
+  // tab is selected (fetch-on-open). The pre-fix flow ONLY fetched
+  // via the compose-target path (applyTarget), so a popup opened in
+  // Mejlkast mode without a detected compose window left the
+  // dropdown at its bare HTML placeholder.
+  refreshMejlutkastJobs = refreshRecentJobs
+
   function populatePicker(jobs) {
     if (!pickEl) return
     // Reset, keeping the placeholder option at index 0.
@@ -2546,7 +2563,14 @@ async function setupMejlutkastPanel() {
       retryOption.value = '__retry__'
       retryOption.dataset.action = 'retry'
       retryOption.textContent = '↻ Ladda om'
-      select.appendChild(retryOption)
+      // Round-92 bug fix — this was `select.appendChild(...)` which
+      // referenced a variable that is UNDEFINED in populatePicker's
+      // scope (the only `select` bindings live in the industry-panel
+      // + style-override functions). With zero jobs the ReferenceError
+      // threw AFTER `pickEl.innerHTML = ''`, leaving the Mejlkast
+      // picker as a completely blank dropdown — the exact Bug 1
+      // symptom. Must be `pickEl` (the picker <select>).
+      pickEl.appendChild(retryOption)
     }
     pickEl.appendChild(placeholder)
     for (const j of jobs) {
@@ -2707,6 +2731,17 @@ async function setupMejlutkastPanel() {
 
   if (pickEl) {
     pickEl.addEventListener('change', () => {
+      // Round-73 / BUG B — the "↻ Ladda om" empty-state option is
+      // rendered by populatePicker([]) with value='__retry__'. The
+      // handler must dispatch a re-fetch (NOT treat it as a chosen
+      // job), then revert the selection so the dropdown doesn't get
+      // stuck showing a fake "chosen" retry row. Locks the contract
+      // in tests/unit/round73-bug-b-retry.test.mjs.
+      if (pickEl.value === '__retry__') {
+        pickEl.value = ''
+        refreshRecentJobs().catch(() => {})
+        return
+      }
       // When the user picks a different job, re-Generate with the
       // new jobId. We don't auto-generate on every change because
       // that would burn LLM tokens on a misclick; explicit
@@ -2739,12 +2774,24 @@ async function setupMejlutkastPanel() {
 
   // Initial render — read the cached composeTarget so a popup
   // re-opened within 1s of detection still has the recipient.
+  let composeTargetApplied = false
   try {
     const data = await chrome.storage.local.get('jobbpiloten_composeTarget')
     if (data && data.jobbpiloten_composeTarget && data.jobbpiloten_composeTarget.present) {
       await applyTarget(data.jobbpiloten_composeTarget)
+      composeTargetApplied = true
     }
   } catch (_) { /* non-fatal */ }
+
+  // Round-92 — fetch-on-open for the Mejlkast tab: populate the job
+  // picker when the popup opens in Mejlkast mode even if no compose
+  // target was detected yet (the pre-fix code left the dropdown
+  // blank in that case). Skipped when applyTarget already fetched
+  // via the compose-target path, so opening on Gmail compose does
+  // not double-GET /api/applications/recent.
+  if (currentMode === ACTIVE_MODE_MEJLUTKAST && !composeTargetApplied) {
+    try { await refreshRecentJobs() } catch (_) { /* non-fatal */ }
+  }
 }
 
 // ---- Compose-panel AI-fetch dedupe (Round-46.1 / Bug 1 followup) ----
@@ -2846,6 +2893,11 @@ async function isActiveTabEmailClient() {
 // scope to mutate the hoisted binding.
 let currentMode = ACTIVE_MODE_FORMULAR
 
+// Round-92 — module-scoped hook: setupMejlutkastPanel registers
+// refreshRecentJobs here; switchMode() invokes it when the user
+// selects the Mejlkast tab so the job picker populates on open.
+let refreshMejlutkastJobs = null
+
 function setupModeToggle() {
   const formPill = $('jp-mode-formular')
   const mejPill = $('jp-mode-mejlutkast')
@@ -2923,6 +2975,13 @@ function switchMode(mode) {
     chrome.storage.local.set({ [STORAGE_KEYS.activeMode]: mode })
   } catch (_) { /* non-fatal */ }
   applyModeVisibility(mode)
+  // Round-92 — fetch-on-open: populate the job picker the moment the
+  // Mejlkast tab is selected (the pre-fix flow only fetched via the
+  // compose-target path, so a tab switch with no detected compose
+  // window left the dropdown at its bare HTML placeholder).
+  if (mode === ACTIVE_MODE_MEJLUTKAST && refreshMejlutkastJobs) {
+    refreshMejlutkastJobs().catch(() => {})
+  }
 }
 
 // ---- Re-query helper (Round-11 polish) ----
@@ -3685,6 +3744,10 @@ async function setupAutoSwitchLiveListener() {
         // Round-54.2 fix rationale in git history.
         currentMode = ACTIVE_MODE_MEJLUTKAST
         applyModeVisibility(ACTIVE_MODE_MEJLUTKAST)
+        // Round-92 — keep the auto-switch path consistent with the
+        // pill-tab path: populate the job picker on entry to the
+        // Mejlkast view (no-op when the hook isn't registered yet).
+        if (refreshMejlutkastJobs) refreshMejlutkastJobs().catch(() => {})
       } catch (err) {
         // Non-fatal: a single failed tick should not permanently
         // disable the listener. The next storage.onChanged event
@@ -3782,6 +3845,10 @@ async function loadAndPaint() {
       // Round-58 marker: `target && target.present (no longer required)`.
       currentMode = ACTIVE_MODE_MEJLUTKAST
       applyModeVisibility(ACTIVE_MODE_MEJLUTKAST)
+      // Round-92 — same picker-populate-on-entry as the pill-tab
+      // path (see switchMode). No-op until the panel registers the
+      // hook.
+      if (refreshMejlutkastJobs) refreshMejlutkastJobs().catch(() => {})
     }
   } catch (_) { /* non-fatal: never block the popup on a flaky storage read */ }
   if (error) {

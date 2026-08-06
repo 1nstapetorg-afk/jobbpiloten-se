@@ -2937,7 +2937,10 @@ async function ensureBadge(matchesCount) {
     const r = await fillAll()
     hideBadge()
     if (r.filled === 0 && r.missing === 0) {
-      showToast('Ingen profil ansluten — öppna jobbpiloten.se/dashboard och klicka Anslut.')
+      // Round-92 (Bug 2 fix) — dynamic dashboard origin instead of
+      // the hard-coded production URL (wrong on preview/Codespaces).
+      const base = await resolveApiBaseUrl()
+      showToast(`Ingen profil ansluten — öppna ${base}/dashboard och klicka Anslut.`)
     }
   }
   badgeEl.addEventListener('click', onActivate)
@@ -3000,8 +3003,41 @@ function showToast(text) {
     'z-index:2147483647',
     'opacity:0',
     'transition:opacity 200ms',
+    // Round-92 (Bug 2 fix) — row layout so the dismiss × sits
+    // inline next to the message text.
+    'display:flex',
+    'align-items:center',
+    'gap:10px',
+    'max-width:min(90vw, 560px)',
   ].join(';')
-  t.textContent = text
+  // Round-92 (Bug 2 fix) — dismiss × button. The "ingen profil"
+  // toast previously auto-dismissed after 2.8s with no way to close
+  // it early; a user who knows they aren't using the extension can
+  // now close it immediately. Aria-label keeps the × accessible to
+  // screen readers.
+  const textEl = document.createElement('span')
+  textEl.textContent = text
+  t.appendChild(textEl)
+  const closeBtn = document.createElement('button')
+  closeBtn.type = 'button'
+  closeBtn.setAttribute('aria-label', 'Stäng')
+  closeBtn.textContent = '×'
+  closeBtn.style.cssText = [
+    'background:none',
+    'border:none',
+    'color:#94a3b8',
+    'font:700 16px system-ui,-apple-system,sans-serif',
+    'cursor:pointer',
+    'padding:2px 6px',
+    'line-height:1',
+    'border-radius:4px',
+    'flex-shrink:0',
+  ].join(';')
+  closeBtn.addEventListener('click', () => {
+    t.style.opacity = '0'
+    setTimeout(() => t.remove(), 220)
+  })
+  t.appendChild(closeBtn)
   document.documentElement.appendChild(t)
   requestAnimationFrame(() => { t.style.opacity = '1' })
   setTimeout(() => {
@@ -3020,11 +3056,28 @@ function scheduleScan() {
   scanTimer = setTimeout(async () => {
     const r = await scanAndPaint()
     if (!r.hasProfile) {
-      // Still partly useful: surface the install button so a fresh
-      // user lands on a registration CTA. Without a connected
-      // profile we don't show the floating badge — it'd be a no-op.
-      if (r.matches.length >= 1) {
-        showToast('JobbPiloten Auto-Fill upptäckt — ingen profil ansluten. Öppna jobbpiloten.se/dashboard och klicka Anslut.')
+      // Still partly useful: surface the install CTA so a fresh user
+      // on a THIRD-PARTY job site lands on a registration path.
+      // Without a connected profile we don't show the floating badge
+      // — it'd be a no-op.
+      //
+      // Round-92 (Bug 2 fix) — three things changed here:
+      //   1. NEVER toast on the JobbPiloten app itself. The content
+      //      script is injected on the app origin too, so the pre-fix
+      //      code showed a dark "Öppna jobbpiloten.se/dashboard"
+      //      banner WHILE the user was already on the dashboard — the
+      //      false positive. The dashboard has its own connect card;
+      //      the toast is only useful on external job sites.
+      //   2. The dashboard URL is now resolved dynamically via
+      //      resolveApiBaseUrl() (configured dashboard origin, prod
+      //      fallback) instead of the hard-coded production domain,
+      //      which was wrong on preview/Codespaces environments.
+      //   3. The toast carries a dismiss × (see showToast), so a
+      //      user who knows they aren't using the extension can
+      //      close it immediately.
+      if (r.matches.length >= 1 && !isJobbPilotenAppOrigin(window.location.origin)) {
+        const base = await resolveApiBaseUrl()
+        showToast(`JobbPiloten Auto-Fill upptäckt — ingen profil ansluten. Öppna ${base}/dashboard och klicka Anslut.`)
       }
       return
     }
