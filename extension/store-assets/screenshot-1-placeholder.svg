@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#eef2ff"/>
+      <stop offset="100%" stop-color="#e0e7ff"/>
+    </linearGradient>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4f46e5"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="800" fill="url(#bg)"/>
+  <text x="640" y="120" text-anchor="middle" font-family="system-ui, sans-serif" font-size="56" font-weight="700" fill="#1e293b">JobbPiloten Auto-Fill</text>
+  <text x="640" y="170" text-anchor="middle" font-family="system-ui, sans-serif" font-size="26" fill="#64748b">POPUP — ANSLUTEN (screenshot-1 placeholder, 1280×800)</text>
+  <rect x="390" y="230" width="500" height="420" rx="20" fill="#ffffff" stroke="#c7d2fe" stroke-width="3"/>
+  <rect x="420" y="260" width="90" height="90" rx="14" fill="url(#brand)"/>
+  <text x="465" y="317" text-anchor="middle" font-family="system-ui, sans-serif" font-size="40" fill="#ffffff" font-weight="700">J</text>
+  <text x="530" y="300" font-family="system-ui, sans-serif" font-size="28" font-weight="600" fill="#0f172a">Demo Användare</text>
+  <text x="530" y="334" font-family="system-ui, sans-serif" font-size="20" fill="#16a34a">● Ansluten — token giltig 87 dagar</text>
+  <rect x="420" y="420" width="440" height="56" rx="12" fill="#4f46e5"/>
+  <text x="640" y="456" text-anchor="middle" font-family="system-ui, sans-serif" font-size="22" font-weight="600" fill="#ffffff">Fyll i nu</text>
+  <rect x="420" y="490" width="440" height="56" rx="12" fill="#f59e0b"/>
+  <text x="640" y="526" text-anchor="middle" font-family="system-ui, sans-serif" font-size="22" font-weight="600" fill="#1f2937">Skapa mejlutkast</text>
+  <rect x="420" y="560" width="440" height="56" rx="12" fill="#f1f5f9" stroke="#cbd5e1"/>
+  <text x="640" y="596" text-anchor="middle" font-family="system-ui, sans-serif" font-size="22" font-weight="600" fill="#334155">Öppna Dashboard</text>
+  <text x="640" y="690" text-anchor="middle" font-family="system-ui, sans-serif" font-size="18" fill="#94a3b8">Ersätt med riktig skärmbild (PNG 1280×800) före uppladdning.</text>
+</svg>

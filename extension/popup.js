@@ -129,7 +129,7 @@ const STORAGE_KEYS = {
   errors: 'jobbpiloten_errors',
 }
 const BUILD_CONFIG_FILE = 'build-config.json'
-const VERSION = '0.3.3'
+const VERSION = '1.0.0'
 
 // Round-52 / Issue 1 — Mejlutkast mode + heartbeat thresholds.
 const ACTIVE_MODE_FORMULAR = 'formular'

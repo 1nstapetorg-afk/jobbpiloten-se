@@ -18,7 +18,7 @@
  * lifetime — same as classic scripts.
  */
 
-const JOBBPILOTEN_EXTENSION_VERSION = '0.3.0'
+const JOBBPILOTEN_EXTENSION_VERSION = '1.0.0'
 
 // Atomic fill-rate-limit slot acquisition — content scripts ask
 // before they touch any DOM. The SW is single-threaded across every
