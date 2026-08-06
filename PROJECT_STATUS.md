@@ -1138,3 +1138,60 @@ invites (P1 #5), CWS upload of `dist/extension-1.0.0-cws.zip`
 (P1 #2 tail) + post-review `NEXT_PUBLIC_EXTENSION_PUBLISHED=1` /
 `NEXT_PUBLIC_EXTENSION_STORE_URL` in `.env.production`, and real
 Stripe price IDs in `.env` before checkout works in prod.
+
+---
+
+## Round-91 (2026-08-06) — Launch-readiness batch (plan, persisted before execution)
+
+Plan generated from the Round-90 wrap-up: all Round-88/89/90
+code-level items are closed; the only remaining work before public
+launch is external (deploy, invites, CWS). This batch targets the
+code-level gaps that would otherwise bite DURING soft-launch
+traffic. Execution happens in this batch — this section is the
+persisted plan.
+
+### Priority 1 — Soft-launch hardening (code-level, pre-traffic)
+
+1. **Indexing: robots.txt + sitemap.xml** — Round-89 added metadata
+   tags but no crawler files. Add `app/robots.js` + `app/sitemap.js`
+   (Next.js metadata routes): allow crawl of `/`, `/privacy`,
+   `/terms`, `/legal/cookies`, `/extension-install`,
+   `/extension-privacy`; disallow `/api/*`, `/dashboard`,
+   `/settings`, `/onboarding`, `/test-form`, `/*?*` query params.
+   Sitemap lists only the 6 public pages with the canonical base
+   URL from `lib/siteConfig.js#SITE_URL`. Locked by a structural
+   test (`tests/unit/round91-robots-sitemap.test.mjs`).
+2. **Waitlist POST rate-limit** — `/api/waitlist` is a public
+   write endpoint with NO `checkRateLimit` (every sibling public
+   route — `/api/track`, email-draft, extension/* — has one). A
+   spammer can fill the `waitlist` collection freely. Mirror the
+   in-memory IP-bucket pattern from `app/api/track/route.js`
+   (`checkRateLimit(ip)`, module-scoped Map, ~10 req/h window,
+   Swedish 429) into `/api/waitlist` POST. Locked by contract
+   tests in `tests/unit/round89-waitlist.test.mjs` (new cases).
+3. **Checkout fail-closed on placeholder price IDs** — today a
+   request for a tier whose `STRIPE_PRICE_*` env var is unset hits
+   Stripe with `undefined` price and surfaces a raw English Stripe
+   error. Add a guard in the catch-all POST `checkout` branch:
+   missing price id → Swedish 503 `PRICING_NOT_CONFIGURED`
+   ("Prenumerationer är inte konfigurerade ännu — försök igen
+   senare."). Prevents a confusing checkout UX if soft-launch
+   traffic arrives before price IDs are set. Locked by a test.
+
+### Priority 2 — Ops polish
+
+4. **`scripts/smoke-cron.mjs`** — one-command cron smoke test
+   (mirrors `smoke-saved-answers.mjs`): POST `/api/cron` (with
+   `CRON_SECRET` if set), assert `ok:true, cron:"ran"`, print the
+   per-user results + whether `cron_logs` gained a `cron_run` row.
+   Operationalizes the P1 #4 external verification step so it's
+   `node scripts/smoke-cron.mjs` instead of a manual curl+jq
+   sequence.
+5. **(Optional, defer if time-constrained) Admin ai-status page**
+   — `/api/admin/ai-status` exists (Round-88 #1) but has no UI.
+   A minimal Clerk-admin page rendering the Groq quota health
+   would close the loop; deferred unless the batch has headroom.
+
+**Out of scope (external/human):** Vercel deploy + cron verification
+(P1 #4), invites (P1 #5), CWS upload (P1 #2 tail), real Stripe
+price IDs.

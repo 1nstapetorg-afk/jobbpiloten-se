@@ -1463,4 +1463,32 @@ status. Highlights:
 Unit suite at batch end: **1381 pass / 0 fail / 3 skipped**
 (`yarn test:unit`).
 
+## 20. Round-90/91 — Close-out + next batch plan (2026-08-06)
+
+**Round-90 (committed `6f46e71`):** closed the last open code-level
+item from the Round-88 plan — P2 #10 doc correction (native
+`mongodb` driver, not mongoose). Re-verified zero mongoose imports
+in `app/`+`lib/` and `package.json`; renamed the one stale test
+title in `tests/unit/route-precedence.test.mjs`. Status markers for
+P2 #9/#10 corrected in this file + `PROJECT_STATUS.md`.
+
+**Live verification (Round-90, local dev server, all green):**
+`/api/health` → 200 `{status:ok,db:true,groq:true}`; waitlist POST
+valid → 201, duplicate → 409, uppercase-normalized duplicate → 409,
+invalid → 400, unauth GET → 401; landing 200 with title/canonical/
+OG/Twitter/JSON-LD/Plausible + `waitlist-section` present;
+`/dashboard` 404 for an unauth HEAD is the expected Clerk
+`protect-rewrite` (not a bug).
+
+**Round-91 plan (persisted, NOT yet executed):** see
+`PROJECT_STATUS.md §Round-91` for the full batch. In short:
+1. robots.txt + sitemap.xml (`app/robots.js` + `app/sitemap.js`,
+   6 public pages only) — lock with a structural test.
+2. Rate-limit `/api/waitlist` POST (mirror `/api/track`'s in-memory
+   IP bucket; currently a public write endpoint with none).
+3. Checkout fail-closed 503 `PRICING_NOT_CONFIGURED` when a
+   `STRIPE_PRICE_*` id is unset.
+4. `scripts/smoke-cron.mjs` one-command cron smoke.
+5. (Defer if tight) admin UI for `/api/admin/ai-status`.
+
 *End of handoff. Good luck.*

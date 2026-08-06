@@ -466,6 +466,94 @@ const FIELD_PATTERNS = [
 const PROD_BASE_URL = 'https://jobbpiloten.se'
 const PROD_ALLOWED_ORIGINS = ['https://jobbpiloten.se']
 
+// Round-91 — JobbPiloten APP-origin allowlist. This is the list that
+// gates BOTH (a) the handleDashboardUrl storage WRITE and (b) the
+// resolveApiBaseUrl re-validation of that stored value before it is
+// used as a token-bearing fetch base. It is therefore STRICTLY
+// NARROWER than the popup's mirror:
+//
+//   • `https://*.vercel.app/*` is deliberately ABSENT. `*.vercel.app`
+//     is an attacker-claimable wildcard — anyone can deploy to
+//     `anything.vercel.app` — so a hostile page there could poison
+//     `jobbpiloten_dashboardUrl` and the next AI-fetch would POST the
+//     user's real bearer token to the attacker. The popup keeps it
+//     for openAuthFlow/preview compat, but storage can never be
+//     poisoned to a vercel.app origin because THIS write gate
+//     rejects it first.
+//   • `*.app.github.dev` + `*.preview.app.github.dev` are kept: the
+//     whole point of Round-91 is to support GitHub Codespaces preview
+//     URLs. Residual attacker-claimability (an attacker's own
+//     codespace) is accepted and documented.
+//   • `*.preview.emergentagent.com` is org-controlled (not
+//     attacker-claimable) and kept for the org preview platform.
+//
+// DISTINCT from the manifest host_permissions list, which
+// legitimately includes webmail + job-board hosts for the
+// content-script fetch paths — those must NEVER be adopted as an API
+// base. The content copy is intentionally narrower than the popup's;
+// the two lists must NEVER both contain a pattern that would let a
+// hostile page become a token-bearing fetch base.
+const JOBBPILOTEN_APP_ORIGIN_PATTERNS = [
+  'https://jobbpiloten.se/*',
+  'https://*.preview.emergentagent.com/*',
+  'https://*.preview.app.github.dev/*',
+  'https://*.app.github.dev/*',
+  'http://localhost:*/*',
+  'http://127.0.0.1:*/*',
+]
+
+// Round-91 — narrow app-origin gate for content.js (mirrors the
+// popup's isJobbPilotenAppOrigin). hostPatternToRegex is hoisted (a
+// later function declaration in this file), so this is safe to call
+// from resolveApiBaseUrl / handleDashboardUrl.
+function isJobbPilotenAppOrigin(origin) {
+  try {
+    for (const pattern of JOBBPILOTEN_APP_ORIGIN_PATTERNS) {
+      const re = hostPatternToRegex(pattern)
+      if (re && re.test(origin)) return true
+    }
+  } catch (_) { /* malformed pattern — fail closed */ }
+  return false
+}
+
+// Round-91 — resolve the API base origin for content-script fetches.
+//
+// SECURITY: the stored dashboard URL is read back from
+// chrome.storage (sync first, then local — mirroring the popup's
+// tier order, since handleDashboardUrl writes sync when available)
+// BUT re-validated here against the NARROW JobbPiloten app-origin
+// allowlist before being trusted as an API base. This is required
+// because `jobbpiloten_dashboardUrl` IS writable by a hostile host
+// page via the handleDashboardUrl postMessage path (gated only on
+// `ev.source === window`). Without the narrow re-validation, a page
+// on the attacker-claimable `*.vercel.app` wildcard could poison the
+// key and the next AI-fetch would POST the user's real bearer token
+// to the attacker. The narrow list (see the allowlist comment above)
+// excludes `*.vercel.app`, webmail/job-board hosts, and anything
+// else that isn't a real JobbPiloten deployment origin.
+//
+// Fallback: prod, so the extension keeps working with no configured
+// dashboard URL (e.g. a user who never opened /dashboard).
+async function resolveApiBaseUrl() {
+  // Mirror the popup's tier order: sync first (the dashboard's
+  // handleDashboardUrl writes sync when available), then local
+  // (legacy-Chrome fallback). Reading ONLY local would miss the
+  // sync-written value and silently fall back to prod.
+  for (const area of ['sync', 'local']) {
+    try {
+      const data = await chrome.storage[area].get('jobbpiloten_dashboardUrl')
+      const raw = data && data.jobbpiloten_dashboardUrl
+      if (raw && typeof raw === 'string') {
+        const u = new URL(raw)
+        if ((u.protocol === 'https:' || u.protocol === 'http:') && isJobbPilotenAppOrigin(u.origin)) {
+          return u.origin
+        }
+      }
+    } catch (_) { /* storage area unavailable — try the next tier */ }
+  }
+  return PROD_BASE_URL
+}
+
 // Round-73 / Followup 3 (2026-07-20). Dev-flag logic lives
 // INSIDE clickBooleanOption (as a vm-context-safe local IIFE).
 // An earlier draft exposed a module-level `const __DEV__` here,
@@ -824,12 +912,22 @@ function resolveProfileValue(profile, key) {
 // doesn't let content + popup share an ESM module without a
 // bundler) so the two must stay byte-identical — divergence is
 // a silent DNS-rebinding vector.
-function assertOriginAllowed(url) {
+async function assertOriginAllowed(url) {
   const origin = (() => {
     try { return new URL(url).origin } catch (_) { return null }
   })()
   if (!origin) throw new Error('Ogiltig URL')
-  if (!PROD_ALLOWED_ORIGINS.includes(origin)) {
+  // Round-91 — dynamic allow-list: the hard-coded prod origin (the
+  // security floor) PLUS the configured dashboard origin (only ever
+  // written after a host_permissions check). This lets a preview /
+  // Codespaces dashboard (e.g. https://<code>-<port>.app.github.dev)
+  // fetch /api/extension/* without loosening the gate to the whole
+  // manifest host_permissions list.
+  const allowed = new Set(PROD_ALLOWED_ORIGINS)
+  try {
+    allowed.add(await resolveApiBaseUrl())
+  } catch (_) { /* keep the prod-only floor */ }
+  if (!allowed.has(origin)) {
     throw new Error(`Origin ej tillåten: ${origin}`)
   }
   return origin
@@ -2319,8 +2417,8 @@ async function fetchAIAnswers({ token, queue, styleOverride }) {
       // active page's origin). assertOriginAllowed then independently
       // checks the URL against the hard-coded PROD_ALLOWED_ORIGINS
       // allow-list — see the SECURITY comment in section 3.
-      const url = `${PROD_BASE_URL}/api/extension/answer`
-      assertOriginAllowed(url)
+      const url = `${await resolveApiBaseUrl()}/api/extension/answer`
+      await assertOriginAllowed(url)
       const body = { question, field }
       if (overrideStyle) body.style = overrideStyle
       const res = await fetch(url, {
@@ -2423,9 +2521,9 @@ async function fetchBatchAIAnswers({ token, queue, styleOverride }) {
     lang: queue.some((q) => q.lang === 'en') ? 'en' : 'sv',
   }
   if (overrideStyle) payload.style = overrideStyle
-  const url = `${PROD_BASE_URL}/api/extension/ai-answers`
+  const url = `${await resolveApiBaseUrl()}/api/extension/ai-answers`
   try {
-    assertOriginAllowed(url)
+    await assertOriginAllowed(url)
   } catch (_) {
     // Fail closed: a compromised page trying to provoke a token-leak
     // request should not get any response (not even a 4xx). Mirror
@@ -3051,7 +3149,15 @@ function handleDashboardUrl(payload) {
   } catch (_) {
     return
   }
-  if (!isOriginInHostAllowlist(origin)) return
+  // Round-91 — narrow write gate. The pre-fix check used the broad
+  // manifest host_permissions list (which includes the
+  // attacker-controllable `*.vercel.app` wildcard + the webmail /
+  // job-board hosts) — a hostile page on any of those could poison
+  // `jobbpiloten_dashboardUrl`, and since Round-91 makes that key the
+  // API base for token-bearing fetches, the write gate must be the
+  // same narrow JobbPiloten app-origin list the fetch gate uses.
+  // Webmail/job-board hosts were never valid dashboard origins.
+  if (!isJobbPilotenAppOrigin(origin)) return
   try {
     chrome.storage.sync.set({ jobbpiloten_dashboardUrl: origin })
   } catch (_) {
@@ -3060,24 +3166,6 @@ function handleDashboardUrl(payload) {
     // a Tier-1 hit to find.
     chrome.storage.local.set({ jobbpiloten_dashboardUrl: origin })
   }
-}
-
-function isOriginInHostAllowlist(origin) {
-  try {
-    const manifest = chrome.runtime.getManifest()
-    const hostPerms = Array.isArray(manifest.host_permissions) ? manifest.host_permissions : []
-    // Convert each pattern like "https://jobbpiloten.se/*" or
-    // "https://*.vercel.app/*" into a regex; match if origin matches
-    // any pattern. The trailing-`/*`-strip in hostPatternToRegex
-    // makes the bare-origin test work, so re.test(origin) covers
-    // both the origin alone AND the origin + path.
-    for (const pattern of hostPerms) {
-      if (!pattern || typeof pattern !== 'string') continue
-      const re = hostPatternToRegex(pattern)
-      if (re && re.test(origin)) return true
-    }
-  } catch (_) { /* chrome not available */ }
-  return false
 }
 
 function hostPatternToRegex(pattern) {

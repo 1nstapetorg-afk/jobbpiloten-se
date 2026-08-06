@@ -434,7 +434,13 @@ const JOBBPILOTEN_APP_ORIGIN_PATTERNS = [
   'https://jobbpiloten.se/*',
   'https://*.vercel.app/*',
   'https://*.preview.emergentagent.com/*',
+  // Round-91 — GitHub migrated Codespaces port-forwarding from
+  // `*.preview.app.github.dev` to `*.app.github.dev` in Aug 2023
+  // (the GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN change). The old
+  // pattern is kept for pre-migration codespaces; the new one is
+  // REQUIRED for any current preview URL copied from the Ports panel.
   'https://*.preview.app.github.dev/*',
+  'https://*.app.github.dev/*',
   'http://localhost:*/*',
   'http://127.0.0.1:*/*',
 ]

@@ -80,10 +80,10 @@ test('JOBBPILOTEN_APP_ORIGIN_PATTERNS must exclude mail/job-board hosts that cau
 })
 
 test('JOBBPILOTEN_APP_ORIGIN_PATTERNS must include the real deployment origins', () => {
-  for (const origin of ['https://jobbpiloten.se', 'https://*.vercel.app', 'https://*.preview.emergentagent.com', 'http://localhost:*']) {
+  for (const origin of ['https://jobbpiloten.se', 'https://*.vercel.app', 'https://*.preview.emergentagent.com', 'https://*.preview.app.github.dev', 'https://*.app.github.dev', 'http://localhost:*']) {
     assert.ok(
       POPUP_JS.includes(origin),
-      `JOBBPILOTEN_APP_ORIGIN_PATTERNS must include ${origin} — the popup must keep working on prod / preview / localhost`,
+      `JOBBPILOTEN_APP_ORIGIN_PATTERNS must include ${origin} — the popup must keep working on prod / preview / localhost / Codespaces`,
     )
   }
 })
@@ -243,7 +243,11 @@ test('behavioral: isJobbPilotenAppOrigin admits only JobbPiloten deployment orig
     'https://jobbpiloten.se/extension-auth',
     'https://x.vercel.app',
     'https://jobbpiloten-se.preview.emergentagent.com',
+    // Round-91 — BOTH Codespaces domains must pass the gate: the
+    // pre-2023 `*.preview.app.github.dev` AND the current
+    // `*.app.github.dev` (GitHub migrated in Aug 2023).
     'https://jobbpiloten-se.preview.app.github.dev',
+    'https://jobbpiloten-se-3000.app.github.dev',
     'http://localhost:3000',
     'http://127.0.0.1:3000',
   ]) {
