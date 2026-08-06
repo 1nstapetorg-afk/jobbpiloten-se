@@ -887,6 +887,113 @@ async function handleAuthSync(payload) {
   scheduleScan()
 }
 
+// ---------- 3b. Round-93 — pending-token fallback channels ----------
+//
+// The postMessage auth-sync bridge above silently no-ops in two
+// cases:
+//   • Injection race — the dashboard's postMessage fired BEFORE this
+//     content script was injected (document_start vs. React mount).
+//   • ev.source gate — the dashboard sends to itself; on some pages
+//     the event's `source` isn't the same `window` object the
+//     listener compares against, so the message is dropped.
+//
+// Round-93 adds TWO side channels the dashboard writes in
+// `connectExtension` (app/dashboard/page.js) and this function
+// consumes on injection + on a bounded retry schedule:
+//   • Path B — a short-lived same-origin cookie `jp_ext_token`
+//     (max-age=60, SameSite=Strict). The cookie is visible to the
+//     content script regardless of injection timing.
+//   • Task 4 — `window.__JPPENDING_TOKEN` (set only when postMessage
+//     already ran, as a mirror for content scripts injected late).
+//
+// SECURITY: an attacker page can set `jp_ext_token` /
+// `__JPPENDING_TOKEN` to ANY value — but those values are only ever
+// STORED locally and used as the bearer for the extension's own
+// API calls. A hostile token fails the server's signature check at
+// mint time and yields a 401 on the next /api/extension/* call;
+// nothing sensitive is read or exfiltrated by consuming an attacker-
+// supplied token. The token is never POSTed anywhere except the
+// server endpoints that already validate it.
+
+async function consumePendingToken() {
+  let token = null
+  try {
+    // Path B — cookie.
+    const m = /(?:^|;\s*)jp_ext_token=([a-f0-9]{64})/i.exec(document.cookie || '')
+    if (m) token = m[1]
+    // Task 4 — DOM-attribute mirror. MV3 content scripts run in an
+    // ISOLATED world: they cannot read page-world JS globals, so
+    // `window.__JPPENDING_TOKEN` (set by the dashboard page) is
+    // invisible here — but DOM attributes ARE shared across worlds.
+    // The dashboard writes BOTH mirrors; this attribute is the one
+    // that actually reaches us. (The window mirror is kept in both
+    // files for spec parity + any future `world: 'MAIN'` injection.)
+    if (!token) {
+      const attr = document.documentElement && document.documentElement.getAttribute('data-jp-pending-token')
+      if (attr && /^[a-f0-9]{64}$/i.test(attr)) token = attr
+    }
+  } catch (_) { /* cookie/attribute read blocked — ignore */ }
+  if (!token) return
+  // One-shot: clear the cookie + attribute so a later page load
+  // doesn't re-consume a stale token.
+  try {
+    document.cookie = 'jp_ext_token=; path=/; max-age=0; SameSite=Strict'
+  } catch (_) { /* ignore */ }
+  try {
+    if (document.documentElement) document.documentElement.removeAttribute('data-jp-pending-token')
+  } catch (_) { /* ignore */ }
+  // Recover the full profile via the token so storage ends up with a
+  // COMPLETE bundle (the cookie / mirror only carry the token). If
+  // the profile fetch fails (DB down, token revoked) the token still
+  // lands — the popup's refreshProfile will reconcile later.
+  let profile = null
+  try {
+    const base = await resolveApiBaseUrl()
+    const url = `${String(base).replace(/\/$/, '')}/api/extension/profile`
+    await assertOriginAllowed(url)
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    if (res.ok) profile = await res.json().catch(() => null)
+  } catch (_) { /* profile fetch failure — token alone still lands */ }
+  await writeStorage({ token, profile })
+  console.info('[JobbPiloten ext] consumed pending token (cookie/__JPPENDING_TOKEN)', {
+    hasToken: !!token,
+    profileKeys: profile && typeof profile === 'object' ? Object.keys(profile).length : 0,
+  })
+  scheduleScan()
+}
+
+// Bounded retry schedule for the pending-token channels. The
+// dashboard sets the cookie AFTER its POST round-trip, so a
+// document_start injection is too early — we re-check across the
+// cookie's 60 s lifetime a handful of times.
+function watchForPendingToken() {
+  consumePendingToken().catch(() => {})
+  const delays = [1000, 3000, 8000, 15000, 30000]
+  for (const d of delays) {
+    setTimeout(() => consumePendingToken().catch(() => {}), d)
+  }
+}
+
+// Round-93 (Task 4) — 5 s "content_script_alive" bridge heartbeat.
+// The popup listens on chrome.runtime.onMessage; while the popup is
+// open it sees these pings and can confirm the bridge is working
+// (the diagnostics panel shows bridge liveness). Best-effort — the
+// sendMessage is wrapped so a closed popup / missing listener never
+// throws. This is the runtime-message equivalent of "postMessage to
+// the popup" — content scripts cannot window.postMessage to the
+// popup window directly in MV3, so the runtime channel is the
+// canonical route.
+function startBridgePing() {
+  if (startBridgePing._handle) return
+  const ping = () => {
+    try {
+      chrome.runtime.sendMessage({ type: 'JOBBPILOTEN_CONTENT_ALIVE', at: Date.now() })
+    } catch (_) { /* no listener — ignore */ }
+  }
+  ping()
+  startBridgePing._handle = setInterval(ping, 5000)
+}
+
 // ---------- 4. Profile-key resolver ----------
 //
 // `user.answers.whyThisCompany` is a nested key — we walk the path
@@ -3140,7 +3247,11 @@ function startObserver() {
  * (currently: AI-adaptive fills).
  */
 function getExtensionVersion() {
-  return '1.0.0'
+  // Round-93 — synced to manifest `x_jp_version` (the human-facing
+  // build tag). The dashboard reads this via the
+  // data-jobbpiloten-ext-version attribute for feature gating; the
+  // popup's update-check compares it against /api/extension/version.
+  return '1.0.0-93'
 }
 
 window.addEventListener('message', (ev) => {
@@ -3457,6 +3568,10 @@ if (_skipAuthPage) {
   // anslutet" pill reflects the current browser state.
   startHeartbeat()
   startHeartbeatAttributeMirror()
+  // Round-93 — the pending-token channels + bridge ping apply on
+  // auth pages too (the dashboard's connectExtension runs there).
+  watchForPendingToken()
+  startBridgePing()
 } else if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     startObserver()
@@ -3471,6 +3586,10 @@ if (_skipAuthPage) {
     // document.querySelectorAll, <1ms on a typical page.
     setTimeout(() => scheduleScan(), 0)
     idleScheduler(() => scheduleScan())
+    // Round-93 — consume the dashboard's cookie/__JPPENDING_TOKEN
+    // fallback channels + start the 5 s bridge ping.
+    watchForPendingToken()
+    startBridgePing()
   })
 } else {
   startObserver()
@@ -3479,6 +3598,9 @@ if (_skipAuthPage) {
   startHeartbeatAttributeMirror()
   setTimeout(() => scheduleScan(), 0)
   idleScheduler(() => scheduleScan())
+  // Round-93 — consume pending-token channels + bridge ping.
+  watchForPendingToken()
+  startBridgePing()
 }
 
 // Always attempt the file-button injection on load — it doesn't

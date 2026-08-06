@@ -130,6 +130,11 @@ const STORAGE_KEYS = {
 }
 const BUILD_CONFIG_FILE = 'build-config.json'
 const VERSION = '1.0.0'
+// Round-93 — human-facing build tag (manifest `x_jp_version`).
+// MUST match extension/manifest.json's `x_jp_version` field AND
+// the /api/extension/version route — locked by
+// tests/unit/round93-version-endpoint.test.mjs.
+const BUILD_VERSION = '1.0.0-93'
 
 // Round-52 / Issue 1 — Mejlutkast mode + heartbeat thresholds.
 const ACTIVE_MODE_FORMULAR = 'formular'
@@ -1311,7 +1316,67 @@ const HANDSHAKE_TYPE = 'JOBBPILOTEN_AUTH_HANDSHAKE'
 const authHandshakeState = {
   windowId: null,
   timer: null,
+  // Round-93 (Path C) — 2 s polling handle that watches
+  // chrome.storage.local for the token while the auth window is open.
+  poll: null,
   received: false,
+}
+
+// Round-93 (Path C) — polling fallback for token delivery. The
+// postMessage handshake + the storage.onChanged listener are the
+// primary delivery channels, but a raced content script (injected
+// AFTER the dashboard's postMessage) can miss both. This 2 s poll
+// watches chrome.storage.local directly; the moment the token lands
+// (via the jp_ext_token cookie fallback, the __JPPENDING_TOKEN
+// injection check, or the content-script bridge) we close the auth
+// window + repaint as connected. The 30 s AUTH_HANDSHAKE_TIMEOUT_MS
+// timer still bounds the wait — success or timeout clears both.
+function startAuthTokenPoll() {
+  if (authHandshakeState.poll) return
+  authHandshakeState.poll = setInterval(async () => {
+    try {
+      const data = await chrome.storage.local.get(STORAGE_KEYS.token)
+      const landed = data && data[STORAGE_KEYS.token]
+      if (landed && authHandshakeState.received !== true) {
+        authHandshakeState.received = true
+        if (authHandshakeState.timer) {
+          clearTimeout(authHandshakeState.timer)
+          authHandshakeState.timer = null
+        }
+        clearInterval(authHandshakeState.poll)
+        authHandshakeState.poll = null
+        try {
+          if (authHandshakeState.windowId != null) {
+            chrome.windows.remove(authHandshakeState.windowId).catch(() => {})
+          }
+        } catch (_) { /* window already gone */ }
+        authHandshakeState.windowId = null
+        setStatus({ connected: true, profile: null, detected: [] })
+        await pushAuthDebug('step6-poll-detected', {})
+        loadAndPaint()
+      }
+    } catch (_) { /* storage read raced the write — next tick */ }
+  }, 2000)
+}
+
+// Round-93 (Task 4) — content-script bridge liveness. content.js
+// sends JOBBPILOTEN_CONTENT_ALIVE every 5 s while injected on any
+// tab; the popup records the last ping so the diagnostics panel can
+// report whether the bridge is actually working (vs. a dead content
+// script silently dropping every channel). In-memory is enough — the
+// popup is short-lived and the diagnostics panel only needs "alive
+// within the last ~10 s".
+let lastBridgePingAt = 0
+
+function setupBridgeAliveListener() {
+  try {
+    chrome.runtime.onMessage.addListener((message, _sender, _sendResponse) => {
+      if (!message || typeof message !== 'object') return
+      if (message.type === 'JOBBPILOTEN_CONTENT_ALIVE') {
+        lastBridgePingAt = Date.now()
+      }
+    })
+  } catch (_) { /* older Chrome — diagnostics shows 'okänt' */ }
 }
 
 function setupAuthHandshakeReceiver() {
@@ -1393,6 +1458,12 @@ async function handleAuthHandshake(ev) {
   if (authHandshakeState.timer) {
     clearTimeout(authHandshakeState.timer)
     authHandshakeState.timer = null
+  }
+  // Round-93 (Path C) — stop the storage-poll fallback; the direct
+  // postMessage delivery won the race.
+  if (authHandshakeState.poll) {
+    clearInterval(authHandshakeState.poll)
+    authHandshakeState.poll = null
   }
   // Persist. local is the read-priority for the popup + content
   // scripts; sync is the cross-device mirror so a user who reconnects
@@ -1541,8 +1612,18 @@ async function openAuthFlow() {
               error: 'Anslutningen tog för länge — försök igen eller öppna Dashboard manuellt.',
             })
             authHandshakeState.timer = null
+            // Round-93 (Path C) — stop the 2 s poll too: the wait is
+            // over and a late token would be picked up by the next
+            // popup open / storage.onChanged listener instead.
+            if (authHandshakeState.poll) {
+              clearInterval(authHandshakeState.poll)
+              authHandshakeState.poll = null
+            }
           }
         }, AUTH_HANDSHAKE_TIMEOUT_MS)
+        // Round-93 (Path C) — 2 s storage poll fallback (see
+        // startAuthTokenPoll below).
+        startAuthTokenPoll()
         await pushAuthDebug('step3-opened-window', { url, windowId: authHandshakeState.windowId })
       } else {
         console.info('[jobbpiloten popup] ChromeOS detected — using tabs.create (popup windows can render blank on Chromebook)')
@@ -3447,6 +3528,8 @@ async function wire() {
   // gate, opening the auth window and quickly closing it can race
   // against the postMessage and the popup shows "Ansluter…" forever.
   setupAuthHandshakeReceiver()
+  // Round-93 — bridge-liveness listener for the diagnostics panel.
+  setupBridgeAliveListener()
   // v0.2.1: Koppla från button — only visible when connected. Wired
   // through `disconnect()` above so the UI never spins forever on a
   // hung popup even if the server revoke fails.
@@ -3506,6 +3589,33 @@ async function wire() {
   if (saveBtn) saveBtn.addEventListener('click', saveDashboardUrl)
   const resetBtn = $('jp-settings-reset-btn')
   if (resetBtn) resetBtn.addEventListener('click', resetDashboardUrl)
+  // Round-93 — Diagnostik button + panel wiring.
+  const diagBtn = $('jp-diagnostics-btn')
+  if (diagBtn) diagBtn.addEventListener('click', async () => {
+    const panel = $('jp-diagnostics')
+    if (!panel) return
+    if (panel.hidden) {
+      await populateDiagnostics()
+      panel.hidden = false
+    } else {
+      panel.hidden = true
+    }
+  })
+  const diagCopyBtn = $('jp-diagnostics-copy-btn')
+  if (diagCopyBtn) diagCopyBtn.addEventListener('click', copyDiagnostics)
+  const diagCloseBtn = $('jp-diagnostics-close-btn')
+  if (diagCloseBtn) diagCloseBtn.addEventListener('click', () => {
+    const panel = $('jp-diagnostics')
+    if (panel) panel.hidden = true
+  })
+  // Round-93 — Avancerat manual-paste wiring (Path D).
+  const advancedToggle = $('jp-advanced-toggle-btn')
+  if (advancedToggle) advancedToggle.addEventListener('click', () => {
+    const box = $('jp-advanced')
+    if (box) box.hidden = !box.hidden
+  })
+  const advancedSave = $('jp-advanced-save-btn')
+  if (advancedSave) advancedSave.addEventListener('click', saveManualToken)
   // Storage changes (e.g. another tab just connected) refresh the
   // pill in real time so the user sees green the moment they click
   // the dashboard's "Anslut" button.
@@ -3555,6 +3665,13 @@ async function wire() {
         if (authHandshakeState.timer) {
           clearTimeout(authHandshakeState.timer)
           authHandshakeState.timer = null
+        }
+        // Round-93 (Path C) — stop the storage-poll fallback; the
+        // onChanged listener won the race (or the poll already
+        // closed the window and set received=true — this is a no-op).
+        if (authHandshakeState.poll) {
+          clearInterval(authHandshakeState.poll)
+          authHandshakeState.poll = null
         }
         authHandshakeState.received = true
         // 2026-07-12 (Round-10 critical fix): mirror local → sync
@@ -3691,6 +3808,173 @@ function setSettingsStatus(el, msg, kind) {
   el.textContent = msg
   el.className = 'jp-settings-status jp-settings-status-' + (kind === 'ok' ? 'ok' : 'err')
   el.hidden = false
+}
+
+// ---- Round-93 — footer version + stale-install update check ----
+//
+// The popup footer shows the running build (v1.0.0-93) and, on open,
+// fetches ${DASHBOARD_URL}/api/extension/version to compare against
+// it. A mismatch (the user is running an old unpacked build while the
+// server has a newer artifact) reveals the yellow
+// "Uppdatering tillgänglig" banner. This permanently kills the
+// "I reloaded the extension but it still doesn't connect" class of
+// reports — the popup now tells the user the build is stale instead
+// of leaving them to guess.
+function renderFooterVersion() {
+  const el = $('jp-footer-version')
+  if (el) el.textContent = `v${BUILD_VERSION}`
+}
+
+async function checkForUpdate() {
+  const banner = $('jp-update-banner')
+  if (!banner) return
+  try {
+    const baseUrl = await resolveEnvAuthBaseUrl()
+    const origin = (() => { try { return new URL(baseUrl).origin } catch (_) { return '' } })()
+    if (!origin) return
+    // Gate the fetch against the same app-origin allow-list the rest
+    // of the popup uses — never fetch the version endpoint from a
+    // DNS-rebinding origin.
+    if (!isJobbPilotenAppOrigin(origin)) return
+    const res = await fetch(`${origin}/api/extension/version`, { cache: 'no-store' })
+    if (!res.ok) return
+    const json = await res.json().catch(() => ({}))
+    const serverVersion = String(json && json.version || '')
+    if (serverVersion && serverVersion !== BUILD_VERSION) {
+      banner.hidden = false
+    }
+  } catch (_) { /* network off / preview down — banner stays hidden */ }
+}
+
+// ---- Round-93 — Diagnostik panel ----
+//
+// Aggregates the state that matters when a connect flow fails:
+// running version, resolved dashboard URL, manifest origin patterns,
+// chrome.storage.local summary, last error, connection status. The
+// "Kopiera diagnostik" button serializes everything to the clipboard
+// so a tester can paste the whole panel into a bug report without
+// opening devtools.
+async function populateDiagnostics() {
+  const pre = $('jp-diagnostics-pre')
+  if (!pre) return
+  const lines = []
+  // 1. Version
+  lines.push(`Version: v${BUILD_VERSION}`)
+  // 2. Connection status
+  lines.push(`Status: ${connected ? 'Ansluten' : 'Inte ansluten'}`)
+  // 3. Resolved dashboard URL
+  try {
+    const baseUrl = await resolveEnvAuthBaseUrl()
+    lines.push(`Dashboard-URL: ${baseUrl}`)
+  } catch (_) {
+    lines.push('Dashboard-URL: (okänt)')
+  }
+  // 4. Manifest origin patterns
+  try {
+    const manifest = chrome.runtime.getManifest()
+    const hostPerms = Array.isArray(manifest && manifest.host_permissions) ? manifest.host_permissions : []
+    lines.push(`Origin-mönster (${hostPerms.length}):`)
+    hostPerms.forEach((p) => lines.push(`  ${p}`))
+  } catch (_) {
+    lines.push('Origin-mönster: (otillgängliga)')
+  }
+  // 5. chrome.storage.local summary (privacy-safe: booleans + counts)
+  try {
+    const data = await chrome.storage.local.get(null)
+    const token = data[STORAGE_KEYS.token]
+    const profile = data[STORAGE_KEYS.profile]
+    const errors = data[STORAGE_KEYS.errors]
+    lines.push(`Token: ${token ? 'JA (' + String(token).length + ' tecken)' : 'nej'}`)
+    lines.push(`Profil: ${profile && typeof profile === 'object' ? 'JA (' + Object.keys(profile).length + ' nycklar)' : 'nej'}`)
+    lines.push(`Fel-buffer: ${Array.isArray(errors) ? errors.length + ' st' : 'tom'}`)
+    // Ping/heartbeat freshness
+    const ping = data[STORAGE_KEYS.pingAt]
+    lines.push(`Heartbeat: ${typeof ping === 'number' && ping > 0 ? Math.round((Date.now() - ping) / 1000) + 's sedan' : 'saknas'}`)
+    // Bridge liveness (content-script ping within the last ~10 s)
+    const bridgeAge = lastBridgePingAt > 0 ? Date.now() - lastBridgePingAt : null
+    lines.push(`Bridge: ${bridgeAge != null && bridgeAge < 10000 ? 'aktiv (' + Math.round(bridgeAge / 1000) + 's sedan)' : (lastBridgePingAt > 0 ? 'inaktiv' : 'ingen ping ännu')}`)
+  } catch (_) {
+    lines.push('chrome.storage.local: (oläsbar)')
+  }
+  // 6. Last error from the auth-debug trail
+  try {
+    const dbg = await chrome.storage.local.get(AUTH_DEBUG_KEY)
+    const buf = Array.isArray(dbg[AUTH_DEBUG_KEY]) ? dbg[AUTH_DEBUG_KEY] : []
+    if (buf.length > 0) {
+      const last = buf[buf.length - 1]
+      lines.push(`Senaste auth-steg: ${last && last.step || '(okänt)'} @ ${last && last.ts || ''}`)
+    } else {
+      lines.push('Senaste auth-steg: (inga)')
+    }
+  } catch (_) { /* ignore */ }
+  pre.textContent = lines.join('\n')
+}
+
+async function copyDiagnostics() {
+  const pre = $('jp-diagnostics-pre')
+  if (!pre) return
+  const text = pre.textContent || ''
+  try {
+    await navigator.clipboard.writeText(text)
+    const btn = $('jp-diagnostics-copy-btn')
+    if (btn) {
+      const original = btn.textContent
+      btn.textContent = 'Kopierad ✓'
+      setTimeout(() => { btn.textContent = original }, 1200)
+    }
+  } catch (_) { /* clipboard blocked — user can select manually */ }
+}
+
+// ---- Round-93 — Avancerat manual token paste (Path D, debug) ----
+//
+// Last-resort delivery path: a power user pastes a 64-hex token
+// minted by /api/extension/token and the popup stores it directly
+// (bypassing the auth-window + postMessage + cookie + polling
+// channels). The format is validated before it is written so a
+// malformed paste can't poison storage. The server is NOT called
+// here — the existing refreshProfile() flow validates the token on
+// the next status refresh.
+const TOKEN_HEX_RE = /^[a-f0-9]{64}$/i
+
+async function saveManualToken() {
+  const input = $('jp-advanced-token-input')
+  const status = $('jp-advanced-status')
+  if (!input) return
+  const token = String(input.value || '').trim()
+  if (!token) {
+    setSettingsStatus(status, 'Klistra in en token först.', 'err')
+    return
+  }
+  if (!TOKEN_HEX_RE.test(token)) {
+    setSettingsStatus(status, 'Ogiltig token — förväntade 64 hexadecimala tecken.', 'err')
+    return
+  }
+  try {
+    // Store the token (local + sync mirror), then complete the
+    // connection: refreshProfile() fetches the profile with the
+    // bearer token and repaints as "Ansluten" (the connected gate is
+    // `token && profile`, so the token alone is NOT enough — the
+    // profile fetch is what flips the pill). refreshProfile validates
+    // the token server-side; an invalid/revoked token clears storage
+    // and surfaces "Token ogiltig — anslut igen från Dashboard".
+    await chrome.storage.local.set({ [STORAGE_KEYS.token]: token })
+    try {
+      await chrome.storage.sync.set({ [STORAGE_KEYS.token]: token })
+    } catch (_) { /* sync unavailable — local is enough */ }
+    setSettingsStatus(status, 'Token sparad — hämtar profil…', 'ok')
+    input.value = ''
+    await refreshProfile()
+    // refreshProfile clears the token when the server rejects it, so
+    // a surviving token means the profile fetch succeeded.
+    const after = await chrome.storage.local.get([STORAGE_KEYS.token, STORAGE_KEYS.profile])
+    if (after && after[STORAGE_KEYS.token] && after[STORAGE_KEYS.profile]) {
+      setSettingsStatus(status, 'Token sparad och verifierad — ansluten.', 'ok')
+    } else {
+      setSettingsStatus(status, 'Token ogiltig eller profil saknas — anslut via Dashboard istället.', 'err')
+    }
+  } catch (e) {
+    setSettingsStatus(status, 'Kunde inte spara: ' + String(e && e.message || e), 'err')
+  }
 }
 
 // ---- Round-55 / Followup 2 — live auto-switch listener ----
@@ -3929,6 +4213,9 @@ async function loadAndPaint() {
     setupAutoSwitchLiveListener()
     // Round-81 — industry selector + per-industry field list.
     setupIndustryPanel()
+    // Round-93 — footer version stamp + stale-install update check.
+    renderFooterVersion()
+    checkForUpdate()
     // 2026-07-17 (Bug-2 fix) — defensive wrap so a paint crash can
     // never strand buttons at their HTML-default `disabled` state.
     // If `loadAndPaint()` throws (e.g. due to a malformed profile in

@@ -20,7 +20,7 @@
        mirrors extension/manifest.json extension_pages connect-src
        EXACTLY — drift is locked by
        tests/unit/popup-handshake.test.mjs since Round-7. v0.2.4 -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://jobbpiloten.se https://*.vercel.app https://*.preview.emergentagent.com http://localhost:* https://mail.google.com https://outlook.live.com https://outlook.office.com https://*.arbetsformedlingen.se https://*.blocket.se;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://jobbpiloten.se https://*.vercel.app https://*.preview.emergentagent.com https://*.preview.app.github.dev https://*.app.github.dev http://localhost:* https://mail.google.com https://outlook.live.com https://outlook.office.com https://*.arbetsformedlingen.se https://*.blocket.se;">
   <title>JobbPiloten Auto-Fill</title>
   <link rel="stylesheet" href="popup.css">
 </head>
@@ -185,6 +185,13 @@
         data-testid="jp-disconnect-btn"
       >
         Koppla från
+      </button>
+      <!-- Round-93 — Diagnostik. Always visible; opens the inline
+           diagnostics panel with the connect-flow state that a bug
+           report needs (version, dashboard URL, storage summary,
+           last error). -->
+      <button type="button" class="jp-btn jp-btn-link" id="jp-diagnostics-btn" data-testid="jp-diagnostics-btn">
+        🔬 Diagnostik
       </button>
     </section>
 
@@ -478,7 +485,32 @@
       <div class="jp-settings-status jp-compose-status" id="jp-compose-status" aria-live="polite" hidden></div>
     </section>
 
+    <!-- Round-93 — stale-install warning banner. Hidden by default;
+         popup.js fetch-checks ${DASHBOARD_URL}/api/extension/version on
+         open and reveals this when the server reports a newer build
+         than the running manifest. The copy steers the user to
+         chrome://extensions → Reload (unpacked extensions never
+         auto-update — this was the root cause of the "connect works
+         but the popup is stale" class of reports). -->
+    <section
+      class="jp-update-banner"
+      id="jp-update-banner"
+      hidden
+      data-testid="jp-update-banner"
+      role="alert"
+    >
+      <span class="jp-update-banner-icon" aria-hidden="true">⚠</span>
+      <span class="jp-update-banner-text" id="jp-update-banner-text">
+        Uppdatering tillgänglig. Gå till chrome://extensions och klicka Uppdatera.
+      </span>
+    </section>
+
     <p class="jp-footer-hint" id="jp-footer-hint"></p>
+
+    <!-- Round-93 — popup footer version stamp. Small gray text so a
+         user can tell at a glance which build they're running; the
+         diagnostics panel + update banner use the same source. -->
+    <p class="jp-footer-version" id="jp-footer-version" data-testid="jp-footer-version"></p>
 
     <!-- Round-72 — Errors button. Hidden by default; surfaces only
          when the FIFO buffer in chrome.storage.local under
@@ -551,6 +583,71 @@
         aria-live="polite"
         hidden
       ></div>
+
+      <!-- Round-93 — Avancerat (manual token paste, debug only).
+           Hidden behind the settings panel; a power user can paste a
+           64-hex token minted by /api/extension/token to force-connect
+           without the auth-window round-trip. This is the last-resort
+           delivery path (Path D) when every postMessage/cookie/polling
+           channel fails. Validated on save (64-hex regex) before it
+           is written to chrome.storage.local. -->
+      <div class="jp-advanced" id="jp-advanced" hidden data-testid="jp-advanced">
+        <div class="jp-settings-title">Avancerat</div>
+        <p class="jp-settings-help">
+          Klistra in en token från <code>/api/extension/token</code> för att ansluta manuellt (debug).
+        </p>
+        <textarea
+          id="jp-advanced-token-input"
+          class="jp-compose-textarea"
+          rows="2"
+          placeholder="64-hex token…"
+          spellcheck="false"
+          data-testid="jp-advanced-token-input"
+        ></textarea>
+        <div class="jp-settings-actions">
+          <button type="button" class="jp-btn jp-btn-secondary" id="jp-advanced-save-btn">Spara token</button>
+        </div>
+        <div
+          class="jp-settings-status"
+          id="jp-advanced-status"
+          aria-live="polite"
+          hidden
+        ></div>
+      </div>
+
+      <!-- Round-93 — Avancerat disclosure toggle (sits below the
+           settings status). Clicking expands the manual-paste box. -->
+      <button
+        type="button"
+        class="jp-btn jp-btn-link"
+        id="jp-advanced-toggle-btn"
+        data-testid="jp-advanced-toggle-btn"
+      >Avancerat…</button>
+    </section>
+
+    <!-- Round-93 — Diagnostik panel. Opened via the footer Diagnostik
+         button; aggregates the state that matters when a connect flow
+         fails: running version, resolved dashboard URL, manifest origin
+         patterns, chrome.storage.local summary, last error, and the
+         current connection status. The "Kopiera diagnostik" button
+         serializes all of it to the clipboard for bug reports. -->
+    <section
+      class="jp-diagnostics"
+      id="jp-diagnostics"
+      hidden
+      aria-labelledby="jp-diagnostics-title"
+      data-testid="jp-diagnostics"
+    >
+      <div class="jp-settings-title" id="jp-diagnostics-title">🔬 Diagnostik</div>
+      <pre
+        class="jp-diagnostics-pre"
+        id="jp-diagnostics-pre"
+        data-testid="jp-diagnostics-pre"
+      ></pre>
+      <div class="jp-settings-actions">
+        <button type="button" class="jp-btn jp-btn-secondary" id="jp-diagnostics-copy-btn">Kopiera diagnostik</button>
+        <button type="button" class="jp-btn jp-btn-link" id="jp-diagnostics-close-btn">Stäng</button>
+      </div>
     </section>
   </main>
 

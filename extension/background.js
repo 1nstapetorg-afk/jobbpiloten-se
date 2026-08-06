@@ -18,7 +18,10 @@
  * lifetime — same as classic scripts.
  */
 
-const JOBBPILOTEN_EXTENSION_VERSION = '1.0.0'
+// Round-93 — synced to manifest `x_jp_version`. The install-time
+// jobbpiloten_version stamp + the popup's stale-install check both
+// read this build tag.
+const JOBBPILOTEN_EXTENSION_VERSION = '1.0.0-93'
 
 // Atomic fill-rate-limit slot acquisition — content scripts ask
 // before they touch any DOM. The SW is single-threaded across every

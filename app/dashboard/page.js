@@ -986,6 +986,34 @@ function DashboardContent() {
           payload: { url: window.location.origin },
         }, window.location.origin)
       } catch (_) { /* non-fatal */ }
+      // Round-93 (Path B) — cookie fallback. The postMessage bridge
+      // is the primary channel but it silently no-ops when the
+      // content script isn't injected yet (injection race) or the
+      // message is missed. The content script checks this short-lived
+      // cookie on injection and hydrates chrome.storage.local from
+      // it. max-age=60 bounds the exposure window; SameSite=Strict
+      // keeps it same-origin only. The token is the extension's own
+      // bearer (revocable server-side); the full profile follows via
+      // the content script's own /api/extension/profile fetch.
+      try {
+        document.cookie = `jp_ext_token=${json.token}; path=/; max-age=60; SameSite=Strict`
+      } catch (_) { /* cookie blocked — non-fatal */ }
+      // Round-93 (Path B / Task 4) — also mirror the token so a
+      // content script that IS already injected (ev.source !== window
+      // gate excluded it, or injected late) can pick it up without
+      // waiting for a new cookie read. Two mirrors, because MV3
+      // content scripts run in an ISOLATED world: they cannot see
+      // page-world JS globals (window.__JPPENDING_TOKEN), but they
+      // CAN read DOM attributes. Both are written; content.js
+      // prefers the DOM attribute and treats the window mirror as
+      // documentation/spec parity. Cleaned up by content.js after
+      // consumption.
+      try {
+        window.__JPPENDING_TOKEN = { token: json.token, origin: window.location.origin }
+      } catch (_) { /* non-fatal */ }
+      try {
+        document.documentElement.setAttribute('data-jp-pending-token', json.token)
+      } catch (_) { /* non-fatal */ }
       setConnectStatus({ ok: true, message: 'Tillägget är anslutet — profil synkad.' })
       toast.success('JobbPiloten Auto-Fill anslutet!'
         + ' Fyll i formulär direkt från valfri jobbsida.')
