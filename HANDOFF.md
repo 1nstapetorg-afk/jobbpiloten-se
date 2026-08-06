@@ -264,7 +264,6 @@ Connection pattern: **one shared, self-healing singleton** in `lib/mongo.js` —
 │   ├── siteConfig.js (see above)
 │   ├── ssrf-guard.js (see above)
 │   ├── utils.js                     cn() (Tailwind classname merger), truncate(), hashShort() (FNV-1a base36 — NOT a privacy primitive; see JSDoc warning).
-│   └── constants/testIds/           data-testid constants (auth.js, home.js, index.js).
 │
 ├── public/
 │   ├── favicon.svg
