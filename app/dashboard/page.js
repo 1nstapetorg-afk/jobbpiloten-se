@@ -3,22 +3,8 @@
 import { useEffect, useState, useRef, useMemo, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useUser } from '@/hooks/useAuth'
-import dynamic from 'next/dynamic'
 import Link from 'next/link'
 
-const ClerkUserButton = dynamic(
-  () => import('@clerk/nextjs').then(mod => ({ default: mod.UserButton })).catch(() => ({ default: () => null })),
-  { ssr: false }
-)
-
-// Canonical client-side Clerk check — see lib/clerk-config.js.
-import { isClerkConfiguredClient } from '@/lib/clerk-config'
-const isClerkConfigured = isClerkConfiguredClient
-
-function SafeUserButton(props) {
-  if (!isClerkConfigured()) return null
-  return <ClerkUserButton {...props} />
-}
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -38,6 +24,8 @@ import { SUPPORT_EMAIL, VAPID_PUBLIC_KEY, EXTENSION_PUBLISHED, EXTENSION_STORE_U
 import { buildBlocketSearchUrl, buildJobSafariSearchUrl, buildLedigaJobbSearchUrl } from '@/lib/jobScraper'
 import { locationsToLänCodes, doesJobMatchUserLocation } from '@/lib/swedishLocations'
 import ProfileAvatar from '@/components/ProfileAvatar'
+import UserMenu from '@/components/UserMenu'
+import TypewriterReveal from '@/components/TypewriterReveal'
 
 // Round-41 / Part 7 (Sub-feature 3 — AF compliance check):
 // AF's standardmål is ~14 ansökningar/månad (≈1 per vecka). The
@@ -52,9 +40,9 @@ import { computeMatchScore, isPreparedForAF } from '@/lib/match-score'
 import { atsMatch } from '@/lib/ats-keywords'
 import {
   readJsonSafely, mergeProfileWithUser, fmtDate, monthNames,
-  STATUS_MAP, getMonthlyTrend,
+  STATUS_MAP,
 } from '@/lib/dashboard-helpers'
-import { TrendBadge, NextCronBanner, AnimatedCounter, CompanyLogo, StatusPill, BroaderSearchCard } from '@/components/DashboardCards'
+import { NextCronBanner, CompanyLogo, StatusPill, BroaderSearchCard, HeroStatCard, DashboardLoadingSkeleton } from '@/components/DashboardCards'
 
 // Application-status filters for the Ansökningar table.
 // "not_applied" = AI förberedd, användaren har inte skickat än.
@@ -1234,6 +1222,33 @@ function DashboardContent() {
   // the displayed `elapsedDays` is at most 1 day behind the true
   // wall clock. Acceptable for a pace indicator.
   const pace = useMemo(() => getAfCompliancePace(apps, now), [apps, monthLabel])
+
+  // Round-94: has the user generated at least one cover letter? When
+  // false, the hero CTA pulses gently (animate-cta-pulse) to draw the
+  // first generation — purposeful attention, not decoration.
+  const hasCoverLetters = useMemo(
+    () => (apps || []).some((a) => !!a.coverLetter),
+    [apps],
+  )
+
+  // Round-94 (performance): the four stat-card configs are derived from
+  // the module-scope HERO_STATS via useMemo. The config objects keep a
+  // stable identity between renders UNLESS `apps` or `monthLabel` itself
+  // changes — which is exactly when the numbers genuinely need to
+  // re-render anyway. React.memo on HeroStatCard can therefore skip
+  // re-rendering the cards for unrelated dashboard state changes (star
+  // toggles, push status, cron logs) while still updating on real data
+  // changes.
+  const statConfigs = useMemo(
+    () => HERO_STATS.map((c) => ({
+      ...c,
+      label: c.key === 'this-month'
+        ? `Ansökningar ${monthLabel.split(' ')[0]}`
+        : c.label,
+      value: c.key === 'total' ? (apps || []).length : c.value,
+    })),
+    [monthLabel, apps],
+  )
   const pct = Math.min(100, Math.round((pace.applied / pace.target) * 100))
   const pacePct = Math.min(100, Math.round((pace.paceRequired / pace.target) * 100))
   const cfg = {
@@ -1268,11 +1283,7 @@ function DashboardContent() {
   // early return) violated this and caused Next.js to render
   // the "Application error" overlay.
   if (!isLoaded || loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-      </div>
-    )
+    return <DashboardLoadingSkeleton />
   }
 
   // Status badge component
@@ -1318,7 +1329,12 @@ function DashboardContent() {
         {isSaving ? (
           <Loader2 className="w-4 h-4 animate-spin" />
         ) : saved ? (
-          <Star className="w-4 h-4 fill-amber-500 stroke-amber-600" />
+          // Round-94: the star does a 360° spin + scale bounce when the
+          // save state flips (element type change → remount → the
+          // animate-star-pop animation replays exactly once per toggle).
+          <span className="inline-flex animate-star-pop">
+            <Star className="w-4 h-4 fill-amber-500 stroke-amber-600" />
+          </span>
         ) : (
           <Star className="w-4 h-4" />
         )}
@@ -1329,7 +1345,7 @@ function DashboardContent() {
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-slate-50">
-        <nav className="border-b bg-white sticky top-0 z-30">
+        <nav className="border-b bg-white/90 backdrop-blur-md sticky top-0 z-30">
           <div className="container mx-auto px-4 py-3 flex items-center justify-between">
             <Link href="/" className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-600 to-blue-600 flex items-center justify-center">
@@ -1343,21 +1359,22 @@ function DashboardContent() {
                 href="/settings"
                 data-testid="dashboard-open-settings"
                 aria-label="Öppna inställningar"
+                // Round-94 (Task 1C): hover-prefetch — warm the /settings
+                // route while the user's pointer is already over the link
+                // so navigation feels instant (Next prefetches the RSC
+                // payload; no fetch on click).
+                onMouseEnter={() => router.prefetch('/settings')}
                 className="inline-flex items-center justify-center w-9 h-9 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 transition-colors"
                 title="Inställningar"
               >
                 <SettingsIcon2 className="w-4 h-4" />
               </Link>
-              {/* Profile picture + greeting — 32x32 avatar renders the user's
-                  chosen upload / avatar, falling back to the default
-                  JobbPiloten-plane circle. avatarSource/avatarId data attrs
-                  let e2e specs probe which mode is active without parsing
-                  the SVG path. */}
-              <div className="hidden md:flex items-center gap-2" data-testid="dashboard-header-greeting">
-                <ProfileAvatar profile={profile} size={32} dataTestid="profile-avatar-nav" />
-                <span className="text-sm text-slate-600">Hej {profile?.fullName?.split(' ')[0] || user?.firstName || 'du'}!</span>
-              </div>
-              <SafeUserButton afterSignOutUrl="/" />
+              {/* Round-94: ONE profile-picture element. UserMenu renders
+                  the app avatar (36px, ring on hover) + "Hej X!" greeting
+                  in a single trigger with a dropdown (Profil /
+                  Inställningar / Logga ut). The old code rendered TWO
+                  avatars — ProfileAvatar AND the Clerk UserButton. */}
+              <UserMenu profile={profile} user={user} showName dataTestid="dashboard-header-greeting" />
             </div>
           </div>
         </nav>
@@ -1432,9 +1449,13 @@ function DashboardContent() {
             </div>
           )}
 
-          <div className="rounded-2xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-blue-700 p-8 text-white relative overflow-hidden shadow-sm">
+          <div className="rounded-2xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-blue-700 p-8 md:p-12 text-white relative overflow-hidden shadow-sm">
             <div className="absolute -right-8 -top-8 w-64 h-64 bg-white/10 rounded-full blur-3xl" />
             <div className="absolute -left-12 -bottom-12 w-48 h-48 bg-amber-400/10 rounded-full blur-3xl" />
+            {/* Round-94: slow desaturated gradient sheen (8s loop) so the
+                hero reads as the dashboard's centerpiece without competing
+                with the CTA. Pure CSS, pointer-events-none. */}
+            <div className="absolute inset-0 bg-gradient-to-br from-indigo-400/20 via-transparent to-blue-400/10 animate-hero-sheen pointer-events-none" aria-hidden="true" />
             <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
                 <div className="text-sm text-indigo-200 mb-1">Din AI-assistent</div>
@@ -1476,7 +1497,7 @@ function DashboardContent() {
                 size="lg"
                 disabled={applying}
                 onClick={runAssistant}
-                className="bg-white text-indigo-700 hover:bg-indigo-50 h-12 px-6 shrink-0 shadow-lg shadow-indigo-900/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                className={`bg-white text-indigo-700 hover:bg-indigo-50 h-12 px-6 shrink-0 shadow-lg shadow-indigo-900/20 transition-all hover:scale-[1.02] active:scale-[0.98] ${!applying && !hasCoverLetters ? 'animate-cta-pulse' : ''}`}
               >
                 {applying ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> AI-assistenten arbetar...</> : <><Rocket className="w-4 h-4 mr-2" /> Kör AI-assistenten nu</>}
               </Button>
@@ -1525,98 +1546,10 @@ function DashboardContent() {
               palette reads as "amber + indigo + emerald + blue" (the brand
               palette used elsewhere in the app). micro-interaction:
               hover-lift (translateY -2 + stronger shadow). */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4" data-testid="hero-stats">
-            {[
-              {
-                key: 'saved',
-                // Round-33.3 review-fix: label now explicitly period-
-                // anchored so the trend pill matches. Previously the
-                // headline was a lifetime total and the trend reported a
-                // 30-day delta — same number, two meanings. Surfacing
-                // "denna period" in the label closes the contract.
-                label: 'Sparade jobb denna period',
-                trendMatch: (a) => a.saved === true,
-                timestampKey: 'savedAt',
-                showTrend: true,
-                Icon: Star,
-                gradient: 'from-amber-500/10 via-amber-500/5 to-orange-500/10',
-                iconWrap: 'bg-amber-100 text-amber-700',
-              },
-              {
-                key: 'this-month',
-                label: `Ansökningar ${monthLabel.split(' ')[0]}`,
-                trendMatch: (a) => a.status === 'applied' || a.status === 'user-sent',
-                timestampKey: 'appliedAt',
-                showTrend: true,
-                Icon: Send,
-                gradient: 'from-indigo-500/10 via-indigo-500/5 to-blue-500/10',
-                iconWrap: 'bg-indigo-100 text-indigo-700',
-              },
-              {
-                key: 'total',
-                // Cumulative stat — pairwise period-vs-period is a
-                // category error here, so no trend. Draws value from
-                // the `apps` array length so it stays consistent with
-                // the other three period-eligible heroes (which all
-                // use the same client-side source).
-                label: 'Totalt antal',
-                value: (apps || []).length,
-                showTrend: false,
-                Icon: Briefcase,
-                gradient: 'from-blue-500/10 via-blue-500/5 to-cyan-500/10',
-                iconWrap: 'bg-blue-100 text-blue-700',
-              },
-              {
-                key: 'confirmed',
-                label: 'Bekräftade av AF denna period',
-                trendMatch: (a) => a.status === 'confirmed',
-                timestampKey: 'appliedAt',
-                showTrend: true,
-                Icon: Check,
-                gradient: 'from-emerald-500/10 via-emerald-500/5 to-teal-500/10',
-                iconWrap: 'bg-emerald-100 text-emerald-700',
-              },
-            ].map((s, idx) => {
-              // Round-33.3 review-fix: trend-derived headlines. The
-              // headline for the three period-eligible cards is
-              // `trend.current` (the 30-day-window match count), NOT a
-              // lifetime count. This means headline and trend badge
-              // refer to the same window — the "+N denna period" pill
-              // now genuinely says "of this N, N−previous came in this
-              // window" rather than two unrelated numbers.
-              const trend = s.showTrend
-                ? getMonthlyTrend(apps, s.trendMatch, s.timestampKey)
-                : null
-              const headlineValue = s.showTrend ? trend.current : s.value
-              return (
-                <motion.div
-                  key={s.key}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.4, delay: idx * 0.06, ease: [0.16, 1, 0.3, 1] }}
-                  whileHover={{ y: -2 }}
-                  className={`relative overflow-hidden rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md transition-shadow`}
-                >
-                  <div className={`absolute inset-0 bg-gradient-to-br ${s.gradient} pointer-events-none`} aria-hidden="true" />
-                  <div className="relative flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-baseline gap-2 flex-wrap">
-                        <div className="text-3xl font-bold tracking-tight text-slate-900">
-                          <AnimatedCounter value={headlineValue} />
-                        </div>
-                        {s.showTrend && (
-                          <TrendBadge trend={trend.trend} delta={trend.delta} />
-                        )}
-                      </div>
-                      <div className="text-xs text-slate-600 mt-1">{s.label}</div>
-                    </div>
-                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${s.iconWrap}`}>
-                      <s.Icon className="w-4 h-4" aria-hidden="true" />
-                    </div>
-                  </div>
-                </motion.div>
-              )
-            })}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="hero-stats">
+            {statConfigs.map((s, idx) => (
+              <HeroStatCard key={s.key} s={s} apps={apps} idx={idx} />
+            ))}
           </div>
 
           {/* Push notifications card */}
@@ -1996,7 +1929,7 @@ function DashboardContent() {
                                   ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Förbereder...</>
                                   : <><Rocket className="w-3 h-3 mr-1" /> Förbered</>}
                               </Button>
-                              <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-amber-600 transition-colors" aria-hidden="true" />
+                              <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-amber-600 md:opacity-0 md:translate-y-1 md:group-hover:opacity-100 md:group-hover:translate-y-0 md:group-focus-within:opacity-100 md:group-focus-within:translate-y-0 transition-all duration-200" aria-hidden="true" />
                             </div>
                             {idx === 0 && (
                               <Badge className="absolute top-3 right-3 bg-amber-100 text-amber-800 hover:bg-amber-100 text-[10px] uppercase">Topp</Badge>
@@ -2037,7 +1970,7 @@ function DashboardContent() {
                                 }
                               }}
                               data-testid="save-job-mobile"
-                              className="mt-2 w-full h-7 text-[11px] text-slate-500 hover:text-amber-700 hover:bg-amber-50"
+                              className="mt-2 w-full h-7 text-[11px] text-slate-500 hover:text-amber-700 hover:bg-amber-50 md:opacity-0 md:translate-y-1 md:group-hover:opacity-100 md:group-hover:translate-y-0 md:group-focus-within:opacity-100 md:group-focus-within:translate-y-0 transition-all duration-200"
                             >
                               <Star className="w-3 h-3 mr-1" /> Spara till JobbPiloten
                             </Button>
@@ -2200,6 +2133,16 @@ function DashboardContent() {
                     </div>
                     <h4 className="text-sm font-semibold text-slate-900">{cfg.title}</h4>
                     <p className="text-xs text-slate-500 mt-1 leading-relaxed">{cfg.sub}</p>
+                    {appFilter === 'saved' && (
+                      <button
+                        type="button"
+                        onClick={() => pickFilter('all')}
+                        data-testid="empty-saved-cta"
+                        className="mt-4 inline-flex items-center gap-1.5 h-9 px-4 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition-all hover:scale-[1.03] active:scale-[0.97]"
+                      >
+                        <Search className="w-3.5 h-3.5" /> Hitta jobb
+                      </button>
+                    )}
                   </div>
                 )
               })()}
@@ -2254,7 +2197,7 @@ function DashboardContent() {
                         {app.source && app.source !== 'email' && <Tag Icon={Building2} tone="indigo">{app.source}</Tag>}
                         <StatusPill status={app.status} />
                       </div>
-                      <div className="mt-3 flex items-center gap-2 flex-wrap">
+                      <div className="mt-3 flex items-center gap-2 flex-wrap md:opacity-0 md:translate-y-1 md:group-hover:opacity-100 md:group-hover:translate-y-0 md:group-focus-within:opacity-100 md:group-focus-within:translate-y-0 transition-all duration-200">
                         {app.status === 'prepared' && (
                           <Button size="sm" variant="outline" onClick={() => markAsApplied(app.id)} className="text-xs h-7 px-2 border-amber-200 text-amber-700 hover:bg-amber-50 hover:border-amber-300 transition-all hover:scale-[1.03] active:scale-[0.97]">
                             <Send className="w-3 h-3 mr-1" /> Markera som ansökt
@@ -2567,7 +2510,9 @@ function DashboardContent() {
         <Dialog open={!!showLetter} onOpenChange={(o) => !o && setShowLetter(null)}>
           <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
             <DialogHeader><DialogTitle>{showLetter?.company} — {showLetter?.title}</DialogTitle><DialogDescription>Förberedd {showLetter && fmtDate(showLetter.appliedAt)}</DialogDescription></DialogHeader>
-            <div className="rounded-lg bg-slate-50 border p-4 whitespace-pre-wrap text-sm leading-relaxed font-serif">{showLetter?.coverLetter}</div>
+            <div className="rounded-lg bg-slate-50 border p-4 whitespace-pre-wrap text-sm leading-relaxed font-serif">
+              <TypewriterReveal text={showLetter?.coverLetter || ''} />
+            </div>
           </DialogContent>
         </Dialog>
       </div>
@@ -2582,6 +2527,64 @@ function DashboardContent() {
 // The min-h-screen fallback matches the rest of the dashboard's
 // own loading state so the Suspense boundary never flashes a blank
 // frame at the deep-link entry point.
+// Round-94: module-scope stat-card configs. Hoisted out of the JSX so
+// the config objects have a stable identity (React.memo on HeroStatCard
+// depends on it) and the trend-match callbacks are defined once. The
+// month-dependent label and the 'total' value are filled in per render
+// via `statConfigs` (see DashboardContent). Round-33.3 review-fix notes:
+//   • period-anchored labels — headline and trend pill refer to the same
+//     30-day window ("denna period").
+//   • 'total' is a lifetime count with NO trend (pairwise period-vs-
+//     period is a category error there).
+const HERO_STATS = [
+  {
+    key: 'saved',
+    label: 'Sparade jobb denna period',
+    // Round-94: hover hint (Task 4D) — a mini tooltip explaining what
+    // the number means, so a user who hasn't memorised the period
+    // contract can self-serve instead of guessing.
+    hint: 'Jobb du sparat för att söka senare, räknade de senaste 30 dagarna.',
+    trendMatch: (a) => a.saved === true,
+    timestampKey: 'savedAt',
+    showTrend: true,
+    Icon: Star,
+    gradient: 'from-amber-500/10 via-amber-500/5 to-orange-500/10',
+    iconWrap: 'bg-amber-100 text-amber-700',
+  },
+  {
+    key: 'this-month',
+    label: '', // monthLabel-derived, filled in statConfigs
+    hint: 'Ansökningar skickade den här kalendermånaden — antalet som räknas mot AF:s 14/månad-mål.',
+    trendMatch: (a) => a.status === 'applied' || a.status === 'user-sent',
+    timestampKey: 'appliedAt',
+    showTrend: true,
+    Icon: Send,
+    gradient: 'from-indigo-500/10 via-indigo-500/5 to-blue-500/10',
+    iconWrap: 'bg-indigo-100 text-indigo-700',
+  },
+  {
+    key: 'total',
+    label: 'Totalt antal',
+    value: 0, // filled in statConfigs from apps.length
+    hint: 'Alla ansökningar du någonsin registrerat i JobbPiloten — livstidssiffra, ingen period.',
+    showTrend: false,
+    Icon: Briefcase,
+    gradient: 'from-blue-500/10 via-blue-500/5 to-cyan-500/10',
+    iconWrap: 'bg-blue-100 text-blue-700',
+  },
+  {
+    key: 'confirmed',
+    label: 'Bekräftade av AF denna period',
+    hint: 'Ansökningar Arbetsförmedlingen bekräftat (status “bekräftad”) de senaste 30 dagarna.',
+    trendMatch: (a) => a.status === 'confirmed',
+    timestampKey: 'appliedAt',
+    showTrend: true,
+    Icon: Check,
+    gradient: 'from-emerald-500/10 via-emerald-500/5 to-teal-500/10',
+    iconWrap: 'bg-emerald-100 text-emerald-700',
+  },
+]
+
 export default function DashboardPage() {
   return (
     <Suspense

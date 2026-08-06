@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback, useEffect, useRef, memo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useUser } from '@/hooks/useAuth'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,10 +12,12 @@ import { Progress } from '@/components/ui/progress'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ChevronRight, ChevronLeft, Check } from 'lucide-react'
+import { Skeleton } from '@/components/ui/skeleton'
+import { ChevronRight, ChevronLeft, Check, Loader2, Sparkles } from 'lucide-react'
 import ErrorBoundary from '@/components/ErrorBoundary'
 import CVFileUpload from '@/components/CVFileUpload'
 import IndustryFieldsForm from '@/components/IndustryFieldsForm'
+import Confetti from '@/components/Confetti'
 import { toast } from 'sonner'
 import { trackPlausible } from '@/lib/analytics'
 import { setDemoSessionCookie, hasDemoSessionCookie } from '@/lib/auth-cookie'
@@ -203,6 +206,9 @@ export default function OnboardingPage() {
   const router = useRouter()
   const { user } = useUser()
   const [step, setStep] = useState(0)
+  // Round-94: confetti trigger — flips true on a successful "Slutför"
+  // and renders the brief burst (components/Confetti.jsx).
+  const [celebrate, setCelebrate] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   // Round-46 / Bug 1 followup: AI email preview state. The user
   // can generate a preview of what their AI-written email body
@@ -359,6 +365,9 @@ export default function OnboardingPage() {
       }
       trackPlausible('onboarding_complete')
       toast.success('Profil skapad — tar dig till dashboarden')
+      // Round-94: brief confetti burst celebrates the completed profile
+      // while the redirect to the dashboard is in flight.
+      setCelebrate(true)
       router.push('/dashboard')
     } catch (err) {
       toast.error('Kunde inte spara profilen: ' + err.message)
@@ -446,6 +455,14 @@ export default function OnboardingPage() {
       setIsGeneratingPreview(false)
     }
   }
+
+  // Round-94 (performance): the preview panel is memoized, so the
+  // onGenerate callback must be STABLE across renders (a fresh closure
+  // every keystroke would defeat the memo). A ref always points at the
+  // latest handlePreviewEmail; the memoized panel calls the ref.
+  const previewHandlerRef = useRef(handlePreviewEmail)
+  useEffect(() => { previewHandlerRef.current = handlePreviewEmail })
+  const onGeneratePreview = useCallback(() => { previewHandlerRef.current() }, [])
 
   const renderStep = () => {
     switch (step) {
@@ -671,49 +688,13 @@ export default function OnboardingPage() {
                 On success, displays the body in a read-only block +
                 the cvShortWarning chip. data-testid="onboarding-email-preview"
                 locks the section for the e2e test below. */}
-            <div
-              className="rounded-lg border border-amber-100 bg-amber-50/50 p-4 space-y-3"
-              data-testid="onboarding-email-preview"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-amber-900">Förhandsvisa AI-mejl</p>
-                  <p className="text-[11px] text-amber-800 mt-0.5">
-                    Genererar ett e-postutkast baserat på din profil — använder samma AI-motor som &quot;Ansök via mejl&quot;-knappen i tillägget.
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  onClick={handlePreviewEmail}
-                  disabled={isGeneratingPreview}
-                  data-testid="onboarding-email-preview-btn"
-                  className="gap-2 bg-amber-500 hover:bg-amber-600 text-white"
-                >
-                  {isGeneratingPreview ? 'Genererar…' : 'Generera förhandsvisning'}
-                </Button>
-              </div>
-              {previewError ? (
-                <p className="text-xs text-red-700" data-testid="onboarding-email-preview-error">
-                  {previewError}
-                </p>
-              ) : null}
-              {previewCvShortWarning ? (
-                <p
-                  className="text-xs text-amber-700 bg-amber-100 border border-amber-200 rounded px-2 py-1.5"
-                  data-testid="onboarding-email-preview-cv-warning"
-                >
-                  Ditt CV är kort — ladda upp en längre version för ett mer personligt utkast.
-                </p>
-              ) : null}
-              {previewBody ? (
-                <pre
-                  className="text-[12px] text-slate-800 bg-white border border-slate-200 rounded p-3 whitespace-pre-wrap font-sans leading-relaxed"
-                  data-testid="onboarding-email-preview-body"
-                >
-                  {previewBody}
-                </pre>
-              ) : null}
-            </div>
+            <EmailPreviewPanel
+              isGeneratingPreview={isGeneratingPreview}
+              previewError={previewError}
+              previewCvShortWarning={previewCvShortWarning}
+              previewBody={previewBody}
+              onGenerate={onGeneratePreview}
+            />
           </div>
         )
     }
@@ -721,6 +702,7 @@ export default function OnboardingPage() {
 
   return (
     <ErrorBoundary>
+      {celebrate && <Confetti />}
       <div className="min-h-screen bg-indigo-50/40 flex items-center justify-center p-6">
         <Card className="w-full max-w-lg border-indigo-100 shadow-sm">
           <CardHeader>
@@ -736,7 +718,20 @@ export default function OnboardingPage() {
             </div>
           </CardHeader>
           <CardContent>
-            {renderStep()}
+            {/* Round-94: 250ms fade/slide between wizard steps (max 300ms
+                per the polish brief). AnimatePresence mode="wait" lets
+                the outgoing step exit before the next enters. */}
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={step}
+                initial={{ opacity: 0, x: 24 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -24 }}
+                transition={{ duration: 0.25, ease: 'easeOut' }}
+              >
+                {renderStep()}
+              </motion.div>
+            </AnimatePresence>
             <div className="flex justify-between mt-6">
               <Button variant="outline" onClick={handleBack} disabled={step === 0} className="gap-2">
                 <ChevronLeft className="w-4 h-4" /> Tillbaka
@@ -761,3 +756,72 @@ export default function OnboardingPage() {
     </ErrorBoundary>
   )
 }
+
+// Round-94: memoized Förhandsvisa AI-mejl panel. Extracted from the
+// Granska-step JSX so typing in earlier wizard steps can never re-render
+// this block (props are primitives + a stable onGenerate). While the AI
+// works, a skeleton shimmer replaces the body area — no spinner flash.
+const EmailPreviewPanel = memo(function EmailPreviewPanel({
+  isGeneratingPreview,
+  previewError,
+  previewCvShortWarning,
+  previewBody,
+  onGenerate,
+}) {
+  return (
+    <div
+      className="rounded-lg border border-amber-100 bg-amber-50/50 p-4 space-y-3"
+      data-testid="onboarding-email-preview"
+    >
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium text-amber-900">Förhandsvisa AI-mejl</p>
+          <p className="text-[11px] text-amber-800 mt-0.5">
+            Genererar ett e-postutkast baserat på din profil — använder samma AI-motor som &quot;Ansök via mejl&quot;-knappen i tillägget.
+          </p>
+        </div>
+        <Button
+          type="button"
+          onClick={onGenerate}
+          disabled={isGeneratingPreview}
+          data-testid="onboarding-email-preview-btn"
+          className="gap-2 bg-amber-500 hover:bg-amber-600 text-white"
+        >
+          {isGeneratingPreview ? (
+            <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Genererar…</>
+          ) : (
+            <><Sparkles className="w-3.5 h-3.5" /> Generera förhandsvisning</>
+          )}
+        </Button>
+      </div>
+      {previewError ? (
+        <p className="text-xs text-red-700" data-testid="onboarding-email-preview-error">
+          {previewError}
+        </p>
+      ) : null}
+      {previewCvShortWarning ? (
+        <p
+          className="text-xs text-amber-700 bg-amber-100 border border-amber-200 rounded px-2 py-1.5"
+          data-testid="onboarding-email-preview-cv-warning"
+        >
+          Ditt CV är kort — ladda upp en längre version för ett mer personligt utkast.
+        </p>
+      ) : null}
+      {isGeneratingPreview ? (
+        <div className="space-y-2" data-testid="onboarding-email-preview-loading">
+          <Skeleton className="h-3 w-full" />
+          <Skeleton className="h-3 w-11/12" />
+          <Skeleton className="h-3 w-4/5" />
+        </div>
+      ) : null}
+      {previewBody ? (
+        <pre
+          className="text-[12px] text-slate-800 bg-white border border-slate-200 rounded p-3 whitespace-pre-wrap font-sans leading-relaxed"
+          data-testid="onboarding-email-preview-body"
+        >
+          {previewBody}
+        </pre>
+      ) : null}
+    </div>
+  )
+})

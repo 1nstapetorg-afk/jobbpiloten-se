@@ -193,10 +193,13 @@ export function Providers({ children }) {
   return (
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
       <ClerkAwareProvider>
-        {/* Sonner toast portal — renders floating notifications. Position
-            top-right on desktop, bottom on mobile via Toaster's responsive
-            defaults. richColors makes success/error/info visually distinct. */}
-        <Toaster richColors position="top-right" closeButton />
+        {/* Sonner toast portal — renders floating notifications.
+            Round-94: bottom-right placement + 8px stack gap. Sonner's
+            default motion for bottom-right slides toasts in from the
+            right and out to the right after `duration` (4s) or manual
+            dismiss. richColors keeps the four types (success / error /
+            info / warning) visually distinct with their default icons. */}
+        <Toaster richColors position="bottom-right" closeButton gap={8} visibleToasts={4} duration={4000} />
         {children}
         {/* Mounted globally so the PWA install prompt can appear on any
             page (landing, dashboard, sign-in, etc.). The component listens

@@ -8,12 +8,14 @@
 // stateful container (DashboardContent) stays in app/dashboard/page.js.
 // Shared pure helpers live in lib/dashboard-helpers.js.
 
-import { useEffect, useState, useRef, useMemo } from 'react'
+import { useEffect, useState, useRef, useMemo, memo } from 'react'
 import { motion, useMotionValue, useTransform, animate } from 'framer-motion'
-import { Clock, TrendingUp, TrendingDown, Minus, Search, ExternalLink } from 'lucide-react'
+import { Clock, TrendingUp, TrendingDown, Minus, Search, ExternalLink, Info } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Skeleton } from '@/components/ui/skeleton'
 import { buildBlocketSearchUrl, buildJobSafariSearchUrl } from '@/lib/jobScraper'
-import { nextCronAt, fmtTimeUntil, STATUS_MAP } from '@/lib/dashboard-helpers'
+import { nextCronAt, fmtTimeUntil, STATUS_MAP, getMonthlyTrend } from '@/lib/dashboard-helpers'
 
 /**
  * TrendBadge — tiny pill rendered next to the AnimatedCounter inside
@@ -113,33 +115,24 @@ export function NextCronBanner({ hideUntil = null }) {
 }
 
 /**
- * AnimatedCounter — value animates from 0 (or last value) to `value` when it
- * mounts/changes. Uses framer-motion's `animate(MotionValue, target, opts)`,
- * which gives us a smooth easeOutQuart curve without us having to write our
- * own rAF loop. We still display formatted text for non-numeric values.
- *
- * Seed behavior: on first mount the motion value is set to `value` so users
- * never see a "0 → 5" flash for already-known counts. Only subsequent value
- * changes (e.g. after a refetch) get the animation. `seededRef` guards across
- * StrictMode double-invocation without flicker.
+ * AnimatedCounter — Round-94 (professional polish): every value change
+ * (including the first mount) counts up from the previous value to
+ * `value` over 800ms with an easeOut curve, driven by framer-motion's
+ * `animate(MotionValue, target, opts)` which uses requestAnimationFrame
+ * internally (no setInterval). Numbers render in `tabular-nums` so the
+ * digit columns don't jitter while counting. Non-numeric values pass
+ * through the optional `formatter`.
  */
 export function AnimatedCounter({ value = 0, formatter }) {
-  const mv = useMotionValue(value)
-  const seededRef = useRef(false)
+  const mv = useMotionValue(0)
   const display = useTransform(mv, (v) =>
     formatter ? formatter(Math.round(v)) : Math.round(v)
   )
   useEffect(() => {
-    if (!seededRef.current) {
-      // First mount — no animation, jump straight to the target.
-      seededRef.current = true
-      mv.set(value)
-      return
-    }
-    const ctrl = animate(mv, value, { duration: 0.9, ease: [0.16, 1, 0.3, 1] })
+    const ctrl = animate(mv, value, { duration: 0.8, ease: 'easeOut' })
     return () => ctrl.stop()
   }, [value, mv])
-  return <motion.span>{display}</motion.span>
+  return <motion.span className="tabular-nums">{display}</motion.span>
 }
 
 /**
@@ -189,6 +182,109 @@ export function StatusPill({ status }) {
       <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} aria-hidden="true" />
       {cfg.label}
     </span>
+  )
+}
+
+/**
+ * HeroStatCard — Round-94 (professional polish): memoized leaf for the
+ * dashboard's four hero stat cards. Extracted from the inline map so a
+ * stat-card render can never re-run the parent's trend computation or
+ * re-render sibling cards (React.memo). Purposeful details:
+ *   • `tabular-nums` on the headline so digits don't jitter mid-count.
+ *   • layered `shadow-card` resting state → `shadow-card-hover` on hover
+ *     (defined in app/globals.css) instead of a flat shadow.
+ *   • 200ms transition on the lift so the motion feels weighty, not
+ *     rubbery.
+ */
+export const HeroStatCard = memo(function HeroStatCard({ s, apps, idx }) {
+  // Trend computation is scoped INSIDE the memoized leaf so unrelated
+  // dashboard re-renders (star toggles, push status, cron logs) neither
+  // re-run the O(n) window scan nor re-render the card (props are
+  // stable thanks to the module-scope HERO_STATS config in the page).
+  const trend = useMemo(
+    () => (s.showTrend ? getMonthlyTrend(apps, s.trendMatch, s.timestampKey) : null),
+    [apps, s],
+  )
+  const headlineValue = s.showTrend ? (trend ? trend.current : 0) : (s.value || 0)
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay: idx * 0.06, ease: [0.16, 1, 0.3, 1] }}
+      whileHover={{ y: -2 }}
+      className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-5 shadow-card transition-shadow duration-200 hover:shadow-card-hover"
+    >
+      <div className={`absolute inset-0 bg-gradient-to-br ${s.gradient} pointer-events-none`} aria-hidden="true" />
+      <div className="relative flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <div className="text-3xl font-bold tracking-tight text-slate-900 tabular-nums">
+              <AnimatedCounter value={headlineValue} />
+            </div>
+            {s.showTrend && trend && (
+              <TrendBadge trend={trend.trend} delta={trend.delta} />
+            )}
+          </div>
+          <div className="text-xs text-slate-600 mt-1 flex items-center gap-1.5">
+            <span className="truncate">{s.label}</span>
+            {s.hint && (
+              <Tooltip delayDuration={150}>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={s.hint}
+                    className="inline-flex shrink-0 rounded-full text-slate-400 hover:text-slate-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                  >
+                    <Info className="w-3.5 h-3.5" aria-hidden="true" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-[240px] text-xs">
+                  {s.hint}
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
+        </div>
+        <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${s.iconWrap}`}>
+          <s.Icon className="w-4 h-4" aria-hidden="true" />
+        </div>
+      </div>
+    </motion.div>
+  )
+})
+
+/**
+ * DashboardLoadingSkeleton — Round-94 (professional polish): the
+ * full-page loading state for the dashboard. Mirrors the real layout
+ * (sticky nav, hero banner, 4 stat cards, job rows) so the paint is
+ * stable when real content swaps in — no layout jump, no spinner flash.
+ */
+export function DashboardLoadingSkeleton() {
+  return (
+    <div className="min-h-screen bg-slate-50" data-testid="dashboard-loading-skeleton">
+      <div className="border-b bg-white/90 backdrop-blur-md sticky top-0 z-30">
+        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-8 w-8 rounded-lg" />
+            <Skeleton className="h-4 w-32" />
+          </div>
+          <Skeleton className="h-9 w-9 rounded-full" />
+        </div>
+      </div>
+      <div className="container mx-auto px-4 py-8 space-y-8">
+        <Skeleton className="h-32 w-full rounded-2xl" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-28 rounded-xl" />
+          ))}
+        </div>
+        <div className="space-y-2">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-24 w-full rounded-xl" />
+          ))}
+        </div>
+      </div>
+    </div>
   )
 }
 

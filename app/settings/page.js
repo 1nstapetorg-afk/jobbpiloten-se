@@ -1,11 +1,10 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react'
 // `useCallback` is used by the page-level `load` callback to keep
 // the `useEffect([isLoaded, load])` dependency stable.
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import dynamic from 'next/dynamic'
 import { useUser } from '@/hooks/useAuth'
 import { motion } from 'framer-motion'
 import { toast } from 'sonner'
@@ -25,6 +24,10 @@ import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import ErrorBoundary from '@/components/ErrorBoundary'
 import IndustryFieldsForm from '@/components/IndustryFieldsForm'
+// Round-94: memoized wrapper so typing in UNRELATED settings fields
+// (e.g. the CV summary) never re-renders the industry question form.
+// Works together with the stable useCallback handlers below.
+const MemoIndustryFieldsForm = memo(IndustryFieldsForm)
 
 import {
   Plane, Settings as SettingsIcon, User, CreditCard, Bell, BellOff, Database,
@@ -34,10 +37,10 @@ import {
 } from 'lucide-react'
 import CVFileUpload from '@/components/CVFileUpload'
 import ProfileAvatar from '@/components/ProfileAvatar'
+import UserMenu from '@/components/UserMenu'
 import { AVATARS, AVATAR_ORDER } from '@/components/avatars'
 import { AVATAR_RARITY, RARITY_TIERS } from '@/lib/avatar-keys'
 import { SUPPORT_EMAIL, VAPID_PUBLIC_KEY, EXTENSION_PUBLISHED, EXTENSION_STORE_URL, EXTENSION_INSTALL_GUIDE_PATH } from '@/lib/siteConfig'
-import { isClerkConfiguredClient as isClerkConfigured } from '@/lib/clerk-config'
 import { STYLE_PRESETS, resolveStylePreset } from '@/lib/style-presets.mjs'
 import { detectCvFormattingIssues } from '@/lib/ats-keywords'
 import { findStyleInconsistencies, renderInconsistencyCopy } from '@/lib/style-consistency'
@@ -66,18 +69,6 @@ import {
   industryFieldsToBooleans,
   UNIVERSAL_FIELDS,
 } from '@/lib/field-taxonomy'
-
-// Clerk user button — dynamic + crash-safe so the whole page still renders
-// when @clerk/nextjs fails to load (e.g. in demo mode without keys).
-const ClerkUserButton = dynamic(
-  () => import('@clerk/nextjs').then(mod => ({ default: mod.UserButton })).catch(() => ({ default: () => null })),
-  { ssr: false },
-)
-
-function SafeUserButton(props) {
-  if (!isClerkConfigured()) return null
-  return <ClerkUserButton {...props} />
-}
 
 // ---------------------- Helpers ----------------------
 
@@ -837,13 +828,13 @@ function ProfileEditor({ profile, onSaved }) {
   // component works in both surfaces. setIndustryAnswer handles
   // select/text/url (single value); toggleIndustryMulti toggles a
   // multiselect option in/out of the array.
-  const setIndustryAnswer = (key, value) => {
+  const setIndustryAnswer = useCallback((key, value) => {
     setForm((prev) => ({
       ...prev,
       industryFields: { ...(prev.industryFields || {}), [key]: value },
     }))
-  }
-  const toggleIndustryMulti = (key, opt) => {
+  }, [])
+  const toggleIndustryMulti = useCallback((key, opt) => {
     setForm((prev) => {
       const cur = Array.isArray(prev.industryFields?.[key]) ? prev.industryFields[key] : []
       const next = cur.includes(opt)
@@ -851,7 +842,7 @@ function ProfileEditor({ profile, onSaved }) {
         : [...cur, opt]
       return { ...prev, industryFields: { ...(prev.industryFields || {}), [key]: next } }
     })
-  }
+  }, [])
   // Round-84 — industry selector change. Sets the new industry AND wipes
   // the structured answers (stale answers from the previous industry
   // must never carry over into the new industry's question set — the
@@ -1384,7 +1375,7 @@ function ProfileEditor({ profile, onSaved }) {
             <p className="text-[10px] text-slate-500">Styr vilka branschspecifika fält som visas nedan och som tillägget besvarar automatiskt.</p>
           </div>
           {form.industry && (
-            <IndustryFieldsForm
+            <MemoIndustryFieldsForm
               industry={form.industry}
               value={form.industryFields || {}}
               onChange={setIndustryAnswer}
@@ -3000,8 +2991,24 @@ export default function SettingsPage() {
 
   if (!isLoaded || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+      // Round-94: skeleton loading state mirrors the settings layout
+      // (sticky nav + page header + profile card) so content swaps in
+      // without a layout jump or a spinner flash.
+      <div className="min-h-screen bg-slate-50" data-testid="settings-loading-skeleton">
+        <div className="border-b bg-white/90 backdrop-blur-md sticky top-0 z-30">
+          <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-8 w-8 rounded-lg" />
+              <Skeleton className="h-4 w-32" />
+            </div>
+            <Skeleton className="h-9 w-9 rounded-full" />
+          </div>
+        </div>
+        <div className="container mx-auto px-4 py-8 max-w-4xl space-y-6">
+          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-4 w-96 max-w-full" />
+          <Skeleton className="h-64 w-full rounded-xl" />
+        </div>
       </div>
     )
   }
@@ -3009,7 +3016,7 @@ export default function SettingsPage() {
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-slate-50">
-        <nav className="border-b border-slate-100 bg-white sticky top-0 z-30">
+        <nav className="border-b border-slate-100 bg-white/90 backdrop-blur-md sticky top-0 z-30">
           <div className="container mx-auto px-4 py-3 flex items-center justify-between gap-3">
             <Link href="/" className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-600 to-blue-600 flex items-center justify-center">
@@ -3021,11 +3028,14 @@ export default function SettingsPage() {
               <Link
                 href="/dashboard"
                 data-testid="settings-back-to-dashboard"
+                // Round-94 (Task 1C): hover-prefetch so going back to the
+                // dashboard feels instant (RSC payload warmed on hover).
+                onMouseEnter={() => router.prefetch('/dashboard')}
                 className="text-sm text-slate-600 hover:text-slate-900 inline-flex items-center gap-1 transition-colors"
               >
                 <ArrowLeft className="w-3.5 h-3.5" /> Dashboard
               </Link>
-              <SafeUserButton afterSignOutUrl="/" />
+              <UserMenu profile={profile} showName dataTestid="settings-header-user-menu" />
             </div>
           </div>
         </nav>

@@ -160,6 +160,10 @@ export default function CVFileUpload({ profile, onChanged, onFallbackRequired })
    */
   const uploadWithProgress = (file, onProgress) => new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
+    // Round-94 (performance): throttle progress paints to ~100ms so a
+    // fast local upload can't spam React state updates at 60fps. The
+    // final 100% is always emitted so the bar completes exactly.
+    let lastProgressEmit = 0
     // `_superseded` is flipped to `true` by `abortInflight()` BEFORE
     // the abort() call fires so this XHR's async terminal events can
     // distinguish a user-initiated cancel ("Uppladdningen avbröts")
@@ -177,7 +181,12 @@ export default function CVFileUpload({ profile, onChanged, onFallbackRequired })
       // jump back as a stale XHR finishes draining.
       if (xhr._superseded) return
       if (e.lengthComputable) {
-        onProgress(Math.min(100, Math.round((e.loaded / e.total) * 100)))
+        const pct = Math.min(100, Math.round((e.loaded / e.total) * 100))
+        const now = Date.now()
+        if (pct === 100 || now - lastProgressEmit >= 100) {
+          lastProgressEmit = now
+          onProgress(pct)
+        }
       }
     })
     xhr.addEventListener('load', () => {
@@ -578,6 +587,19 @@ export default function CVFileUpload({ profile, onChanged, onFallbackRequired })
             </>
           )}
           {fileInputEl}
+          {/* Round-94: drag-over overlay — the dropzone already flips to
+              amber when a file is dragged over; this chip makes the
+              drop target unmistakable. */}
+          {dragging && (
+            <div
+              className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-amber-500/15"
+              data-testid="settings-cv-drop-overlay"
+            >
+              <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500 text-white text-sm font-semibold shadow-lg">
+                <FileUp className="w-4 h-4" /> Släpp här
+              </span>
+            </div>
+          )}
         </div>
       ) : (
         // ---- File attached — file card ----
