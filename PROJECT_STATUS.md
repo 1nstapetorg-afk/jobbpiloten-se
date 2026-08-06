@@ -924,3 +924,66 @@ Execution happens in this batch — this section is the persisted plan.
 10. **Doc correction** — the round prompts say "MongoDB (mongoose)"
     but the codebase uses the native `mongodb` driver everywhere
     (verified: zero mongoose imports in app/ + lib/).
+
+---
+
+## Round-88 execution status (2026-08-06, this batch)
+
+**Priority 1 — Soft-launch blockers**
+
+- [x] **#1 `/api/admin/ai-status` Groq quota health check** — committed
+  earlier this batch (`7cfbb9a`): Clerk-admin GET (401/403 allow-list),
+  1-token Groq probe via `lib/groq.js#probeGroqHealth` (mockMode
+  detection, TPD-quota / model-level / unreachable classification,
+  never leaks the API key). Locked by
+  `tests/unit/round88-ai-status.test.mjs`.
+- [x] **#2 Chrome extension publish → v1.0.0** — committed (`1ebea65`):
+  version bump manifest + background + **popup + content** (the
+  version-constant sweep caught two stale literals — popup `0.3.3` and
+  content `0.2.4` — that the Round-84 0.3.3 packaging left behind), a
+  version-consistent zip rebuilt at repo root
+  (`extension-v1.0.0.zip`, gitignored) plus the canonical
+  `dist/extension-1.0.0-cws.zip` via `yarn package:extension` (all 3
+  lints green: validate:extension / lint:await-async /
+  lint:field-patterns). Permission audit → `extension/store-assets/README.md`
+  (all 5 permissions actively used; `identity` intentionally absent —
+  no OAuth flow). Store assets (2 screenshot placeholders 1280×800 +
+  promo tile 440×280), `STORE_DESCRIPTION.md` (SV + EN, title ≤45
+  chars, description ≤1000 chars), and the CWS-required extension
+  privacy policy page at `app/(legal)/extension-privacy/page.js`.
+  **Remaining (external):** upload `dist/extension-1.0.0-cws.zip` to
+  partner.google.com, then after review set
+  `NEXT_PUBLIC_EXTENSION_PUBLISHED=1` +
+  `NEXT_PUBLIC_EXTENSION_STORE_URL` in `.env.production`.
+- [x] **#3 Stripe webhook contract tests** — committed (`7ec21b1`):
+  `tests/unit/round88-stripe-webhook.test.mjs` runs the REAL Stripe SDK
+  signature crypto (`webhooks.generateTestHeaderString` +
+  `constructEvent`) inside a `node:vm` harness (route imports
+  `next/server` + `next/headers`, which throw outside a request scope)
+  with mocked `getStripe()`/`getDb()`: valid sig → 200 + profiles
+  upsert with tier, tampered payload → 400 Webhook Error + zero DB
+  writes, missing header → 400, unknown event → 200 no-op,
+  `getStripe()` null → Swedish 500, subscription.updated sync by
+  stripeSubscriptionId (no upsert), subscription.deleted → tier
+  reset to Basic, unmapped price → `Unknown`. **Also fixed a
+  pre-existing lock break:** the Round-80 "exactly 1 raw LLM call"
+  lock in `groq-provider-priority.test.mjs` now documents the 2nd
+  legitimate raw call (`probeGroqHealth` MUST bypass the fallback
+  chain to observe the raw provider error — routing it through
+  `createChatWithFallback` would mask TPD-exhaustion as a retry).
+- [ ] **#4 Vercel deploy + cron verification** — external (needs
+  deploy access). Cron smoke test documented in §Soft-launch
+  Checklist.
+- [ ] **#5 Invites (~30 people)** — external / human step.
+
+**Priority 2 — Technical debt (not yet started this batch)**
+
+6. Clerk `createRouteMatcher` deprecation → resource-based auth.
+7. `scripts/e2e.sh` env contract → `test:e2e:ci`.
+8. Dashboard monolith extraction (`app/dashboard/page.js` 2899 lines).
+9. Cleanup of legacy files + `.gitignore` entries.
+10. Doc correction: native `mongodb` driver (not mongoose).
+
+**Net test count:** unit suite **1358 pass / 0 fail / 3 skipped**
+(+9 Stripe webhook contract tests +1 updated Round-80 lock; the 3
+skips are pre-existing env-gated cases).
