@@ -245,6 +245,8 @@ export default function PrivacyPage() {
 
         <p className="text-xs text-slate-400 mt-8 text-center">
           Vill du veta mer om hur JobbPiloten fungerar? Läs våra <Link href="/terms" className="underline hover:text-slate-900">användarvillkor</Link>.
+          {' '}Använder du Chrome-tillägget? Läs{' '}
+          <Link href="/extension-privacy" className="underline hover:text-slate-900" data-testid="footer-extension-privacy">tilläggsintegritetspolicyn</Link>.
         </p>
       </main>
     </div>

@@ -24,6 +24,15 @@ Store asset requirements per Google's Chrome Web Store developer docs
 - Keep the JobbPiloten brand (indigo gradient + plane glyph) and the
   tagline readable at 440px width.
 
+## Canonical upload artifact
+
+Upload **`dist/extension-1.0.0-cws.zip`** (built by `yarn package:extension`,
+which runs the validators + lints first) to the CWS dashboard. It is
+built from the same flat layout with `*.md` files stripped. Do NOT
+upload the repo-root `extension-v1.0.0.zip` — that is a manual,
+unfiltered copy (includes `CSP.md` / `README.md` / `STORE_DESCRIPTION.md`)
+kept only as a quick sideload artifact.
+
 ## How to replace a placeholder
 
 1. Load the extension (`chrome://extensions` → Developer mode →

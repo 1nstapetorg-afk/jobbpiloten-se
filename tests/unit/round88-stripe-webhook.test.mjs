@@ -103,7 +103,7 @@ function buildHarness({ signature, stripe, db }) {
   // declarations from `runInNewContext` land on the context global.
   vm.createContext(sandbox)
   vm.runInContext(script, sandbox, { filename: 'webhooks/stripe/route.js' })
-  return { POST: sandbox.POST, tierFromPriceId: sandbox.tierFromPriceId }
+  return { POST: sandbox.POST }
 }
 
 // In-memory profiles-collection spy: records every updateOne call so the
@@ -327,8 +327,12 @@ test('Round-88 webhook: subscription.updated → 200 + profile update via stripe
     assert.equal(calls[0].update.$set.tier, 'Elite')
     assert.equal(calls[0].update.$set.billingInterval, 'year')
     assert.equal(calls[0].update.$set.cancelAtPeriodEnd, true)
-    // update-by-id must NOT upsert — a tombstone sync only touches existing rows
-    assert.notEqual(calls[0].options?.upsert, true)
+    // update-by-id must NOT upsert — a tombstone sync only touches existing
+    // rows. The route passes NO options arg for this branch, so options
+    // must be undefined (strict — `notEqual(…upsert, true)` would also
+    // pass if options were missing entirely, which is exactly the
+    // regression this locks).
+    assert.equal(calls[0].options, undefined)
   })
 })
 
