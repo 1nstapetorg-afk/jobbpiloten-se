@@ -443,7 +443,7 @@ function hostPatternToRegex(pattern) {
 // 2026-08-02 (Chromebook blank-tab fix) — JobbPiloten APP-origin
 // allowlist. DISTINCT from the manifest host_permissions list: the
 // manifest legitimately includes webmail + job-board hosts
-// (mail.google.com, outlook.*, arbetsformedlingen.se, blocket.se)
+// (mail.google.com, outlook.*, arbetsformedlingen.se)
 // because the content scripts fetch FROM them (email-compose AI,
 // job scraper). Those hosts must NEVER be adopted as the dashboard
 // origin — doing so made "Anslut din profil" open

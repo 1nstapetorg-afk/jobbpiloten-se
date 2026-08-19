@@ -20,7 +20,7 @@ Med ett klick fyller tillägget i dina personuppgifter, arbetslivserfarenhet och
 • Fyll i jobbansökningar automatiskt – ingen mer copy-paste
 • Personliga AI-svar på frågor som "Varför vill du jobba här?"
 • Mejlutkast direkt i Gmail och Outlook
-• Fungerar med Arbetsförmedlingen, Blocket och många fler
+• Fungerar med Arbetsförmedlingen, Jobbland och många fler
 • Din data är din – inget skickas utan ditt godkännande
 
 Så här fungerar det:
@@ -41,7 +41,7 @@ One click fills your personal details, work experience and answers to common que
 • Auto-fill job applications – no more copy-paste
 • Personal AI answers to questions like "Why do you want this job?"
 • Email drafts right inside Gmail and Outlook
-• Works with Arbetsförmedlingen, Blocket and many more
+• Works with Arbetsförmedlingen, Jobbland and many more
 • Your data stays yours – nothing is sent without your approval
 
 How it works:

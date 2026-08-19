@@ -233,12 +233,11 @@ Connection pattern: **one shared, self-healing singleton** in `lib/mongo.js` —
 │   ├── mongo.js                     (Round-80) Shared self-healing Mongo singleton: `getDb()` lazily connects on first use, clears the cached connect-promise on rejection so a transient outage can't poison the process. Imported by all 18 DB-touching routes.
 │   ├── cv-ocr.js                    (Round-80) LLM-vision OCR: `ocrImageBuffer()` (PNG/JPG/WebP → text via provider vision model), `renderPdfPageToPng()` (pdfjs-dist legacy + @napi-rs/canvas), `ocrPdfPages()` (multi-page, capped at 5). Soft — never throws, returns '' on failure.
 │   ├── cv-extract.js                (Round-80) Structured CV→profile field extraction: `extractCvFields(cvText)` (LLM STRICT-JSON prompt) + pure `parseExtractedFields()` sanitizer (skills ≤50×100 chars, experience Junior|Medior|Senior, years 0..60, summary ≤1500).
-│   ├── jobScraper.js                (531 lines) Multi-source waterfall: Arbetsförmedlingen OpenAPI (primary), Blocket Jobb JSON-LD scrape, Ledigajobb.se HTML scrape. Dedupe by URL then (company|title|location). Emits `evt=multiSource.metric` JSON line per call for log aggregation.
+│   ├── jobScraper.js                Multi-source waterfall: Arbetsförmedlingen OpenAPI (primary), Ledigajobb.se HTML scrape, Jobbland.se HTML scrape. Dedupe by URL then (company|title|location). Emits `evt=multiSource.metric` JSON line per call for log aggregation.
 │   ├── scrapers/
-│   │   ├── blocket.js               Blocket Jobb JSON-LD parser (soft-block tolerant).
-│   │   ├── ledigajobb.js            Ledigajobb.se HTML parser (blocked by robots — fallback URL builder).
-│   │   ├── urlBuilders.js           buildLedigaJobbSearchUrl, buildJobbsafariSearchUrl, buildBlocketSearchUrl.
-│   │   └── urls.js                  Constants + PROD_BASE_URL.
+│   │   ├── ledigajobb.js            Ledigajobb.se HTML parser + pre-filled URL builder.
+│   │   ├── jobbland.js              Jobbland.se HTML parser + pre-filled URL builder.
+│   │   └── urlBuilders.js           buildLedigaJobbSearchUrl, buildJobSafariSearchUrl.
 │   ├── pdf-report.js                Aktivitetsrapport PDF renderer. A4, indigo header, personal details, avatar (5 SVG-ported avatars, 11 fall back to ✈), monthly table.
 │   ├── push.js                      web-push helpers: buildBatchMatchPayload, buildJobMatchPayload, sendPushToUser, broadcastPush.
 │   ├── cv-enhance.js                Prompt builder for /api/cv-enhance.
@@ -483,7 +482,7 @@ MongoDB, native driver, **no ORM**. All collections use `clerkId` as the tenant 
   clerkId: string | null,
   newCount: number,                   // jobs found
   pushNotification: { sent: number, failed: number },
-  source: 'multi',                    // Arbetsförmedlingen + Blocket + Ledigajobb waterfall
+  source: 'multi',                    // Arbetsförmedlingen + Ledigajobb + Jobbland waterfall
   metric: { af, blk, lj, in, dedup, capped }, // matches the multiSource.metric log shape
   error: string | null,
 }
@@ -594,8 +593,8 @@ if (response) return response;
 ### 5.4. Multi-Source Job Scraper Waterfall
 `lib/jobScraper.js#multiSourceSearchJobs` queries in parallel:
 1. **Arbetsförmedlingen OpenAPI** (`jobsearch.api.jobtechdev.se/search`) — primary, region-aware, most trustworthy.
-2. **Blocket Jobb** — JSON-LD `JobPosting` scrape from listing pages. 403-tolerant.
-3. **Ledigajobb.se** — HTML scrape. Killswitch: `LEDIGAJOBB_SCRAPER_ENABLED=false`.
+2. **Ledigajobb.se** — HTML scrape. Killswitch: `LEDIGAJOBB_SCRAPER_ENABLED=false`.
+3. **Jobbland.se** — HTML scrape. Killswitch: `JOBBLAND_SCRAPER_ENABLED=false`.
 
 Dedup: URL-first, then `(company|title|location)`. AF wins ties.
 
@@ -675,7 +674,7 @@ Never throws — always returns a Swedish cover letter of some quality.
 - [x] Stats: this-month applications, total, streak (consecutive-day counter), next-report date
 - [x] Push-subscribe toggle
 - [x] "Aktivitetsrapport denna månad" with PDF download
-- [x] "Lediga jobb för dig" — matched AF+Blocket+Ledigajobb jobs (multi-source waterfall)
+- [x] "Lediga jobb för dig" — matched AF+Ledigajobb+Jobbland jobs (multi-source waterfall)
 - [x] Applications table with filter tabs: Alla / Ej ansökta / Ansökta / Sparade
 - [x] Friendly empty states (Briefcase / Rocket / Send / Star icons, `aria-live="polite"`)
 - [x] Status badges: Förberedd / Ansökt / Bekräftad
@@ -759,7 +758,7 @@ Never throws — always returns a Swedish cover letter of some quality.
 
 ### Intentional non-features (do NOT "fix" these)
 - **tesseract.js OCR rejected (now LLM-vision OCR instead, Round-80).** `/api/cv-ocr/route.js` still returns HTTP 501 by design (the stub endpoint was kept for API-contract reasons). Real OCR now lives in `lib/cv-ocr.js` + `lib/cv-extract.js` using LLM vision (same provider chain as everything else — no tesseract.js bundle). See Round-80 section in `PROJECT_STATUS.md`.
-- **Ledigajobb.se → pre-filled URL, not scraped.** Their `robots.txt` blocks automated crawling. `buildLedigaJobbSearchUrl` in `lib/scrapers/urlBuilders.js` gives an honest search URL instead. Same for Jobbsafari. Blocket IS scraped (JSON-LD, public).
+- **Ledigajobb.se → pre-filled URL, not scraped.** Their `robots.txt` blocks automated crawling. `buildLedigaJobbSearchUrl` in `lib/scrapers/urlBuilders.js` gives an  honest search URL instead. Same for Jobbsafari.
 - **Cron in UTC, not Stockholm.** Vercel Cron only accepts UTC. `0 7` runs at 09:00 CEST (summer) / 08:00 CET (winter). Accepted for soft launch.
 - **`hashShort` is NOT a privacy primitive.** JSDoc in `lib/utils.js` warns future devs: FNV-1a 32-bit is brute-forceable in <1ms against ~290 Swedish kommun names. Log lines use inline `truncate(value, 40)` instead.
 - **`next.config.js` deliberately has NO `output: 'standalone'`.** Locked by `tests/unit/next-config-no-standalone.test.mjs`. Vercel handles its own per-route serverless packaging; setting `standalone` breaks Vercel's CSS bundle path resolution.

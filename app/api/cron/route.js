@@ -119,8 +119,9 @@ async function runCronForSubscriber(db, profile) {
     //    the dashboard and apply manually.
     //
     //    Issue 4 (2026-07-10): switched to `multiSourceSearchJobs` so the
-    //    cron now surfaces AdF + Blocket Jobb (JSON-LD) results. The
-    //    higher volume means more potentially-matching ads per push tick.
+    //    cron now surfaces AF + Ledigajobb + Jobbland results (Blocket Jobb
+    //    retired 2026-12-16). The higher volume means more potentially-
+    //    matching ads per push tick.
     //    Issue 3 (2026-07-10): `multiSourceSearchJobs` now returns
     //    `{ jobs, hasMore }` instead of a bare array. The cron path
     //    doesn't paginate, so we destructure `jobs` and ignore

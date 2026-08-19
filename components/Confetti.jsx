@@ -17,6 +17,18 @@ import { useEffect, useState } from 'react'
 const COLORS = ['#f59e0b', '#6366f1', '#3b82f6', '#10b981', '#ec4899', '#f43f5e']
 
 export default function Confetti({ count = 40 }) {
+  // Round-94 followup (prefers-reduced-motion audit): confetti is pure
+  // decoration — users who request reduced motion get NO burst instead
+  // of a collapsed/animated one. The global CSS guard would also
+  // collapse the fall, but rendering nothing is the honest outcome and
+  // keeps the pieces out of the DOM entirely. SSR-safe: matchMedia
+  // only exists client-side, so the server pass renders null and the
+  // client re-evaluates on mount.
+  const [reducedMotion] = useState(() =>
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  )
   const [pieces] = useState(() =>
     Array.from({ length: count }, (_, i) => ({
       id: i,
@@ -35,10 +47,13 @@ export default function Confetti({ count = 40 }) {
     return () => clearTimeout(t)
   }, [])
 
-  if (!alive) return null
+  // Reduced-motion users see NO burst (honest outcome) and the pieces
+  // never enter the DOM — checked after all hooks so the hook order is
+  // unconditional across renders.
+  if (reducedMotion || !alive) return null
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-[100] overflow-hidden" aria-hidden="true">
+    <div className="pointer-events-none fixed inset-0 z-[100] overflow-hidden" aria-hidden="true" data-testid="confetti-burst">
       {pieces.map((p) => (
         <span
           key={p.id}

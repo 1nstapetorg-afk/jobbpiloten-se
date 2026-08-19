@@ -264,7 +264,6 @@ Distribution highlights (Top-10 unit test files by count):
   | saved-answers.test.mjs                                | 25     |
   | pdf-second-pass.test.mjs                              | 21     |
   | match-score.test.mjs                                  | 19     |
-  | blocket-scraper.test.mjs                              | 19     |
   | extension-content.test.mjs                            | 17     |
   | pdf-report.test.mjs                                   | 17     |
   | interactive-demo.test.mjs                             | 17     |

@@ -14,14 +14,15 @@ import {
   Plane, Sparkles, FileText, Check, Zap, Loader2,
   Building2, MapPin, Download, Rocket, ExternalLink, Briefcase, Bell, BellOff,
   Copy, Send, Star, Search, BookOpen, Sparkle, ArrowUpRight, Settings as SettingsIcon2,
-  Mail,
+  Mail, Smartphone,
 } from 'lucide-react'
 import { motion } from 'framer-motion'
 import ErrorBoundary from '@/components/ErrorBoundary'
 import { toast } from 'sonner'
 import { trackPlausible } from '@/lib/analytics'
+import { useBrowser } from '@/lib/browser-store'
 import { SUPPORT_EMAIL, VAPID_PUBLIC_KEY, EXTENSION_PUBLISHED, EXTENSION_STORE_URL } from '@/lib/siteConfig'
-import { buildBlocketSearchUrl, buildJobSafariSearchUrl, buildLedigaJobbSearchUrl } from '@/lib/jobScraper'
+import { buildLedigaJobbSearchUrl, buildJobblandSearchUrl } from '@/lib/jobScraper'
 import { locationsToLänCodes, doesJobMatchUserLocation } from '@/lib/swedishLocations'
 import ProfileAvatar from '@/components/ProfileAvatar'
 import UserMenu from '@/components/UserMenu'
@@ -135,9 +136,14 @@ const SOURCE_STYLE = {
  * The user's spec is: NEVER show generic "Sok pa Google"; instead use
  * the source's own job-board search so the destination is unambiguous.
  *
+ * Round-94/95 followup (2026-08-07): the 'blocket' entry was REMOVED —
+ * Schibsted shut Blocket Jobb down permanently (jobb.blocket.se is
+ * NXDOMAIN), so a dead link is worse than a generic search. Round-95
+ * added 'jobbland' (Duunitori's board, which also absorbed Jobbsafari).
+ *
  * Lookup order (first matching wins, fallback at the end):
- *   1. 'blocket'   -> `Sok pa Blocket` + buildBlocketSearchUrl()
- *   2. 'ledigajobb'-> `Sok pa Ledigajobb` + buildLedigaJobbSearchUrl()
+ *   1. 'ledigajobb'-> `Sok pa Ledigajobb` + buildLedigaJobbSearchUrl()
+ *   2. 'jobbland'  -> `Sok pa Jobbland` + buildJobblandSearchUrl()
  *   3. catch-all   -> `Sok jobbet` + Google search (last resort)
  *
  * The `buildUrl({ app, profile })` signature lets each entry fall back
@@ -155,18 +161,6 @@ const buildGoogleSearchUrl = (app) => {
 
 const SOURCE_FALLBACKS = [
   {
-    key: 'blocket',
-    match: (app) => matchesJobSource(app, 'blocket'),
-    label: 'Sok pa Blocket',
-    Icon: Search,
-    className: 'border-blue-300 text-blue-700 hover:bg-blue-50 hover:text-blue-800',
-    title: 'Ingen direktlank hittades -- oppnar Blocket Jobb med jobbets titel + foretag',
-    buildUrl: ({ app, profile }) => buildBlocketSearchUrl({
-      query: (profile && Array.isArray(profile.jobTitles) && profile.jobTitles[0]) || (app && app.title) || '',
-      location: (profile && Array.isArray(profile.locations) && profile.locations[0]) || '',
-    }),
-  },
-  {
     key: 'ledigajobb',
     match: (app) => matchesJobSource(app, 'ledigajobb'),
     label: 'Sok pa Ledigajobb',
@@ -174,6 +168,21 @@ const SOURCE_FALLBACKS = [
     className: 'border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800',
     title: 'Ingen direktlank hittades -- oppnar Ledigajobb.se med jobbets titel + foretag',
     buildUrl: ({ app, profile }) => buildLedigaJobbSearchUrl({
+      query: (profile && Array.isArray(profile.jobTitles) && profile.jobTitles[0]) || (app && app.title) || '',
+      location: (profile && Array.isArray(profile.locations) && profile.locations[0]) || '',
+    }),
+  },
+  {
+    // Round-95 — Jobbland.se (Duunitori). Added as the Blocket-replacement
+    // source; Jobbland-sourced jobs without a direct link open the board's
+    // own search instead of a generic Google query.
+    key: 'jobbland',
+    match: (app) => matchesJobSource(app, 'jobbland'),
+    label: 'Sok pa Jobbland',
+    Icon: Search,
+    className: 'border-violet-300 text-violet-700 hover:bg-violet-50 hover:text-violet-800',
+    title: 'Ingen direktlank hittades -- oppnar Jobbland.se med jobbets titel + foretag',
+    buildUrl: ({ app, profile }) => buildJobblandSearchUrl({
       query: (profile && Array.isArray(profile.jobTitles) && profile.jobTitles[0]) || (app && app.title) || '',
       location: (profile && Array.isArray(profile.locations) && profile.locations[0]) || '',
     }),
@@ -241,6 +250,9 @@ function DashboardContent() {
   const { user, isLoaded } = useUser()
   const router = useRouter()
   const searchParams = useSearchParams()
+  // Round-95 — in-app browser (mobile extension replacement). openJobUrl
+  // drives the native webview / iframe fallback from lib/browser-store.jsx.
+  const { openJobUrl } = useBrowser()
   const [stats, setStats] = useState(null)
   const [apps, setApps] = useState([])
   const [profile, setProfile] = useState(null)
@@ -383,10 +395,12 @@ function DashboardContent() {
   // Round-58 / Bug 2: per-source search-fallback lookup. When the Tier-3
   // fallback (no direct URL, no externalId) is taken, look up the right
   // entry by app.source so the button label + destination is unambiguous:
-  // 'blocket' -> Blocket Jobb search, 'ledigajobb' -> Ledigajobb.se, generic
-  // -> Google as a true last resort. Pre-Round-58 there was one SEARCH_VIEW
+  // 'ledigajobb' -> Ledigajobb.se, 'jobbland' -> Jobbland.se, generic ->
+  // Google as a true last resort. Pre-Round-58 there was one SEARCH_VIEW
   // constant -- 'Sok pa Google' -- regardless of source. Now each source
-  // has its own label/className/buildUrl.
+  // has its own label/className/buildUrl. (Round-94/95 followup: the
+  // 'blocket' entry was removed — Blocket Jobb shut down, jobb.blocket.se
+  // is NXDOMAIN; 'jobbland' added as the replacement source.)
   const isSearch = prepAppUrl && prepAppUrl.source === 'search'
   const searchFallback = useMemo(
     () => isSearch ? resolveSearchFallback(prepApplication, profile) : null,
@@ -400,6 +414,23 @@ function DashboardContent() {
     [searchFallback, prepApplication, profile],
   )
   const finalHref = fallbackUrl || (prepAppUrl ? prepAppUrl.url : null)
+
+  // Round-95 (mobile in-app browser): open the resolved application URL
+  // inside the in-app browser (native webview on iOS/Android, iframe
+  // fallback on web). Passes the loaded profile + the prepared application
+  // (with its generated coverLetter) so the injected autofill script can
+  // fill the host form. Then navigates to the /browser screen.
+  const openInAppBrowser = async () => {
+    if (!finalHref || !prepApplication) return
+    await openJobUrl({
+      url: finalHref,
+      title: prepApplication.title || '',
+      company: prepApplication.company || '',
+      profile,
+      job: prepApplication,
+    })
+    router.push('/browser')
+  }
 
   const load = async () => {
     try {
@@ -1332,7 +1363,7 @@ function DashboardContent() {
           // Round-94: the star does a 360° spin + scale bounce when the
           // save state flips (element type change → remount → the
           // animate-star-pop animation replays exactly once per toggle).
-          <span className="inline-flex animate-star-pop">
+          <span className="inline-flex animate-star-pop motion-reduce:animate-none">
             <Star className="w-4 h-4 fill-amber-500 stroke-amber-600" />
           </span>
         ) : (
@@ -1455,7 +1486,12 @@ function DashboardContent() {
             {/* Round-94: slow desaturated gradient sheen (8s loop) so the
                 hero reads as the dashboard's centerpiece without competing
                 with the CTA. Pure CSS, pointer-events-none. */}
-            <div className="absolute inset-0 bg-gradient-to-br from-indigo-400/20 via-transparent to-blue-400/10 animate-hero-sheen pointer-events-none" aria-hidden="true" />
+            {/* Round-94 followup: motion-reduce:animate-none makes the
+                sheen static for prefers-reduced-motion users (the global
+                CSS guard in globals.css would also collapse it, but the
+                explicit variant keeps the intent visible at the usage
+                site). */}
+            <div className="absolute inset-0 bg-gradient-to-br from-indigo-400/20 via-transparent to-blue-400/10 animate-hero-sheen motion-reduce:animate-none pointer-events-none" aria-hidden="true" />
             <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
                 <div className="text-sm text-indigo-200 mb-1">Din AI-assistent</div>
@@ -1497,7 +1533,7 @@ function DashboardContent() {
                 size="lg"
                 disabled={applying}
                 onClick={runAssistant}
-                className={`bg-white text-indigo-700 hover:bg-indigo-50 h-12 px-6 shrink-0 shadow-lg shadow-indigo-900/20 transition-all hover:scale-[1.02] active:scale-[0.98] ${!applying && !hasCoverLetters ? 'animate-cta-pulse' : ''}`}
+                className={`bg-white text-indigo-700 hover:bg-indigo-50 h-12 px-6 shrink-0 shadow-lg shadow-indigo-900/20 transition-all hover:scale-[1.02] active:scale-[0.98] ${!applying && !hasCoverLetters ? 'animate-cta-pulse motion-reduce:animate-none' : ''}`}
               >
                 {applying ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> AI-assistenten arbetar...</> : <><Rocket className="w-4 h-4 mr-2" /> Kör AI-assistenten nu</>}
               </Button>
@@ -2064,8 +2100,10 @@ function DashboardContent() {
             </CardContent>
           </Card>
 
-          {/* 2nd source card — parallel search redirects to Blocket Jobb /
-              Jobbsafari. These are honest deep-links (we don't scrape or
+          {/* 2nd source card — parallel search redirect to Jobbsafari.
+              Round-94 followup: the Blocket Jobb link was removed from
+              BroaderSearchCard (platform shut down — jobb.blocket.se is
+              NXDOMAIN). These are honest deep-links (we don't scrape or
               store their listings); the constructed URL carries the user's
               profile.jobTitles[0] + profile.locations[0] forward so they
               land on a pre-filled search results page. Implemented as a
@@ -2436,22 +2474,39 @@ function DashboardContent() {
                     // Re-add locally with `console.log(prepAppUrl)` for
                     // one-off debugging if a regression resurfaces.
                     return (
-                      <a
-                        href={finalHref}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={
-                          'inline-flex items-center justify-center h-10 px-4 rounded-md border border-slate-200 bg-white text-sm font-medium ' +
-                          'transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 flex-1 ' +
-                          className
-                        }
-                        data-testid="open-application-page"
-                        data-url-source={prepAppUrl.source}
-                        title={title}
-                      >
-                        <Icon className="w-4 h-4 mr-2" />
-                        {label}
-                      </a>
+                      <>
+                        {/* Round-95 — primary "Ansök i appen": opens the
+                            application URL inside the in-app browser with
+                            autofill (native webview on mobile, iframe
+                            fallback on web). */}
+                        <Button
+                          onClick={openInAppBrowser}
+                          data-testid="apply-in-app"
+                          className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white"
+                        >
+                          <Smartphone className="w-4 h-4 mr-2" />
+                          Ansök i appen
+                        </Button>
+                        {/* Secondary fallback — open in the external browser
+                            (Safari/Chrome). Same per-source label + styling
+                            as before. */}
+                        <a
+                          href={finalHref}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={
+                            'inline-flex items-center justify-center h-10 px-4 rounded-md border border-slate-200 bg-white text-sm font-medium ' +
+                            'transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 flex-1 ' +
+                            className
+                          }
+                          data-testid="open-application-page"
+                          data-url-source={prepAppUrl.source}
+                          title={title}
+                        >
+                          <Icon className="w-4 h-4 mr-2" />
+                          {label}
+                        </a>
+                      </>
                     )
                   })()}
 

@@ -9,12 +9,12 @@
 // Shared pure helpers live in lib/dashboard-helpers.js.
 
 import { useEffect, useState, useRef, useMemo, memo } from 'react'
-import { motion, useMotionValue, useTransform, animate } from 'framer-motion'
+import { motion, useMotionValue, useTransform, animate, useReducedMotion } from 'framer-motion'
 import { Clock, TrendingUp, TrendingDown, Minus, Search, ExternalLink, Info } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Skeleton } from '@/components/ui/skeleton'
-import { buildBlocketSearchUrl, buildJobSafariSearchUrl } from '@/lib/jobScraper'
+import { buildJobSafariSearchUrl, buildJobblandSearchUrl } from '@/lib/jobScraper'
 import { nextCronAt, fmtTimeUntil, STATUS_MAP, getMonthlyTrend } from '@/lib/dashboard-helpers'
 
 /**
@@ -125,13 +125,24 @@ export function NextCronBanner({ hideUntil = null }) {
  */
 export function AnimatedCounter({ value = 0, formatter }) {
   const mv = useMotionValue(0)
+  // Round-94 followup (prefers-reduced-motion): when the OS requests
+  // reduced motion, skip the count-up entirely and snap straight to
+  // `value` — a jumping number column is exactly the kind of motion
+  // those users asked to disable. MotionConfig reducedMotion="user" in
+  // providers.js doesn't cover imperative `animate(mv, …)` calls, so
+  // the guard lives here where the animation is defined.
+  const reduceMotion = useReducedMotion()
   const display = useTransform(mv, (v) =>
     formatter ? formatter(Math.round(v)) : Math.round(v)
   )
   useEffect(() => {
+    if (reduceMotion) {
+      mv.set(value)
+      return
+    }
     const ctrl = animate(mv, value, { duration: 0.8, ease: 'easeOut' })
     return () => ctrl.stop()
-  }, [value, mv])
+  }, [value, mv, reduceMotion])
   return <motion.span className="tabular-nums">{display}</motion.span>
 }
 
@@ -233,12 +244,13 @@ export const HeroStatCard = memo(function HeroStatCard({ s, apps, idx }) {
                   <button
                     type="button"
                     aria-label={s.hint}
+                    data-testid={`stat-hint-${s.key}`}
                     className="inline-flex shrink-0 rounded-full text-slate-400 hover:text-slate-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
                   >
                     <Info className="w-3.5 h-3.5" aria-hidden="true" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-[240px] text-xs">
+                <TooltipContent side="top" className="max-w-[240px] text-xs" data-testid={`stat-hint-content-${s.key}`}>
                   {s.hint}
                 </TooltipContent>
               </Tooltip>
@@ -289,18 +301,27 @@ export function DashboardLoadingSkeleton() {
 }
 
 /**
- * BroaderSearchCard — second-source search panel that opens Blocket Jobb /
- * Jobbsafari in a new tab with the user's primary title + location pre-filled.
- * Honest deep-links: we do not scrape or store their listings; we just hand
- * off the search query. Returns null when both URLs are empty so the parent
- * Card stack stays clean for users with an empty profile.
+ * BroaderSearchCard — second-source search panel that opens Jobbsafari
+ * and Jobbland in new tabs with the user's primary title + location
+ * pre-filled. Honest deep-links: we do not scrape or store their
+ * listings; we just hand off the search query. Returns null when BOTH
+ * URLs are empty so the parent Card stack stays clean for users with
+ * an empty profile.
+ *
+ * Round-94 followup (2026-08-07): the Blocket Jobb button was REMOVED —
+ * Schibsted shut the platform down permanently (jobb.blocket.se is
+ * NXDOMAIN in public DNS), so the deep link would land on a dead site.
+ *
+ * Round-95 (2026-08-07): a Jobbland.se button was ADDED — Duunitori's
+ * board (which also absorbed Jobbsafari) is the natural successor to
+ * Blocket Jobb for the "Letar du bredare?" panel.
  */
 export function BroaderSearchCard({ profile }) {
   const primaryTitle = (profile?.jobTitles || [])[0] || ''
   const primaryLocation = (profile?.locations || [])[0] || ''
-  const blocketUrl = buildBlocketSearchUrl({ query: primaryTitle, location: primaryLocation })
   const safariUrl = buildJobSafariSearchUrl({ query: primaryTitle, location: primaryLocation })
-  if (!blocketUrl && !safariUrl) return null
+  const jobblandUrl = buildJobblandSearchUrl({ query: primaryTitle, location: primaryLocation })
+  if (!safariUrl && !jobblandUrl) return null
   return (
     <Card className="border-0 shadow-sm" data-testid="broader-search-card">
       <CardHeader>
@@ -312,20 +333,7 @@ export function BroaderSearchCard({ profile }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="grid sm:grid-cols-2 gap-3">
-          {blocketUrl && (
-            <a
-              href={blocketUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              data-testid="broader-search-blocket"
-              className="inline-flex items-center justify-center gap-2 h-11 px-4 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 hover:text-blue-800 hover:border-blue-300 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 text-sm font-medium"
-            >
-              <ExternalLink className="w-4 h-4" />
-              Sök på Blocket
-              <span className="text-xs text-blue-500/80 ml-1">jobb.blocket.se</span>
-            </a>
-          )}
+        <div className="grid gap-3">
           {safariUrl && (
             <a
               href={safariUrl}
@@ -339,9 +347,22 @@ export function BroaderSearchCard({ profile }) {
               <span className="text-xs text-emerald-500/80 ml-1">jobbsafari.se</span>
             </a>
           )}
+          {jobblandUrl && (
+            <a
+              href={jobblandUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="broader-search-jobbland"
+              className="inline-flex items-center justify-center gap-2 h-11 px-4 rounded-lg border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 hover:text-violet-800 hover:border-violet-300 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 text-sm font-medium"
+            >
+              <ExternalLink className="w-4 h-4" />
+              Sök på Jobbland
+              <span className="text-xs text-violet-500/80 ml-1">jobbland.se</span>
+            </a>
+          )}
         </div>
         <p className="text-xs text-slate-500 leading-relaxed">
-          Båda sidor öppnas i din webbläsare. JobbPiloten skrapar eller lagrar inte Blocket / Jobbsafari-listan — vi använder bara AF:s öppna API.
+          Sidan öppnas i din webbläsare. JobbPiloten skrapar eller lagrar inte Jobbsafari- eller Jobbland-listan — vi använder bara AF:s öppna API.
         </p>
       </CardContent>
     </Card>

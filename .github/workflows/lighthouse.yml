@@ -1,0 +1,131 @@
+name: lighthouse
+
+# Lighthouse CI (Round-94 followup).
+#
+# Audits the two primary surfaces — the public landing page and the
+# authenticated dashboard — against the Round-94 targets
+# (Performance ≥ 90, Accessibility ≥ 95, Best Practices ≥ 95, SEO ≥ 95)
+# on every PR to main. Scores are reported via LHCI's
+# temporary-public-storage URL printed in the job log.
+#
+# Architecture mirrors .github/workflows/e2e.yml:
+#   • Node 20 + Yarn 1.22 (packageManager pin in package.json).
+#   • Mongo 7 service container — the dashboard route reads the demo
+#     user's profile from Mongo, so the audit would otherwise redirect
+#     to /onboarding.
+#   • `yarn build` then `yarn start` (production server — LHCI should
+#     measure the shipped bundle, not dev-mode compilation).
+#   • A curl POST to /api/profile seeds the `lhci-audit` demo user
+#     before the audit so /dashboard renders real content. The cookie
+#     is forwarded into Chrome via lighthouserc.js `extraHeaders`.
+#
+# Why not use `lhci autorun`'s built-in server start? autorun expects
+# `yarn start` to self-host; the workflow starts the server explicitly
+# so the seed curl can run against a warm, healthy instance before
+# Chrome ever requests /dashboard.
+#
+# Chrome: GitHub-hosted ubuntu runners ship a system Chrome, which
+# chrome-launcher discovers automatically. `--no-sandbox` in
+# lighthouserc.js handles the root-user sandbox refusal.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel in-progress runs for the same branch / PR — a new push
+# supersedes the previous audit run.
+concurrency:
+  group: lighthouse-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Demo Clerk keys (mirror e2e.yml) so the app boots in demo mode —
+  # the middleware's demo-cookie fallback authenticates the audit user.
+  NEXT_PUBLIC_BASE_URL: http://localhost:3000
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_xxx_demo
+  CLERK_SECRET_KEY: sk_test_xxx_demo
+  DB_NAME: jobbpiloten_lhci
+  NODE_ENV: test
+
+jobs:
+  lighthouse:
+    name: Lighthouse CI
+    runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:7
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 27017:27017
+    env:
+      MONGO_URL: mongodb://localhost:27017
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node + Yarn
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Build production bundle
+        run: yarn build
+        env:
+          MONGO_URL: mongodb://localhost:27017
+
+      - name: Start production server
+        # `yarn start` = `next start --hostname 0.0.0.0`. Poll the
+        # public health probe until the server answers, then continue.
+        run: |
+          nohup yarn start > /tmp/next.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then
+              echo "server ready (attempt $i)"
+              break
+            fi
+            sleep 2
+          done
+          curl -sf http://localhost:3000/api/health >/dev/null 2>&1 || {
+            echo "::error::production server did not become healthy"
+            cat /tmp/next.log
+            exit 1
+          }
+
+      - name: Seed demo profile for the dashboard audit
+        # The /dashboard route redirects to /onboarding when no profile
+        # exists for the cookie. POST the canonical profile shape the
+        # onboarding wizard sends (fullName + email are the minimum the
+        # route's doc-merge accepts) under the lhci-audit cookie that
+        # lighthouserc.js forwards to Chrome.
+        run: |
+          curl -sf -X POST http://localhost:3000/api/profile \
+            -H 'Cookie: demoUserId=lhci-audit' \
+            -H 'Content-Type: application/json' \
+            -d '{"fullName":"LHCI Audit","email":"lhci@example.se","jobTitles":["Lagerarbetare"],"locations":["Stockholm"]}' \
+            >/dev/null && echo "profile seeded"
+
+      - name: Run Lighthouse CI
+        run: npx lhci autorun
+        env:
+          MONGO_URL: mongodb://localhost:27017
+
+      - name: Upload Lighthouse report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-report
+          path: .lighthouseci/
+          retention-days: 7
+          if-no-files-found: ignore

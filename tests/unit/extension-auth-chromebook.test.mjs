@@ -8,7 +8,7 @@
 // origin whenever it matched the manifest host_permissions list. That
 // list legitimately includes webmail + job-board hosts for the
 // content-script fetch paths (mail.google.com, outlook.*,
-// arbetsformedlingen.se, blocket.se). So clicking "Anslut din profil"
+// arbetsformedlingen.se). So clicking "Anslut din profil"
 // while browsing a job site opened
 //   https://www.arbetsformedlingen.se/extension-auth  → blank page
 // On a Chromebook (a device commonly used for job-hunting on those

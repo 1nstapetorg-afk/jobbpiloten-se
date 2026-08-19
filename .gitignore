@@ -17,6 +17,8 @@ dev-*.log
 dist/
 test-results/
 playwright-report/
+# Round-94 followup — Lighthouse CI local report output
+.lighthouseci/
 extension/build-config.json
 # Round-88 — Chrome Web Store upload archive (build artifact)
 extension-v1.0.0.zip

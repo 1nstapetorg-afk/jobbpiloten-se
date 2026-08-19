@@ -500,7 +500,7 @@ skicka till `hej@jobbpiloten.se` med ämnesraden
 
 1. Installera tillägget (se `Förutsättningar` ovan).
 2. Gå till **en jobbsajt** (t.ex. <https://arbetsformedlingen.se> eller
-   <https://blocket.se>).
+   <https://jobbland.se>).
 3. Klicka ✈-ikonen → *Anslut din profil*.
 
 | Steg | Vad du ska se |

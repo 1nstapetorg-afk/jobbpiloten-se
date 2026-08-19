@@ -258,7 +258,7 @@ export default function LandingPage() {
           needed. Closes on link click. */}
       <div
         id="landing-mobile-menu"
-        className={`md:hidden overflow-hidden transition-all duration-300 ease-out ${mobileMenuOpen ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}
+        className={`md:hidden overflow-hidden transition-all duration-300 ease-out motion-reduce:transition-none motion-reduce:duration-0 ${mobileMenuOpen ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}
         data-testid="landing-mobile-menu"
       >
         <div className="container mx-auto px-4 py-3 space-y-1 border-b border-slate-100 bg-white/95 backdrop-blur">
