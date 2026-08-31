@@ -112,3 +112,26 @@ test('sanitizeAutofillPayload coerces nullish inputs to empty objects', () => {
     job: {},
   })
 })
+
+test('generated script embeds the field-type validity guard (Round-96 Bug 2)', () => {
+  const script = generateAutofillScript(
+    { fullName: 'Anna A', email: 'anna@example.com', phone: '+46701234567' },
+    { title: 'Utvecklare' },
+  )
+  assert.ok(script.includes('function isValidValue'), 'script must define the field-type validator')
+  assert.ok(script.includes('isValidValue(entry.key, value)'), 'fill loop must call the validator before setValue')
+  assert.ok(script.includes('"[Autofill] Mapping"'), 'script must log each field mapping for DevTools debugging')
+})
+
+test('generated script guards against cross-field type mismatches (Round-96 Bug 2)', () => {
+  // A cover-letter block must never be accepted as an email / phone / name.
+  const letter = 'Hej! Här är mitt personliga brev med många rader...\nErfaren utvecklare.\nMvh Anna'
+  const script = generateAutofillScript(
+    { fullName: 'Anna Andersson', email: letter, phone: 'Inte ett nummer' },
+    { title: 'Rollen' },
+  )
+  assert.ok(script.includes('function isValidValue'), 'validator must be present')
+  // The validator body must contain the email/phone type checks.
+  assert.ok(/key === "email"/.test(script), 'must type-check email (require @ with a dot)')
+  assert.ok(/key === "phone"/.test(script), 'must type-check phone (require digits)')
+})

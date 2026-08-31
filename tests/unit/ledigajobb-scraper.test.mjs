@@ -316,3 +316,38 @@ test('multiSourceSearchJobs emits lj=0 + the canonical all-empty warn when every
   assert.equal(parsed.lj, 0)
   assert.equal(parsed.jl, 0)
 })
+
+test('scrapeLedigajobbJobs discards links that resolve to the homepage (Round-96 Bug 1)', async () => {
+  // A listing whose <a href> is a bare home link (or a /sok search page)
+  // must NOT be returned — clicking it would take the user to the
+  // front page instead of the job ad. Only real /jobb/<slug> deep links
+  // survive.
+  const html = `
+    <html>
+      <body>
+        <article class="job-listing">
+          <a href=${'/'} class="job-link"><h2>Bad home link</h2></a>
+          <span class="company">Acme</span><span class="location">Stockholm</span>
+        </article>
+        <article class="job-listing">
+          <a href="https://ledigajobb.se" class="job-link"><h2>Bad bare host</h2></a>
+          <span class="company">Acme</span><span class="location">Stockholm</span>
+        </article>
+        <article class="job-listing">
+          <a href="/jobb/good-${SEED}" class="job-link"><h2>Bra roll</h2></a>
+          <span class="company">Klarna</span><span class="location">Stockholm</span>
+        </article>
+      </body>
+    </html>
+  `
+  global.fetch = async () => new Response(html, { status: 200 })
+  const jobs = await scrapeLedigajobbJobs({
+    query: `unique-F-${SEED}`,
+    location: 'Stockholm',
+    limit: 20,
+  })
+  // Only the real deep link survives; the two homepage links are dropped.
+  assert.equal(jobs.length, 1)
+  assert.equal(jobs[0].title, 'Bra roll')
+  assert.ok(jobs[0].url.includes('/jobb/good-'), 'returned url must be a real deep link')
+})
