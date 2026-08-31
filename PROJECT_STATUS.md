@@ -50,9 +50,9 @@ Aktivitetsrapport PDF for Arbetsförmedlingen included.
 - [x] Arbetsförmedlingen OpenAPI scraping with `resolveAFJobUrl` (6-field fallback)
 - [x] **Twice-daily** cron push notification: `"Vi hittade X nya jobb som matchar dig!"` → `/dashboard` (09:00 + 15:00 Stockholm CEST)
 - [x] Cron pre-check optimises away the AF scrape for non-push users
-- [x] **Multi-source scraper waterfall** — Arbetsförmedlingen (primary, region-aware) + Blocket Jobb (JSON-LD JobPosting scrape, soft-block tolerant) + **Ledigajobb.se** (HTML-listing parser, soft-block tolerant). URL + (title|company|location) dedupe so AF wins ties. LEDIGAJOBB_SCRAPER_ENABLED=false env flag killswitch disables the 3rd leg in staging/prod per-deploy.
-- [x] **Lightweight AF/Blocket/Ledigajobb hit-rate metric** — every `multiSourceSearchJobs` call emits one structured JSON line `{"evt":"multiSource.metric","v":1,"af":N,"blk":M,"lj":K,"in":N+M+K,"dedup":L,"capped":O,"q":"…","l":"…"}` so Vercel logs can be grep'd for source-health regressions. Query/location inlined (40-char truncate) for log-aggregator privacy.
-- [x] **Unit tests** for the Blocket + Ledigajobb scrapers + multiSource waterfall (`tests/unit/blocket-scraper.test.mjs` + `tests/unit/ledigajobb-scraper.test.mjs`) — pure URL-builder tests, FNV-1a `hashShort` contract, mocked-fetch happy + 403 + network + no-JSON-LD paths, dedupe-by-URL, metric log shape, both-empty warning, **2 `hasMore` regression tests** (upstreamCapped heuristic so the dashboard's "Visa fler jobb" button doesn't disappear when dedupe collapses hits to `limit`). Total: 28 new tests, 21 pre-existing = **49 tests** under `yarn test:unit`.
+- [x] **Multi-source scraper waterfall** — Arbetsförmedlingen (primary, region-aware) + **Ledigajobb.se** (HTML-listing parser, soft-block tolerant) + **Jobbland.se** (HTML-listing parser, soft-block tolerant). URL + (title|company|location) dedupe so AF wins ties. `LEDIGAJOBB_SCRAPER_ENABLED=false` + `JOBBLAND_SCRAPER_ENABLED=false` env killswitches disable the 2nd/3rd legs in staging/prod per-deploy.
+- [x] **Lightweight AF/Ledigajobb/Jobbland hit-rate metric** — every `multiSourceSearchJobs` call emits one structured JSON line `{"evt":"multiSource.metric","v":2,"af":N,"blk":0,"lj":K,"jl":J,"in":N+K+J,"dedup":L,"capped":O,"q":"…","l":"…"}` so Vercel logs can be grep'd for source-health regressions. `blk` stays pinned to 0 (retired Blocket leg) for log-shape stability. Query/location inlined (40-char truncate) for log-aggregator privacy.
+- [x] **Unit tests** for the Ledigajobb + Jobbland scrapers + multiSource waterfall (`tests/unit/multi-source-waterfall.test.mjs` + `tests/unit/ledigajobb-scraper.test.mjs` + `tests/unit/jobbland-scraper.test.mjs`) — pure URL-builder tests, FNV-1a `hashShort` contract, mocked-fetch happy + 403 + network + no-JSON-LD paths, dedupe-by-URL, metric log shape, both-empty warning, **2 `hasMore` regression tests** (upstreamCapped heuristic so the dashboard's "Visa fler jobb" button doesn't disappear when dedupe collapses hits to `limit`).
 - [x] **Animated landing hero background** — `from-amber-500/20 to-indigo-600/25` gradient overlay cycles via `bg-[length:200%_200%] motion-safe:animate-hero-bg-cycle` (15s ease-in-out, defined in `tailwind.config.js`). 3 floating particles (amber/indigo/blue small circles) drift on `hero-particle-a/b/c` (18/22/26s) — `hidden md:block` keeps mobile clean, `motion-safe:` honours `prefers-reduced-motion`. CSS keyframes only (no JS).
 - [x] **Avatar collection expanded 12 → 16** — added Hjalten (rare, red cape + star), Innovatören (uncommon, lightbulb + gear), Visionären (epic, telescope + visor), Mystikern (rare, hood + orb). All follow 144×144 viewBox + slate-900 outline + #fde7c8 skin + PilotWatermark. Picker grid (`md:grid-cols-4` in `app/settings/page.js`) fits 4×4 perfectly. Rarity distribution: 5 common + 5 uncommon + 4 rare + 2 epic + 0 legendary.
 - [x] **Extension manifest fix** — `extension/manifest.json` had a `// comment` block documenting the CSP directive; this is invalid JSON, so Chrome's manifest parser would have rejected the file on load and the packaging script was silently using defaults (no CSP at all). The security documentation is now in `extension/CSP.md` (Markdown with a directive breakdown table + a maintainer checklist for future additions) and the manifest is strict JSON. `python3 -m json.tool extension/manifest.json` validates.
@@ -75,7 +75,7 @@ Aktivitetsrapport PDF for Arbetsförmedlingen included.
 ## Known Limitations (intentional, MVP scope)
 
 - **Cron timing**: Vercel Cron is interpreted in UTC. The two scheduled entries (`0 7 * * *` + `0 13 * * *`) run at 09:00 + 15:00 Stockholm time during CEST (summer) and 08:00 + 14:00 during CET (winter). Acceptable for soft launch; revisit if a stricter 09:00-sharp obligation appears.
-- **Ledigajobb.se → pre-filled URL fallback (NOT scraped)**: investigated their public surface for Issue 4 — no API, no RSS, no JSON-LD tab on results pages, and `robots.txt` blocks automated crawling on the relevant path. Per user spec, we surface an honest pre-filled search URL (`buildLedigaJobbSearchUrl`) instead of scraping. Same shape for Jobbsafari. The actual scrape is on Blocket Jobb (JSON-LD, soft-block tolerant). The `multiSourceSearchJobs` waterfall always logs afCount + blocketCount (hashed query/location) so an operator can grep for source-health over time.
+- **Ledigajobb.se → pre-filled URL fallback (NOT scraped)**: investigated their public surface for Issue 4 — no API, no RSS, no JSON-LD tab on results pages, and `robots.txt` blocks automated crawling on the relevant path. Per user spec, we surface an  honest pre-filled search URL (`buildLedigaJobbSearchUrl`). Same shape for Jobbsafari. Ledigajobb.se + Jobbland.se ARE scraped (HTML-listing parsers, soft-block tolerant, per-env killswitches); Blocket Jobb was retired 2026-12-16 (platform shut down). The `multiSourceSearchJobs` waterfall always logs per-source hit counts so an operator can grep for source-health over time.
 - **VAPID keys**: defaults in `.env.example` are placeholders. Real keys must be generated before web-push works end-to-end: `npx web-push generate-vapid-keys`.
 - **Stripe price IDs**: placeholders in `.env.example`. Real price IDs must be created from the Stripe test dashboard before checkout can complete.
 - **Placeholder company info on legal pages**: previously `TechSweden AB` and `hej@jobbpiloten.se` — now replaced with `JobbPiloten Sweden AB` + dedicated `privacy@jobbpiloten.se` inbox. Set the real legal entity + dedicated privacy alias via `NEXT_PUBLIC_LEGAL_COMPANY_NAME` / `NEXT_PUBLIC_PRIVACY_EMAIL` in `.env` before public launch.
@@ -124,14 +124,14 @@ Innan du skickar ut invites till vänner & familj:
 - Cron no longer auto-applies — only notifies user of new matches
 - Cron no longer writes a `cron_logs` row for the `push_not_subscribed` skip (avoids collection bloat)
 - Compound index `idx_clerkId_active` on `push_subscriptions` created lazily on first run
-- **Multi-source scraper waterfall** — `lib/jobScraper.multiSourceSearchJobs` (AF + Blocket Jobb) wired into `/api/jobs-available` and `/api/cron`. Dedupe by URL first, then `(company|title|location)`. AF wins ties (preferred source). Ledigajobb blocked → falls back to pre-filled URL via `lib/scrapers/urlBuilders.js`.
+- **Multi-source scraper waterfall** — `lib/jobScraper.multiSourceSearchJobs` (AF + Ledigajobb + Jobbland) wired into `/api/jobs-available` and `/api/cron`. Dedupe by URL first, then `(company|title|location)`. AF wins ties (preferred source). A soft-blocked source degrades to `[]` and the other legs keep serving results.
 - **Twice-daily cron** — `vercel.json` now schedules an additional `0 13 * * *` UTC tick so subscribers get morning + afternoon delivery windows.
-- **Structured AF/Blocket hit-rate metric** — one JSON line per `multiSourceSearchJobs` call: `{ evt:"multiSource.metric", v:1, af, blk, lj, in, dedup, capped, offset, hasMore, q, l }`. Query/location **truncated to 40 chars** (not hashed — Swedish municipalities are a low-cardinality field that a 32-bit FNV-1a hash is brute-forceable in <1ms against, so a hash that anyone with log access can reverse isn't a privacy boundary; honest truncate is the safer posture). Operators can grep Vercel logs for `evt=multiSource.metric` to spot source-health regressions.
+- **Structured AF/Ledigajobb/Jobbland hit-rate metric** — one JSON line per `multiSourceSearchJobs` call: `{ evt:"multiSource.metric", v:2, af, blk:0, lj, jl, in, dedup, capped, offset, hasMore, q, l }` (`blk` stays 0 — retired Blocket leg). Query/location **truncated to 40 chars** (not hashed — Swedish municipalities are a low-cardinality field that a 32-bit FNV-1a hash is brute-forceable in <1ms against, so a hash that anyone with log access can reverse isn't a privacy boundary; honest truncate is the safer posture). Operators can grep Vercel logs for `evt=multiSource.metric` to spot source-health regressions.
 - **404 / runtime error fix on the dashboard** — the `'./5611.js'` webpack-chunk error was traced to a stale `.next` chunk graph. The fix is the documented `rm -rf .next && yarn build` cold-rebuild. This is now part of the soft-launch checklist (don't ship a partial cache).
 - **Hero laptop background** replaced the generic Unsplash e-commerce hero with a brand-aligned CSS mockup: amber→blue→indigo gradient + indigo dot grid + compass-rose SVG (N/S indigo pointer, E/W amber pointer, cardinal ticks) + curved amber navigation line. The laptop shows the dashboard the user will actually use after sign-up (job card, AI-letter status, ready check).
 - **Pricing tiers updated** — Basic 124 SEK/mån / Professional 291 SEK/mån / Elite 666 SEK/mån (critical issue 3). Headline always shows `t.monthly`; the annual subline (`Faktureras årsvis · X SEK/år (spara Y SEK)`) only appears when the toggle is on, so the headline price isn't masked by annual rounding. AI-ansvar `?` tooltip on Professional + Elite. Redundant `Spara 2 månader` chip removed from the toggle (each card already shows its own savings subline).
-- **`hashShort` extracted to `lib/utils.js`** — the FNV-1a 32-bit base36 helper was originally hoisted as a shared util for the Blocket scraper's id-derivation. It is exported from `lib/utils.js` for any future scrapers that need a stable opaque id, but is NOT used by the metric (see `truncate` note above — privacy posture is inline-truncate, not hash).
-- **`hasMore` upstreamCapped heuristic** — `multiSourceSearchJobs` now returns `hasMore = upstreamCapped || combined.length > offset + limit` where `upstreamCapped` is true if any single source returned exactly `limit` hits. Without this, the dashboard's "Visa fler jobb" button would disappear when dedupe collapsed all upstream hits to exactly `limit` even though the next page could still yield fresh ads. 2 regression tests in `tests/unit/blocket-scraper.test.mjs` lock the behavior.
+- **`hashShort` extracted to `lib/utils.js`** — the FNV-1a 32-bit base36 helper was originally hoisted as a shared util for the Blocket scraper's id-derivation; today it derives stable ids for the Ledigajobb + Jobbland scrapers. It is exported from `lib/utils.js` for any future scrapers that need a stable opaque id, but is NOT used by the metric (see `truncate` note above — privacy posture is inline-truncate, not hash).
+- **`hasMore` upstreamCapped heuristic** — `multiSourceSearchJobs` now returns `hasMore = upstreamCapped || combined.length > offset + limit` where `upstreamCapped` is true if any single source returned exactly `limit` hits. Without this, the dashboard's "Visa fler jobb" button would disappear when dedupe collapsed all upstream hits to exactly `limit` even though the next page could  still yield fresh ads. 2 regression tests in `tests/unit/multi-source-waterfall.test.mjs` lock the behavior.
 - **`truncate` PRIVACY NOTE** — the `truncate(value, n)` helper in `lib/utils.js` now has a JSDoc warning that future devs should NOT swap it for `hashShort` "for privacy" in log lines: 32-bit FNV-1a is brute-forceable in <1ms against ~290 Swedish kommun names, so a hash that anyone with Vercel log access can reverse isn't a privacy boundary.
 - **Extension manifest fix** — see Completed Features above. The polish-bundle commit and the manifest-fix commit are the two most recent commits in `git log`.
 - **Committed**: `2dd1c64 feat: pre-launch polish bundle (multi-source scraper, twice-daily cron, hero animation, 16 avatars) + manifest fix` and `71ffe7e fix(extension): move CSP security doc out of manifest.json`. `backups/jobbpiloten-soft-launch-2026-07-10.tar.gz` is intentionally untracked (it was a pre-commit backup snapshot, not source).
@@ -515,7 +515,7 @@ compound index. Locked by `tests/unit/mongo-singleton.test.mjs`.
 The reported bug: a user with "Göteborg" preferred still saw
 Skellefteå/Stockholm jobs because `/api/jobs-available` silently
 fell back from the strict Län-filter pass to a NATIONWIDE pass (and
-Blocket jobs ignore the AF region filter entirely). Round-80 makes
+Ledigajobb/Jobbland jobs ignore the AF region filter entirely). Round-80 makes
 location a hard gate:
 
 - The nationwide / no-query fallback branches in the location-filter
@@ -523,8 +523,8 @@ location a hard gate:
   gets an empty list ("Inga lediga jobb hittades just nu") rather
   than out-of-area jobs.
 - A final `doesJobMatchUserLocation` pass drops anything out of area
-  (Blocket jobs + mismatched AF region codes) — Göteborg → Göteborg
-  + commuting area only.
+  (Ledigajobb/Jobbland jobs + mismatched AF region codes) — Göteborg →
+  Göteborg + commuting area only.
 - The ONLY escape hatch is the explicit `allSweden=1` override (the
   dashboard's blue banner explains the trade-off).
 - The "AI-assistenten" CTA sample-job fallback also prefers in-area
@@ -875,3 +875,323 @@ failing 429 test included, in 2.6m mock-mode run).
 | Round-84 | 1284 | 83/83 |
 | Round-85/86 (`4b1c85b`) | 1298 | 83/84 (429 test env-latency) |
 | **Round-87 final** | **1305 pass / 0 fail / 3 skip** | **84/84** (2.6 m, mock mode) |
+
+---
+
+## Round-88 (2026-08-06) — Batch-1 plan (persisted before execution)
+
+Plan generated from the Round-87 wrap-up review of `PROJECT_STATUS.md`
+(§Soft-launch Checklist) + `HANDOFF.md` (§7 Known Bugs / TODOs).
+Execution happens in this batch — this section is the persisted plan.
+
+### Priority 1 — Soft-launch blockers (checklist open items)
+1. **Groq TPD quota** — the single biggest recurring risk (caused the
+   Round-86 "502", the Round-87 mejlutkast timeout, and degrades
+   manual checks). Upgrade the Groq tier OR add a quota health check
+   (we already log `TPD QUOTA EXHAUSTED` with limit/used/percent).
+   → `/api/admin/ai-status` (Clerk-admin GET; 1-token Groq probe;
+   mockMode detection; never leaks the API key).
+2. **Chrome extension publish** — bump to v1.0.0, audit permissions,
+   store-assets (screenshots 1280×800 / promo 440×280),
+   STORE_DESCRIPTION.md (SV title ≤45 chars, SV+EN ≤1000 chars,
+   5 bullets each), extension privacy policy page, build the zip,
+   then upload to CWS (`NEXT_PUBLIC_EXTENSION_PUBLISHED=1` +
+   `NEXT_PUBLIC_EXTENSION_STORE_URL` after review).
+3. **Stripe test checkout E2E** — price IDs still placeholders; the
+   webhook route was merged from two contributors in the Round-87
+   rebase → lock its behavior with contract tests
+   (`stripe.webhooks.generateTestHeaderString` + mocked
+   `getStripe()`/`getDb()`): valid sig → 200 upsert, invalid sig →
+   400, unknown event → 200 no-op, null-guard → Swedish 500.
+4. **Vercel deploy + cron** — verify `vercel.json` cron at 09:00 CEST,
+   run the documented cron smoke test, confirm the push notification
+   arrives, inspect `cron_logs` for `action: cron_run`.
+5. **Invites** (~30 people).
+
+### Priority 2 — Technical debt
+6. **Clerk `createRouteMatcher` deprecation** (warning in every dev
+   log) — migrate middleware to resource-based auth checks.
+7. **E2E env-contract footgun** — the suite only runs green with a
+   demo-mode build + `SKIP_LLM_E2E=true`; `yarn test:e2e` alone hits
+   real Groq. → `scripts/e2e.sh` (sets `SKIP_LLM_E2E=true`,
+   `NODE_ENV=test`, blanks Clerk keys) wired as `test:e2e:ci`.
+8. **Dashboard monolith** — `app/dashboard/page.js` (2899 lines) is
+   the extraction candidate (stats / applications table / cron).
+9. **Cleanup** — `app/dashboard/page.js.bak-final` +
+   `jobbpiloten-complete-backup.zip` + `last_response.txt`;
+   add `.gitignore` entries (`*.bak-final`, `*.bak`,
+   `jobbpiloten-complete-backup.zip`, `last_response.txt`).
+10. **Doc correction** — the round prompts say "MongoDB (mongoose)"
+    but the codebase uses the native `mongodb` driver everywhere
+    (verified: zero mongoose imports in app/ + lib/).
+
+---
+
+## Round-88 execution status (2026-08-06, this batch)
+
+**Priority 1 — Soft-launch blockers**
+
+- [x] **#1 `/api/admin/ai-status` Groq quota health check** — committed
+  earlier this batch (`7cfbb9a`): Clerk-admin GET (401/403 allow-list),
+  1-token Groq probe via `lib/groq.js#probeGroqHealth` (mockMode
+  detection, TPD-quota / model-level / unreachable classification,
+  never leaks the API key). Locked by
+  `tests/unit/round88-ai-status.test.mjs`.
+- [x] **#2 Chrome extension publish → v1.0.0** — committed (`1ebea65`):
+  version bump manifest + background + **popup + content** (the
+  version-constant sweep caught two stale literals — popup `0.3.3` and
+  content `0.2.4` — that the Round-84 0.3.3 packaging left behind), a
+  version-consistent zip rebuilt at repo root
+  (`extension-v1.0.0.zip`, gitignored) plus the canonical
+  `dist/extension-1.0.0-cws.zip` via `yarn package:extension` (all 3
+  lints green: validate:extension / lint:await-async /
+  lint:field-patterns). Permission audit → `extension/store-assets/README.md`
+  (all 5 permissions actively used; `identity` intentionally absent —
+  no OAuth flow). Store assets (2 screenshot placeholders 1280×800 +
+  promo tile 440×280), `STORE_DESCRIPTION.md` (SV + EN, title ≤45
+  chars, description ≤1000 chars), and the CWS-required extension
+  privacy policy page at `app/(legal)/extension-privacy/page.js`.
+  **Remaining (external):** upload `dist/extension-1.0.0-cws.zip` to
+  partner.google.com, then after review set
+  `NEXT_PUBLIC_EXTENSION_PUBLISHED=1` +
+  `NEXT_PUBLIC_EXTENSION_STORE_URL` in `.env.production`.
+- [x] **#3 Stripe webhook contract tests** — committed (`7ec21b1`):
+  `tests/unit/round88-stripe-webhook.test.mjs` runs the REAL Stripe SDK
+  signature crypto (`webhooks.generateTestHeaderString` +
+  `constructEvent`) inside a `node:vm` harness (route imports
+  `next/server` + `next/headers`, which throw outside a request scope)
+  with mocked `getStripe()`/`getDb()`: valid sig → 200 + profiles
+  upsert with tier, tampered payload → 400 Webhook Error + zero DB
+  writes, missing header → 400, unknown event → 200 no-op,
+  `getStripe()` null → Swedish 500, subscription.updated sync by
+  stripeSubscriptionId (no upsert), subscription.deleted → tier
+  reset to Basic, unmapped price → `Unknown`. **Also fixed a
+  pre-existing lock break:** the Round-80 "exactly 1 raw LLM call"
+  lock in `groq-provider-priority.test.mjs` now documents the 2nd
+  legitimate raw call (`probeGroqHealth` MUST bypass the fallback
+  chain to observe the raw provider error — routing it through
+  `createChatWithFallback` would mask TPD-exhaustion as a retry).
+- [ ] **#4 Vercel deploy + cron verification** — external (needs
+  deploy access). Cron smoke test documented in §Soft-launch
+  Checklist.
+- [ ] **#5 Invites (~30 people)** — external / human step.
+
+**Priority 2 — Technical debt**
+
+- [x] **#6 Clerk `createRouteMatcher` deprecation → resource-based
+  auth** — committed: `middleware.js` migrated from the deprecated
+  matcher (Clerk 7.5.21 logs a deprecation warning on EVERY
+  construction; it will be removed in the next major) to
+  framework-native `req.nextUrl.pathname` matching, per Clerk's
+  official upgrade guide. Every Round-85 dual-auth contract
+  preserved: demo-cookie pass-throughs on both the main and
+  catch paths, the `'/sign-in(.*)'` / `'/sign-up(.*)'` literals,
+  `auth.protect()` + the JSON 401 contract. Locked by
+  `tests/unit/round88-middleware-resource-auth.test.mjs`.
+- [x] **#7 E2E env-contract footgun** — committed: `scripts/e2e.sh`
+  sets `SKIP_LLM_E2E=true` (Round-87 mock mode, so no Groq quota
+  burn), `NODE_ENV=test`, and blanks the Clerk keys (process.env
+  precedence beats .env → suite boots in demo mode) before
+  delegating to `playwright test --workers=1`. Wired as
+  `yarn test:e2e:ci`.
+- [x] **#8 Dashboard monolith split** — committed:
+  `app/dashboard/page.js` went 2899 → ~2560 lines. Pure helpers
+  (readJsonSafely, readClerkEmail/FullName/Phone,
+  mergeProfileWithUser, fmtDate, monthNames, nextCronAt,
+  fmtTimeUntil, getMonthlyTrend, STATUS_MAP) moved to
+  `lib/dashboard-helpers.js` (React-free, node-testable — same
+  precedent as lib/af-compliance.js); leaf presentational
+  components (TrendBadge, NextCronBanner, AnimatedCounter,
+  CompanyLogo, StatusPill, BroaderSearchCard) moved to
+  `components/DashboardCards.jsx` ('use client'). Every
+  test-locked pattern stayed in the page (Tag signature, the 3-tier
+  resolveApplicationUrl chain, SOURCE_FALLBACKS,
+  resolveSearchFallback, buildGoogleSearchUrl, matchesJobSource,
+  HAS_URL_VIEW, FILTERS, all 8 af-compliance testids, the
+  `${source}-${id}` composite keys, slice(3), jobs-load-more-hint
+  guard). Split pinned by
+  `tests/unit/round88-dashboard-split.test.mjs`.
+- [x] **#9 Cleanup of legacy files + `.gitignore` entries** —
+  completed in Round-89 (T4): no `.bak-final`/backup/
+  `last_response.txt` files existed; `.gitignore` now covers
+  `*.bak-final`, `*.bak`, `jobbpiloten-complete-backup.zip`,
+  `last_response.txt`.
+- [x] **#10 Doc correction: native `mongodb` driver (not mongoose)**
+  — completed in Round-90: re-verified zero `mongoose` imports in
+  `app/` + `lib/`, zero in `package.json`; the only stale reference
+  was a test title in `tests/unit/route-precedence.test.mjs`
+  ("Mongo/Mongoose compat") → renamed to "native mongodb driver
+  compat". Repo docs (HANDOFF §1/§4, PROJECT_STATUS Tech Stack)
+  already say "native `mongodb` driver / NO Mongoose".
+
+**Net test count:** unit suite **1370 pass / 0 fail / 3 skipped**
+(+9 Stripe webhook contract tests, +1 updated Round-80 lock, +4
+middleware resource-auth locks, +5 dashboard-split locks; the 3
+skips are pre-existing env-gated cases). `next build` compiles
+`/dashboard` with the extracted modules; lint:scope /
+lint:await-async / lint:field-patterns green.
+
+---
+
+## Round-89 (2026-08-06) — Soft-Launch Prep
+
+Soft-launch prep batch: landing SEO + waitlist, health probe, deploy
+prep, and the P2 #9 cleanup.
+
+- **Extension connection (T1) — verified by code trace + tests.** Full
+  flow intact: popup `jp-connect-btn` → `openAuthFlow()` +
+  opens `/dashboard` (env-aware URL) → dashboard mount fires
+  `JOBBPILOTEN_AUTH_SYNC` postMessage with the opaque 90-day token
+  from `POST /api/extension/token` (Clerk/demo session-authorized) →
+  content.js `handleAuthSync` writes profile+token to
+  `chrome.storage.local` (background re-broadcasts cross-origin via
+  `chrome.tabs.sendMessage`) → popup `loadAndPaint` shows the
+  "Ansluten" pill. host_permissions cover `https://jobbpiloten.se/*`
+  + localhost + vercel + github.dev. Bearer-token auth on extension
+  API calls + console handshake logging in place. Locked by
+  `tests/unit/round88-extension-connect-fix.test.mjs` +
+  e2e `extension-auth-handshake.spec.js`. (A live browser click needs
+  Chrome on a workstation.)
+- **Landing SEO (T2A)** — `app/layout.js` metadata: title
+  "JobbPiloten — AI-driven jobbsökning", Swedish description ≤160
+  chars, `alternates.canonical '/'`, OpenGraph (url, siteName,
+  og-image.png 1200×630, locale sv_SE), Twitter
+  summary_large_image, and a `SoftwareApplication` JSON-LD block in
+  `<head>`.
+- **OG image (T2B)** — `public/og-image.svg` redesigned (brand
+  gradient, logo mark, tagline "AI-driven jobbsökning") +
+  `public/og-image.png` rasterized at exactly 1200×630 (sharp).
+- **Waitlist API (T2C)** — `app/api/waitlist/route.js`: POST validates
+  with zod (400 on invalid/non-JSON), normalizes email to lowercase,
+  upserts `{ email, createdAt, source: 'landing' }` via `$setOnInsert`
+  → 201 on `upsertedCount===1`, 409 on duplicate; structured Swedish
+  503 on Mongo getDb/write/read failure (no HTML-500 throws). GET is
+  admin-only (`ADMIN_USER_IDS` allow-list) → newest-first list, `_id`
+  stripped. 11 contract tests in
+  `tests/unit/round89-waitlist.test.mjs` (vm harness, real zod,
+  mocked getDb/resolveClerkId). Landing section with email input +
+  "Få tidig tillgång" button + sonner toasts (`waitlist-section`
+  testids).
+- **Analytics (T2D)** — Plausible script in layout head
+  (`data-domain=jobbpiloten.se`); `lib/analytics.js#trackPlausible`
+  helper; custom events wired: `sign_up` (onboarding complete,
+  localStorage-gated once per browser), `onboarding_complete`,
+  `cover_letter_generated` (prep-modal success),
+  `job_applied` (mark-applied success), `waitlist_signup`.
+- **Deploy prep (T3)** — `next build`: **zero warnings, zero errors**
+  (34.6s). Secret audit: no `NEXT_PUBLIC_*` secret names; client
+  bundle contains only the Clerk SDK's `process.env.CLERK_SECRET_KEY`
+  name string (resolves undefined) — zero real values (gsk_/
+  mongodb+srv/sk_ formats). `app/api/health/route.js`: public GET
+  `{ status, db, groq, timestamp }` — db via Mongo ping, groq via
+  `probeGroqHealth` with a **60s TTL cache + 5s timeout** (review
+  fix: a public endpoint must not burn Groq TPD quota per hit).
+  `.env.template` now documents every required var (ADMIN_USER_IDS,
+  STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_*, CRON_SECRET, CORS_ORIGINS,
+  extension-publish flags, test-only SKIP_LLM_E2E, …). Extension
+  zip rebuilt at `extension-v1.0.0.zip` (29 entries, all version
+  literals 1.0.0).
+- **Cleanup (T4 / P2 #9)** — no `.bak-final`/backup/`last_response.txt`
+  files existed; `.gitignore` now covers `*.bak-final`, `*.bak`,
+  `jobbpiloten-complete-backup.zip`, `last_response.txt`. Lint
+  scripts green (lint:scope / await-async / field-patterns /
+  validate:extension).
+- **Still external:** Vercel deploy + cron verification (P1 #4),
+  invites (P1 #5), CWS upload of the extension zip (P1 #2 tail).
+
+**Live verification (local dev server):** `/api/health` →
+`{"status":"ok","db":true,"groq":true,"timestamp":…}` HTTP 200;
+waitlist POST valid → 201, duplicate → 409, invalid → 400; landing
+HTML carries title/description/canonical/og:/twitter:/JSON-LD/
+Plausible tags.
+
+**Net test count:** unit suite **1381 pass / 0 fail / 3 skipped**
+(+11 waitlist contract tests; 3 skips are pre-existing env-gated).
+
+---
+
+## Round-90 (2026-08-06, continuation) — P2 #10 doc correction + status sweep
+
+Continuation session after Round-89: closed the last open
+code-level item from the Round-88 batch plan.
+
+- **P2 #10 doc correction landed** — re-verified zero `mongoose`
+  imports in `app/` + `lib/`, zero in `package.json` (native
+  `mongodb` driver is the only DB layer). The only stale reference
+  was a test title in `tests/unit/route-precedence.test.mjs`
+  ("Mongo/Mongoose compat") → renamed to "native mongodb driver
+  compat" (title-only edit, no behavior change). Repo docs
+  (HANDOFF §1/§4, this file's Tech Stack) already said "NO
+  Mongoose" — the item was about the round prompts' wording, now
+  documented as resolved.
+- **Status markers corrected** — Round-88 execution status in this
+  file + HANDOFF §18 now mark P2 #9 (cleanup, actually completed in
+  Round-89 T4) and P2 #10 as done.
+- **Full validation re-run (green):** unit suite **1381 pass / 0 fail
+  / 3 skipped** via `yarn test:unit`; lint:scope /
+  lint:await-async / lint:field-patterns green; validate:extension
+  OK (1 expected warning — 4 `.md` files excluded from packaging).
+
+**All Round-88 batch items are now closed. What remains is
+entirely external/human:** Vercel deploy + cron smoke (P1 #4),
+invites (P1 #5), CWS upload of `dist/extension-1.0.0-cws.zip`
+(P1 #2 tail) + post-review `NEXT_PUBLIC_EXTENSION_PUBLISHED=1` /
+`NEXT_PUBLIC_EXTENSION_STORE_URL` in `.env.production`, and real
+Stripe price IDs in `.env` before checkout works in prod.
+
+---
+
+## Round-91 (2026-08-06) — Launch-readiness batch (plan, persisted before execution)
+
+Plan generated from the Round-90 wrap-up: all Round-88/89/90
+code-level items are closed; the only remaining work before public
+launch is external (deploy, invites, CWS). This batch targets the
+code-level gaps that would otherwise bite DURING soft-launch
+traffic. Execution happens in this batch — this section is the
+persisted plan.
+
+### Priority 1 — Soft-launch hardening (code-level, pre-traffic)
+
+1. **Indexing: robots.txt + sitemap.xml** — Round-89 added metadata
+   tags but no crawler files. Add `app/robots.js` + `app/sitemap.js`
+   (Next.js metadata routes): allow crawl of `/`, `/privacy`,
+   `/terms`, `/legal/cookies`, `/extension-install`,
+   `/extension-privacy`; disallow `/api/*`, `/dashboard`,
+   `/settings`, `/onboarding`, `/test-form`, `/*?*` query params.
+   Sitemap lists only the 6 public pages with the canonical base
+   URL from `lib/siteConfig.js#SITE_URL`. Locked by a structural
+   test (`tests/unit/round91-robots-sitemap.test.mjs`).
+2. **Waitlist POST rate-limit** — `/api/waitlist` is a public
+   write endpoint with NO `checkRateLimit` (every sibling public
+   route — `/api/track`, email-draft, extension/* — has one). A
+   spammer can fill the `waitlist` collection freely. Mirror the
+   in-memory IP-bucket pattern from `app/api/track/route.js`
+   (`checkRateLimit(ip)`, module-scoped Map, ~10 req/h window,
+   Swedish 429) into `/api/waitlist` POST. Locked by contract
+   tests in `tests/unit/round89-waitlist.test.mjs` (new cases).
+3. **Checkout fail-closed on placeholder price IDs** — today a
+   request for a tier whose `STRIPE_PRICE_*` env var is unset hits
+   Stripe with `undefined` price and surfaces a raw English Stripe
+   error. Add a guard in the catch-all POST `checkout` branch:
+   missing price id → Swedish 503 `PRICING_NOT_CONFIGURED`
+   ("Prenumerationer är inte konfigurerade ännu — försök igen
+   senare."). Prevents a confusing checkout UX if soft-launch
+   traffic arrives before price IDs are set. Locked by a test.
+
+### Priority 2 — Ops polish
+
+4. **`scripts/smoke-cron.mjs`** — one-command cron smoke test
+   (mirrors `smoke-saved-answers.mjs`): POST `/api/cron` (with
+   `CRON_SECRET` if set), assert `ok:true, cron:"ran"`, print the
+   per-user results + whether `cron_logs` gained a `cron_run` row.
+   Operationalizes the P1 #4 external verification step so it's
+   `node scripts/smoke-cron.mjs` instead of a manual curl+jq
+   sequence.
+5. **(Optional, defer if time-constrained) Admin ai-status page**
+   — `/api/admin/ai-status` exists (Round-88 #1) but has no UI.
+   A minimal Clerk-admin page rendering the Groq quota health
+   would close the loop; deferred unless the batch has headroom.
+
+**Out of scope (external/human):** Vercel deploy + cron verification
+(P1 #4), invites (P1 #5), CWS upload (P1 #2 tail), real Stripe
+price IDs.

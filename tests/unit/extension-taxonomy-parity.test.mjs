@@ -12,8 +12,12 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
-const app = await import(`${ROOT}lib/field-taxonomy.js`);
-const base = await import(`${ROOT}lib/extension-profile-fields.js`);
+// The app modules are imported via relative (POSIX-style) specifiers — NOT
+// a raw Windows `${ROOT}` path — because native ESM `import()` rejects bare
+// `c:\` paths with ERR_UNSUPPORTED_ESM_URL_SCHEME on Windows. ROOT stays for
+// the synchronous fs/vm reads below, which accept plain paths.
+const app = await import('../../lib/field-taxonomy.js');
+const base = await import('../../lib/extension-profile-fields.js');
 
 function loadBundled() {
   const src = readFileSync(`${ROOT}extension/lib/field-taxonomy.js`, 'utf8');

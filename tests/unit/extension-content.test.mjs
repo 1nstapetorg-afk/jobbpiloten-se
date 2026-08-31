@@ -99,8 +99,10 @@ test('scheduleScan must clearTimeout(scanTimer) before scheduling a new one', ()
 
 test('fetchBatchAIAnswers must POST to /api/extension/ai-answers', () => {
   // Drift between content.js and the route file would silently
-  // 404 every batch fill. Lock the URL string.
-  const m = SOURCE.match(/`\$\{PROD_BASE_URL\}\/api\/extension\/ai-answers`/)
+  // 404 every batch fill. Lock the URL string — Round-91 the base
+  // is now dynamic (resolveApiBaseUrl, fallback prod) but the
+  // endpoint literal `/api/extension/ai-answers` must stay intact.
+  const m = SOURCE.match(/`\$\{await resolveApiBaseUrl\(\)\}\/api\/extension\/ai-answers`/)
   assert.ok(m, 'fetchBatchAIAnswers must POST to /api/extension/ai-answers')
 })
 

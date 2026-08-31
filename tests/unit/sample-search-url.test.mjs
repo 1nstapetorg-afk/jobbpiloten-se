@@ -1,7 +1,7 @@
 // tests/unit/sample-search-url.test.mjs
 //
 // Round-58 / Followup 2 — locks the contract that the apply-now
-// handler synthesizes a Blocket Jobb search URL when neither
+// handler synthesizes a per-source search URL when neither
 // `job.url` nor `job.externalId` is present, BEFORE the
 // application is written to MongoDB.
 //
@@ -12,12 +12,18 @@
 // button was falling through the dashboard's 3-tier
 // resolveApplicationUrl() chain to the Tier-3 Google catch-all.
 //
-// The fix: synthesize `job.url = buildBlocketSearchUrl(profile)`
+// The fix: synthesize `job.url = buildLedigaJobbSearchUrl(profile)`
 // so dashboard Tier-1 (`app.jobUrl`) catches the destination
 // directly. The user's spec was "NEVER show generic Google search
 // if we can use a per-source search" — sample rows now point at a
-// Blocket search query built from the user's profile.jobTitles[0]
+// Ledigajobb search query built from the user's profile.jobTitles[0]
 // + profile.locations[0].
+//
+// Round-95 (2026-08-07): the synthesis previously used
+// buildBlocketSearchUrl — Blocket Jobb shut down permanently
+// (jobb.blocket.se is NXDOMAIN), so the synthesized link would land
+// on a dead site. Swapped to the live Ledigajobb builder; the
+// contract (guard, profile reads, pre-insert ordering) is unchanged.
 //
 // Same source-grep style as the rest of the unit suite (no DB
 // mocking, no LLM mocking). Locks prevent a future refactor
@@ -36,38 +42,38 @@ const ROUTE_SRC = fs.readFileSync(ROUTE_PATH, 'utf-8')
 const SCRAPER_SRC = fs.readFileSync(JOB_SCRAPER_PATH, 'utf-8')
 
 // =============================================================================
-// 1. buildBlocketSearchUrl must be exported from lib/jobScraper.js
+// 1. buildLedigaJobbSearchUrl must be exported from lib/jobScraper.js
 // =============================================================================
 
-test('Round-58 / Followup 2: lib/jobScraper.js must export buildBlocketSearchUrl()', () => {
-  // The synthesized URL uses the canonical Blocket Jobb search
+test('Round-58 / Followup 2: lib/jobScraper.js must export buildLedigaJobbSearchUrl()', () => {
+  // The synthesized URL uses the canonical Ledigajobb search
   // builder so the dashboard renders a non-deceptive "Sök på
-  // Blocket" button (not "Sök jobbet → Google"). The builder
-  // exists in lib/scrapers/urlBuilders.js and is re-exported by
+  // Ledigajobb" button (not "Sök jobbet → Google"). The builder
+  // exists in lib/scrapers/ledigajobb.js and is re-exported by
   // lib/jobScraper.js. Lock the export so a future refactor that
-  // moves the symbol back into urlBuilders.js + deletes the
+  // moves the symbol back into the scraper + deletes the
   // re-export is caught here.
   assert.match(
     SCRAPER_SRC,
-    /export\s*\{\s*[\s\S]*?buildBlocketSearchUrl[\s\S]*?\}/,
-    'lib/jobScraper.js must re-export buildBlocketSearchUrl from lib/scrapers/urlBuilders.js',
+    /export\s*\{\s*[\s\S]*?buildLedigaJobbSearchUrl[\s\S]*?\}/,
+    'lib/jobScraper.js must re-export buildLedigaJobbSearchUrl so the apply-now synthesis can call it',
   )
 })
 
 // =============================================================================
-// 2. The apply-now import list must include buildBlocketSearchUrl
+// 2. The apply-now import list must include buildLedigaJobbSearchUrl
 // =============================================================================
 
-test('Round-58 / Followup 2: app/api/[[...path]]/route.js must import buildBlocketSearchUrl', () => {
-  // Without the import, the synthesis block `job.url = buildBlocketSearchUrl(...)`
+test('Round-58 / Followup 2: app/api/[[...path]]/route.js must import buildLedigaJobbSearchUrl', () => {
+  // Without the import, the synthesis block `job.url = buildLedigaJobbSearchUrl(...)`
   // throws ReferenceError at POST time. Lock the import line so
   // a future `git revert` of just the synthesis block (without
   // the import) is caught here even though the function would
   // not throw statically.
   assert.match(
     ROUTE_SRC,
-    /import\s*\{[^}]*buildBlocketSearchUrl[^}]*\}\s*from\s*['"]@\/lib\/jobScraper['"]/,
-    "app/api/[[...path]]/route.js must `import { ..., buildBlocketSearchUrl } from '@/lib/jobScraper'` so the synthesis block can call it",
+    /import\s*\{[^}]*buildLedigaJobbSearchUrl[^}]*\}\s*from\s*['"]@\/lib\/jobScraper['"]/,
+    "app/api/[[...path]]/route.js must `import { ..., buildLedigaJobbSearchUrl } from '@/lib/jobScraper'` so the synthesis block can call it",
   )
 })
 
@@ -75,10 +81,10 @@ test('Round-58 / Followup 2: app/api/[[...path]]/route.js must import buildBlock
 // 3. Guarded synthesis — fires only when both job.url AND job.externalId are null
 // =============================================================================
 
-test('Round-58 / Followup 2: apply-now must synthesize a Blocket URL when !job.url && !job.externalId', () => {
+test('Round-58 / Followup 2: apply-now must synthesize a per-source URL when !job.url && !job.externalId', () => {
   // The guard is the difference between "Tier-3 Google fix" and
   // "Tier-1 overwrite a real URL". We MUST NOT clobber a real
-  // scraper-returned URL with a Blocket search string. The guard
+  // scraper-returned URL with a search string. The guard
   // pattern is exactly `!job.url && !job.externalId`.
   assert.match(
     ROUTE_SRC,
@@ -99,18 +105,18 @@ test('Round-58 / Followup 2: synthesis must build the URL from profile.jobTitles
   assert.match(
     ROUTE_SRC,
     /\(profile\.jobTitles\s*\|\|\s*\[\]\)\[0\]/,
-    'apply-now synthesis must read `profile.jobTitles[0]` so the Blocket search reflects the user\'s preferred titles',
+    'apply-now synthesis must read `profile.jobTitles[0]` so the Ledigajobb search reflects the user\'s preferred titles',
   )
   assert.match(
     ROUTE_SRC,
     /\(profile\.locations\s*\|\|\s*\[\]\)\[0\]/,
-    'apply-now synthesis must read `profile.locations[0]` so the Blocket search is geo-aware',
+    'apply-now synthesis must read `profile.locations[0]` so the Ledigajobb search is geo-aware',
   )
   // The actual call site.
   assert.match(
     ROUTE_SRC,
-    /job\.url\s*=\s*buildBlocketSearchUrl\s*\(\s*\{\s*query:[^}]*location:[^}]*\}\s*\)/,
-    'apply-now must call `buildBlocketSearchUrl({ query, location })` and assign the result to job.url',
+    /job\.url\s*=\s*buildLedigaJobbSearchUrl\s*\(\s*\{\s*query:[^}]*location:[^}]*\}\s*\)/,
+    'apply-now must call `buildLedigaJobbSearchUrl({ query, location })` and assign the result to job.url',
   )
 })
 
@@ -123,13 +129,13 @@ test('Round-58 / Followup 2: synthesis MUST run before the application insertOne
   // row hits MongoDB with jobUrl=null and the dashboard shows
   // Tier-3 Google. We lock the relative index of the two
   // anchor phrases to enforce the order.
-  const synthesisIdx = ROUTE_SRC.indexOf('buildBlocketSearchUrl')
+  const synthesisIdx = ROUTE_SRC.indexOf('buildLedigaJobbSearchUrl')
   const insertIdx = ROUTE_SRC.indexOf("insertOne(application)")
-  assert.ok(synthesisIdx > 0, 'buildBlocketSearchUrl call must exist in route.js')
+  assert.ok(synthesisIdx > 0, 'buildLedigaJobbSearchUrl call must exist in route.js')
   assert.ok(insertIdx > 0, 'application insertOne call must exist in route.js')
   assert.ok(
     synthesisIdx < insertIdx,
-    'buildBlocketSearchUrl call must appear BEFORE db.collection(\'applications\').insertOne(application) so the synthesized URL lands in MongoDB',
+    'buildLedigaJobbSearchUrl call must appear BEFORE db.collection(\'applications\').insertOne(application) so the synthesized URL lands in MongoDB',
   )
 })
 
@@ -140,7 +146,7 @@ test('Round-58 / Followup 2: synthesis MUST run before the application insertOne
 
 test('Round-58 / Followup 2: synthesis must skip when BOTH jobTitles[0] AND locations[0] are empty', () => {
   // When the user has set no profile preferences (brand-new
-  // signup before onboarding), synthesizing an empty Blocket
+  // signup before onboarding), synthesizing an empty Ledigajobb
   // search URL would point at the bare jobsite landing page —
   // wasted click but not a Tier-3 Google regression. The guard
   // is a `if (... || ...)` truthy check on the two profile

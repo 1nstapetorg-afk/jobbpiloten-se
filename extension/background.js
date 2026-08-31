@@ -18,7 +18,11 @@
  * lifetime — same as classic scripts.
  */
 
-const JOBBPILOTEN_EXTENSION_VERSION = '0.3.0'
+// Round-93-fix — synced to extension/version.json (the manifest
+// custom key `x_jp_version` was removed — Chrome warns on
+// unrecognized top-level keys). The install-time jobbpiloten_version
+// stamp + the popup's stale-install check both read this build tag.
+const JOBBPILOTEN_EXTENSION_VERSION = '1.0.0-93'
 
 // Atomic fill-rate-limit slot acquisition — content scripts ask
 // before they touch any DOM. The SW is single-threaded across every
@@ -54,6 +58,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'JOBBPILOTEN_BROADCAST_AUTH') {
     ;(async () => {
       const tabs = await chrome.tabs.query({})
+      let delivered = 0
       for (const tab of tabs) {
         if (!tab.id) continue
         try {
@@ -61,12 +66,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             type: 'JOBBPILOTEN_AUTH_SYNC',
             payload: message.payload,
           })
+          delivered += 1
         } catch (_) {
           // Tab without a content script (chrome:// pages, the
           // Chrome Web Store, etc.) — silent skip is fine.
         }
       }
-      sendResponse({ ok: true, broadcastTo: tabs.length })
+      // Round-88 — broadcast log for the connect-flow trace
+      // (dashboard tab → background → content scripts). Token is
+      // never logged — only counts + source.
+      console.info('[jobbpiloten bg] broadcast auth-sync', {
+        tabs: tabs.length,
+        delivered,
+        source: message.payload?.source || 'dashboard',
+      })
+      sendResponse({ ok: true, broadcastTo: tabs.length, delivered })
     })()
     return true
   }

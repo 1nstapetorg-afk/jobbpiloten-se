@@ -1,7 +1,7 @@
 {
   "appId": "se.jobbpiloten.app",
   "appName": "JobbPiloten",
-  "webDir": ".next",
+  "webDir": "www",
   "bundledWebRuntime": false,
   "server": {
     "androidScheme": "https"

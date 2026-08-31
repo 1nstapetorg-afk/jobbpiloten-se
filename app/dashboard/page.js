@@ -3,22 +3,8 @@
 import { useEffect, useState, useRef, useMemo, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useUser } from '@/hooks/useAuth'
-import dynamic from 'next/dynamic'
 import Link from 'next/link'
 
-const ClerkUserButton = dynamic(
-  () => import('@clerk/nextjs').then(mod => ({ default: mod.UserButton })).catch(() => ({ default: () => null })),
-  { ssr: false }
-)
-
-// Canonical client-side Clerk check — see lib/clerk-config.js.
-import { isClerkConfiguredClient } from '@/lib/clerk-config'
-const isClerkConfigured = isClerkConfiguredClient
-
-function SafeUserButton(props) {
-  if (!isClerkConfigured()) return null
-  return <ClerkUserButton {...props} />
-}
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -27,104 +13,20 @@ import { Skeleton } from '@/components/ui/skeleton'
 import {
   Plane, Sparkles, FileText, Check, Zap, Loader2,
   Building2, MapPin, Download, Rocket, ExternalLink, Briefcase, Bell, BellOff,
-  Copy, Send, Star, Search, Clock, BookOpen, Sparkle, ArrowUpRight, Settings as SettingsIcon2,
-  TrendingUp, TrendingDown, Minus, Mail,
+  Copy, Send, Star, Search, BookOpen, Sparkle, ArrowUpRight, Settings as SettingsIcon2,
+  Mail, Smartphone,
 } from 'lucide-react'
-import { motion, useMotionValue, useTransform, animate } from 'framer-motion'
+import { motion } from 'framer-motion'
 import ErrorBoundary from '@/components/ErrorBoundary'
 import { toast } from 'sonner'
+import { trackPlausible } from '@/lib/analytics'
+import { useBrowser } from '@/lib/browser-store'
 import { SUPPORT_EMAIL, VAPID_PUBLIC_KEY, EXTENSION_PUBLISHED, EXTENSION_STORE_URL } from '@/lib/siteConfig'
-import { buildBlocketSearchUrl, buildJobSafariSearchUrl, buildLedigaJobbSearchUrl } from '@/lib/jobScraper'
+import { buildLedigaJobbSearchUrl, buildJobblandSearchUrl } from '@/lib/jobScraper'
 import { locationsToLänCodes, doesJobMatchUserLocation } from '@/lib/swedishLocations'
 import ProfileAvatar from '@/components/ProfileAvatar'
-
-/**
- * Round-80 / Bug 2 fix — JSON parse guard. The dashboard fetches a
- * handful of API endpoints on mount; if ANY of them returns a
- * non-JSON body (an HTML /sign-in redirect page from Clerk middleware,
- * a proxy error page, an empty 500 body), the raw `r.json()` throws
- * "Failed to execute 'json' on 'Response': Unexpected end of JSON
- * input" and the whole Promise.all rejects — blanking every tile.
- * This helper reads the body defensively and returns `{}` on any
- * parse failure so callers never crash on a misbehaving route.
- */
-async function readJsonSafely(res) {
-  try {
-    if (!res) return {}
-    // Only attempt JSON when the response actually claims JSON — an
-    // HTML error page / redirect target would fail the parse anyway.
-    const contentType = String(res.headers?.get?.('content-type') || '')
-    if (contentType && !/application\/json|text\/json/i.test(contentType)) {
-      return {}
-    }
-    return await res.json()
-  } catch {
-    return {}
-  }
-}
-
-/**
- * Read the best e-postadress from a Clerk-or-demo `user` object.
- * Mirrors the helper in app/onboarding/page.js so the two paths stay
- * aligned if either changes.
- */
-function readClerkEmail(user) {
-  if (!user) return ''
-  return (
-    user.primaryEmailAddress?.emailAddress ||
-    user.emailAddresses?.[0]?.emailAddress ||
-    user.email ||
-    ''
-  )
-}
-
-/** Compose a display name from a Clerk-or-demo `user`. */
-function readClerkFullName(user) {
-  if (!user) return ''
-  if (user.fullName) return user.fullName
-  const fn = (user.firstName || '').trim()
-  const ln = (user.lastName || '').trim()
-  const joined = [fn, ln].filter(Boolean).join(' ').trim()
-  return joined || ''
-}
-
-/** Read the phone number from a Clerk-or-demo `user`. */
-function readClerkPhone(user) {
-  if (!user) return ''
-  return (
-    (Array.isArray(user.phoneNumbers) && user.phoneNumbers[0]?.phoneNumber) ||
-    user.phone ||
-    user.primaryPhoneNumber?.phoneNumber ||
-    ''
-  )
-}
-
-/**
- * Merge a stored profile with a Clerk-or-demo user so the “Dina uppgifter”
- * section in the AI cover-letter modal is never blank for fields that
- * Clerk already knows (email, full name, phone). Profile values WIN when
- * set, so the user's explicit edits in /settings are never overwritten.
- *
- * Bug #4 — without this merge, an account created before the email-field
- * fix shows an empty “E-post:” row in the modal because the MongoDB
- * profile document has `email: ''`. Pulled in client-side because we
- * don't want to expose a third-party OAuth fetch server-side just for
- * two simple string reads.
- */
-function mergeProfileWithUser(profile, user) {
-  return {
-    ...(profile || {}),
-    fullName: profile?.fullName || readClerkFullName(user) || '',
-    email: profile?.email || readClerkEmail(user) || '',
-    phone: profile?.phone || readClerkPhone(user) || '',
-  }
-}
-
-const fmtDate = (d) => {
-  const x = new Date(d)
-  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`
-}
-const monthNames = ['januari','februari','mars','april','maj','juni','juli','augusti','september','oktober','november','december']
+import UserMenu from '@/components/UserMenu'
+import TypewriterReveal from '@/components/TypewriterReveal'
 
 // Round-41 / Part 7 (Sub-feature 3 — AF compliance check):
 // AF's standardmål is ~14 ansökningar/månad (≈1 per vecka). The
@@ -137,16 +39,11 @@ const monthNames = ['januari','februari','mars','april','maj','juni','juli','aug
 import { getAfCompliancePace } from '@/lib/af-compliance'
 import { computeMatchScore, isPreparedForAF } from '@/lib/match-score'
 import { atsMatch } from '@/lib/ats-keywords'
-
-// Status display config
-const STATUS_MAP = {
-  'prepared': { label: 'Förberedd', bg: 'bg-blue-100', text: 'text-blue-800' },
-  'applied': { label: 'Ansökt', bg: 'bg-amber-100', text: 'text-amber-800' },
-  // 'user-sent' is the legacy name; collapsed into the same label as 'applied'
-  // so existing rows render the same badge as new ones.
-  'user-sent': { label: 'Ansökt', bg: 'bg-amber-100', text: 'text-amber-800' },
-  'confirmed': { label: 'Bekräftad', bg: 'bg-emerald-100', text: 'text-emerald-800' },
-}
+import {
+  readJsonSafely, mergeProfileWithUser, fmtDate, monthNames,
+  STATUS_MAP,
+} from '@/lib/dashboard-helpers'
+import { NextCronBanner, CompanyLogo, StatusPill, BroaderSearchCard, HeroStatCard, DashboardLoadingSkeleton } from '@/components/DashboardCards'
 
 // Application-status filters for the Ansökningar table.
 // "not_applied" = AI förberedd, användaren har inte skickat än.
@@ -183,9 +80,25 @@ const FILTERS = [
  *
  * Returns `{ url, source }` or `null` if there is nothing to open.
  */
+function isValidJobUrl(url) {
+  if (!url) return false
+  try {
+    const u = new URL(url)
+    const p = u.pathname.replace(/\/$/, '')
+    // Reject the bare homepage and search/landing pages (e.g. a stored
+    // Ledigajobb `/sok?...` URL) — these are not deep job links and must
+    // not be rendered as a clickable "Gå till ansökningssida".
+    if (p === '' || p === '/') return false
+    if (p === '/sok' || p.startsWith('/sok')) return false
+    return true
+  } catch {
+    return false
+  }
+}
+
 function resolveApplicationUrl(app) {
   if (!app) return null
-  if (app.jobUrl) {
+  if (app.jobUrl && isValidJobUrl(app.jobUrl)) {
     return { url: app.jobUrl, source: 'direct' }
   }
   if (app.externalId) {
@@ -239,9 +152,14 @@ const SOURCE_STYLE = {
  * The user's spec is: NEVER show generic "Sok pa Google"; instead use
  * the source's own job-board search so the destination is unambiguous.
  *
+ * Round-94/95 followup (2026-08-07): the 'blocket' entry was REMOVED —
+ * Schibsted shut Blocket Jobb down permanently (jobb.blocket.se is
+ * NXDOMAIN), so a dead link is worse than a generic search. Round-95
+ * added 'jobbland' (Duunitori's board, which also absorbed Jobbsafari).
+ *
  * Lookup order (first matching wins, fallback at the end):
- *   1. 'blocket'   -> `Sok pa Blocket` + buildBlocketSearchUrl()
- *   2. 'ledigajobb'-> `Sok pa Ledigajobb` + buildLedigaJobbSearchUrl()
+ *   1. 'ledigajobb'-> `Sok pa Ledigajobb` + buildLedigaJobbSearchUrl()
+ *   2. 'jobbland'  -> `Sok pa Jobbland` + buildJobblandSearchUrl()
  *   3. catch-all   -> `Sok jobbet` + Google search (last resort)
  *
  * The `buildUrl({ app, profile })` signature lets each entry fall back
@@ -259,18 +177,6 @@ const buildGoogleSearchUrl = (app) => {
 
 const SOURCE_FALLBACKS = [
   {
-    key: 'blocket',
-    match: (app) => matchesJobSource(app, 'blocket'),
-    label: 'Sok pa Blocket',
-    Icon: Search,
-    className: 'border-blue-300 text-blue-700 hover:bg-blue-50 hover:text-blue-800',
-    title: 'Ingen direktlank hittades -- oppnar Blocket Jobb med jobbets titel + foretag',
-    buildUrl: ({ app, profile }) => buildBlocketSearchUrl({
-      query: (profile && Array.isArray(profile.jobTitles) && profile.jobTitles[0]) || (app && app.title) || '',
-      location: (profile && Array.isArray(profile.locations) && profile.locations[0]) || '',
-    }),
-  },
-  {
     key: 'ledigajobb',
     match: (app) => matchesJobSource(app, 'ledigajobb'),
     label: 'Sok pa Ledigajobb',
@@ -278,6 +184,21 @@ const SOURCE_FALLBACKS = [
     className: 'border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800',
     title: 'Ingen direktlank hittades -- oppnar Ledigajobb.se med jobbets titel + foretag',
     buildUrl: ({ app, profile }) => buildLedigaJobbSearchUrl({
+      query: (profile && Array.isArray(profile.jobTitles) && profile.jobTitles[0]) || (app && app.title) || '',
+      location: (profile && Array.isArray(profile.locations) && profile.locations[0]) || '',
+    }),
+  },
+  {
+    // Round-95 — Jobbland.se (Duunitori). Added as the Blocket-replacement
+    // source; Jobbland-sourced jobs without a direct link open the board's
+    // own search instead of a generic Google query.
+    key: 'jobbland',
+    match: (app) => matchesJobSource(app, 'jobbland'),
+    label: 'Sok pa Jobbland',
+    Icon: Search,
+    className: 'border-violet-300 text-violet-700 hover:bg-violet-50 hover:text-violet-800',
+    title: 'Ingen direktlank hittades -- oppnar Jobbland.se med jobbets titel + foretag',
+    buildUrl: ({ app, profile }) => buildJobblandSearchUrl({
       query: (profile && Array.isArray(profile.jobTitles) && profile.jobTitles[0]) || (app && app.title) || '',
       location: (profile && Array.isArray(profile.locations) && profile.locations[0]) || '',
     }),
@@ -314,270 +235,6 @@ function resolveSearchFallback(app, profile) {
   return entry || SOURCE_FALLBACKS[SOURCE_FALLBACKS.length - 1]
 }
 
-// --------------------------------------
-// Visual helpers (Task 2 redesign)
-// --------------------------------------
-
-/**
- * Compute the next 09:00 Stockholm time from `from` (defaults to now).
- * Stockholms-tid (Europe/Stockholm) is CET (UTC+1) vintertid och CEST (UTC+2)
- * sommartid. Vi använder en enkel minuts-baserad differens: om klockan är
- * före 09:00 lokalt idag → idag 09:00; annars → imorgon 09:00.
- *
- * Vi håller det enkelt och returnerar en Date i *lokal* tid — UI:t visar
- * diffen i timmar/minuter från `now`. Vi undviker tz-bibliotek för att inte
- * lägga till ett beroende bara för en banner.
- */
-function nextCronAt(from = new Date()) {
-  const next = new Date(from)
-  next.setHours(9, 0, 0, 0)
-  if (next <= from) next.setDate(next.getDate() + 1)
-  return next
-}
-
-/**
- * Format the time until next 09:00 as a short Swedish string.
- *   > 24 h  → "imorgon 09:00"
- *   > 1 h   → "om Xh Ym"
- *   > 0 min → "om Xm"
- *   <= 0    → "Nu!"
- */
-function fmtTimeUntil(target, now = new Date()) {
-  const diffMs = target.getTime() - now.getTime()
-  if (diffMs <= 0) return 'Nu'
-  const totalMin = Math.floor(diffMs / 60000)
-  if (totalMin >= 60 * 24) {
-    return 'imorgon 09:00'
-  }
-  const h = Math.floor(totalMin / 60)
-  const m = totalMin % 60
-  if (h === 0) return `om ${m} min`
-  if (m === 0) return `om ${h} h`
-  return `om ${h} h ${m} min`
-}
-
-/**
- * NextCronBanner — sticky-ish status pill at the top of the dashboard that
- * tells the user when the next daily cron will run. Updates its countdown
- * text every minute via a small `useEffect` interval so it stays accurate
- * even after the user leaves the tab open for hours. Amber accent matches
- * the rest of the brand palette. Renders nothing if `hideUntil` is set.
- */
-/**
- * getMonthlyTrend — counts apps matching `matchFn(a)` in the current
- * 30-day window vs the PREVIOUS 30-day window, then maps to a small
- * 'up' / 'down' / 'flat' signal + delta. Round-33.2 hero-stats polish
- * (Round-33.3 review-fix pass: per-card timestamp selection —
- * `appliedAt` for status-based cards, `savedAt` for the saved-only
- * card, `createdAt` for the catch-all total card).
- *
- * Why per-card timestamp selection: the `saved`-matcher counts jobs
- * the user starred but never applied to. Those rows carry `savedAt`
- * but typically NO `appliedAt`. Falling back through a single
- * `appliedAt || savedAt || createdAt` chain silently mis-bucketed
- * them (Round-33.3 review flag #2). Per-card intent is now
- * explicit so a future maintainer can't re-introduce the bug by
- * trimming the function for "DRY".
- *
- * Pure client computation: the dashboard's `apps` array already
- * carries all the data we need (no /api/stats round-trip), so the
- * hero cards can show period deltas without a server change. The
- * headline values for the period-eligible cards (saved / this-
- * month / confirmed) are now pulled from `trend.current` so the
- * headline number IS the period count — not a mismatched lifetime
- * total (Round-33.3 review flag #1, the headline-vs-trend
- * contract liar). The "Totalt antal" cumulative card has no trend
- * by design — a 30-day delta on a cumulative count is a category
- * error.
- */
-function getMonthlyTrend(apps, matchFn, timestampKey) {
-  const now = Date.now()
-  const monthAgo = now - 30 * 86400000
-  const twoMonthsAgo = now - 60 * 86400000
-  let current = 0
-  let previous = 0
-  for (const a of apps || []) {
-    if (!matchFn(a)) continue
-    const tRaw = a && a[timestampKey]
-    const t = tRaw ? new Date(tRaw).getTime() : NaN
-    if (Number.isFinite(t) && t >= monthAgo) current++
-    else if (Number.isFinite(t) && t >= twoMonthsAgo) previous++
-  }
-  if (current > previous) return { current, previous, trend: 'up', delta: current - previous }
-  if (current < previous) return { current, previous, trend: 'down', delta: previous - current }
-  return { current, previous, trend: 'flat', delta: 0 }
-}
-
-/**
- * TrendBadge — tiny pill rendered next to the AnimatedCounter inside
- * each hero-stat card. Three visual modes mirror the underlying
- * signal:
- *   up   → emerald, TrendingUp icon, "+N denna period"
- *   down → slate-700 (NOT red — too alarming for a stat counter),
- *          TrendingDown icon, "−N från förra perioden"
- *   flat → slate-500, Minus icon, "oförändrat"
- * The "down" tone intentionally uses slate-700 (not red-700) so the
- * card still reads as a softly-tracked metric rather than an
- * alert — the dashboard is informational, not a transactional
- * order book. Title attribute carries the full sentence for
- * hover/assistive-tech.
- */
-function TrendBadge({ trend, delta }) {
-  if (!trend) return null
-  const cfg = {
-    up:   { Icon: TrendingUp,   cls: 'text-emerald-700 bg-emerald-50 border-emerald-200', label: `+${delta} denna period` },
-    down: { Icon: TrendingDown, cls: 'text-slate-700 bg-slate-100 border-slate-200',     label: `−${delta} från förra perioden` },
-    flat: { Icon: Minus,        cls: 'text-slate-500 bg-slate-50 border-slate-200',       label: 'oförändrat' },
-  }[trend]
-  if (!cfg) return null
-  const { Icon, cls, label } = cfg
-  return (
-    <span
-      data-testid={`stat-trend-${trend}`}
-      title={label}
-      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md border text-[10px] font-semibold leading-tight ${cls}`}
-    >
-      <Icon className="w-3 h-3" aria-hidden="true" />
-      {label}
-    </span>
-  )
-}
-
-function NextCronBanner({ hideUntil = null }) {
-  const [now, setNow] = useState(() => new Date())
-
-  // Visibility-aware ticker. We pause the interval when the tab is hidden
-  // to avoid wasted wakes and Force a fresh tick on resume so the countdown
-  // text reflects the actual current time, not whatever `now` was when the
-  // tab was last in the foreground.
-  useEffect(() => {
-    if (typeof document === 'undefined') return
-
-    const tick = () => setNow(new Date())
-    let intervalId = null
-    const startInterval = () => {
-      if (intervalId) return
-      intervalId = setInterval(tick, 60_000)
-    }
-    const stopInterval = () => {
-      if (!intervalId) return
-      clearInterval(intervalId)
-      intervalId = null
-    }
-    const applyVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        tick()
-        startInterval()
-      } else {
-        stopInterval()
-      }
-    }
-    applyVisibility()
-    document.addEventListener('visibilitychange', applyVisibility)
-    return () => {
-      stopInterval()
-      document.removeEventListener('visibilitychange', applyVisibility)
-    }
-  }, [])
-  const target = useMemo(() => nextCronAt(now), [now])
-  const text = fmtTimeUntil(target, now)
-  return (
-    <div
-      data-testid="next-cron-banner"
-      role="status"
-      aria-live="polite"
-      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 text-amber-800 text-xs sm:text-sm shadow-sm"
-    >
-      <Clock className="w-4 h-4 shrink-0" aria-hidden="true" />
-      <span className="font-medium">Nästa uppdatering:</span>
-      <span>{text}</span>
-      {!hideUntil && (
-        <span className="ml-auto text-amber-700/70 hidden sm:inline">AI letar nya matchande jobb varje morgon.</span>
-      )}
-    </div>
-  )
-}
-
-/**
- * AnimatedCounter — value animates from 0 (or last value) to `value` when it
- * mounts/changes. Uses framer-motion's `animate(MotionValue, target, opts)`,
- * which gives us a smooth easeOutQuart curve without us having to write our
- * own rAF loop. We still display formatted text for non-numeric values.
- *
- * Seed behavior: on first mount the motion value is set to `value` so users
- * never see a "0 → 5" flash for already-known counts. Only subsequent value
- * changes (e.g. after a refetch) get the animation. `seededRef` guards across
- * StrictMode double-invocation without flicker.
- */
-function AnimatedCounter({ value = 0, formatter }) {
-  const mv = useMotionValue(value)
-  const seededRef = useRef(false)
-  const display = useTransform(mv, (v) =>
-    formatter ? formatter(Math.round(v)) : Math.round(v)
-  )
-  useEffect(() => {
-    if (!seededRef.current) {
-      // First mount — no animation, jump straight to the target.
-      seededRef.current = true
-      mv.set(value)
-      return
-    }
-    const ctrl = animate(mv, value, { duration: 0.9, ease: [0.16, 1, 0.3, 1] })
-    return () => ctrl.stop()
-  }, [value, mv])
-  return <motion.span>{display}</motion.span>
-}
-
-/**
- * CompanyLogo — gradient placeholder with the company's first letter.
- * Deterministic amber/indigo gradient seeded by company name so the same
- * company always renders the same gradient. Acts as a visual anchor on
- * each card (no real logo fetching needed).
- */
-function CompanyLogo({ company = '?', size = 'md' }) {
-  const c = (company || '?').trim()
-  const letter = (c[0] || '?').toUpperCase()
-  // Deterministic seed: sum of char codes mod 5
-  const seed = c.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0) % 5
-  const gradients = [
-    'from-amber-400 to-orange-500',
-    'from-indigo-400 to-violet-500',
-    'from-blue-400 to-cyan-500',
-    'from-emerald-400 to-teal-500',
-    'from-rose-400 to-pink-500',
-  ]
-  const dim = size === 'sm' ? 'w-9 h-9 text-sm' : size === 'lg' ? 'w-14 h-14 text-xl' : 'w-12 h-12 text-base'
-  return (
-    <div
-      className={`${dim} rounded-xl bg-gradient-to-br ${gradients[seed]} flex items-center justify-center font-semibold text-white shadow-sm shrink-0`}
-      aria-hidden="true"
-    >
-      {letter}
-    </div>
-  )
-}
-
-/**
- * StatusPill — re-styled status indicator for the redesigned card grid.
- * Larger and more legible than the old `<span>` badge; uses ring + dot
- * pattern with the configured palette per status key.
- */
-function StatusPill({ status }) {
-  const cfg = STATUS_MAP[status] || { label: status, bg: 'bg-slate-100', text: 'text-slate-700' }
-  // Map each status palette to a recognizable dot color.
-  const dotColor =
-    status === 'applied' || status === 'user-sent' ? 'bg-amber-500' :
-    status === 'confirmed' ? 'bg-emerald-500' :
-    status === 'prepared' ? 'bg-blue-500' :
-    'bg-slate-400'
-  return (
-    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${cfg.bg} ${cfg.text}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} aria-hidden="true" />
-      {cfg.label}
-    </span>
-  )
-}
-
 /**
  * Tag — small chip for job-type / location. Reused in cards to keep
  * metadata scannable. `tone` controls the palette (slate by default).
@@ -600,66 +257,6 @@ function Tag({ children, Icon, tone = 'slate', dataTestid }) {
   )
 }
 
-/**
- * BroaderSearchCard — second-source search panel that opens Blocket Jobb /
- * Jobbsafari in a new tab with the user's primary title + location pre-filled.
- * Honest deep-links: we do not scrape or store their listings; we just hand
- * off the search query. Returns null when both URLs are empty so the parent
- * Card stack stays clean for users with an empty profile.
- */
-function BroaderSearchCard({ profile }) {
-  const primaryTitle = (profile?.jobTitles || [])[0] || ''
-  const primaryLocation = (profile?.locations || [])[0] || ''
-  const blocketUrl = buildBlocketSearchUrl({ query: primaryTitle, location: primaryLocation })
-  const safariUrl = buildJobSafariSearchUrl({ query: primaryTitle, location: primaryLocation })
-  if (!blocketUrl && !safariUrl) return null
-  return (
-    <Card className="border-0 shadow-sm" data-testid="broader-search-card">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Search className="w-5 h-5 text-indigo-600" /> Letar du bredare?
-        </CardTitle>
-        <CardDescription>
-          Vi matchar mot Arbetsförmedlingen ovan. För fler jobb, sök även på andra plattformar:
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="grid sm:grid-cols-2 gap-3">
-          {blocketUrl && (
-            <a
-              href={blocketUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              data-testid="broader-search-blocket"
-              className="inline-flex items-center justify-center gap-2 h-11 px-4 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 hover:text-blue-800 hover:border-blue-300 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 text-sm font-medium"
-            >
-              <ExternalLink className="w-4 h-4" />
-              Sök på Blocket
-              <span className="text-xs text-blue-500/80 ml-1">jobb.blocket.se</span>
-            </a>
-          )}
-          {safariUrl && (
-            <a
-              href={safariUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              data-testid="broader-search-jobsafari"
-              className="inline-flex items-center justify-center gap-2 h-11 px-4 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800 hover:border-emerald-300 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 text-sm font-medium"
-            >
-              <ExternalLink className="w-4 h-4" />
-              Sök på Jobbsafari
-              <span className="text-xs text-emerald-500/80 ml-1">jobbsafari.se</span>
-            </a>
-          )}
-        </div>
-        <p className="text-xs text-slate-500 leading-relaxed">
-          Båda sidor öppnas i din webbläsare. JobbPiloten skrapar eller lagrar inte Blocket / Jobbsafari-listan — vi använder bara AF:s öppna API.
-        </p>
-      </CardContent>
-    </Card>
-  )
-}
-
 // Round-22 regression net (caught by tests/e2e/dashboard-jobid-deeplink.spec.js):
 // In Next.js 15 the `searchParams` prop is NO LONGER passed to client-component
 // pages — call `useSearchParams()` and rename the export to a helper so we can
@@ -669,6 +266,9 @@ function DashboardContent() {
   const { user, isLoaded } = useUser()
   const router = useRouter()
   const searchParams = useSearchParams()
+  // Round-95 — in-app browser (mobile extension replacement). openJobUrl
+  // drives the native webview / iframe fallback from lib/browser-store.jsx.
+  const { openJobUrl } = useBrowser()
   const [stats, setStats] = useState(null)
   const [apps, setApps] = useState([])
   const [profile, setProfile] = useState(null)
@@ -811,10 +411,12 @@ function DashboardContent() {
   // Round-58 / Bug 2: per-source search-fallback lookup. When the Tier-3
   // fallback (no direct URL, no externalId) is taken, look up the right
   // entry by app.source so the button label + destination is unambiguous:
-  // 'blocket' -> Blocket Jobb search, 'ledigajobb' -> Ledigajobb.se, generic
-  // -> Google as a true last resort. Pre-Round-58 there was one SEARCH_VIEW
+  // 'ledigajobb' -> Ledigajobb.se, 'jobbland' -> Jobbland.se, generic ->
+  // Google as a true last resort. Pre-Round-58 there was one SEARCH_VIEW
   // constant -- 'Sok pa Google' -- regardless of source. Now each source
-  // has its own label/className/buildUrl.
+  // has its own label/className/buildUrl. (Round-94/95 followup: the
+  // 'blocket' entry was removed — Blocket Jobb shut down, jobb.blocket.se
+  // is NXDOMAIN; 'jobbland' added as the replacement source.)
   const isSearch = prepAppUrl && prepAppUrl.source === 'search'
   const searchFallback = useMemo(
     () => isSearch ? resolveSearchFallback(prepApplication, profile) : null,
@@ -828,6 +430,23 @@ function DashboardContent() {
     [searchFallback, prepApplication, profile],
   )
   const finalHref = fallbackUrl || (prepAppUrl ? prepAppUrl.url : null)
+
+  // Round-95 (mobile in-app browser): open the resolved application URL
+  // inside the in-app browser (native webview on iOS/Android, iframe
+  // fallback on web). Passes the loaded profile + the prepared application
+  // (with its generated coverLetter) so the injected autofill script can
+  // fill the host form. Then navigates to the /browser screen.
+  const openInAppBrowser = async () => {
+    if (!finalHref || !prepApplication) return
+    await openJobUrl({
+      url: finalHref,
+      title: prepApplication.title || '',
+      company: prepApplication.company || '',
+      profile,
+      job: prepApplication,
+    })
+    router.push('/browser')
+  }
 
   const load = async () => {
     try {
@@ -1042,6 +661,9 @@ function DashboardContent() {
         // has them empty (e.g. an account created before this fix).
         setPrepProfile(mergeProfileWithUser(profile, user))
         setShowPrep(true)
+        // Round-89 — Plausible funnel event: an AI cover letter was
+        // generated for a job (the apply-now response carries it).
+        trackPlausible('cover_letter_generated')
         setAvailableJobs(prev => prev.filter(j => j.id !== job.id))
       } else {
         toast.error(json.error || 'Oj, något gick fel')
@@ -1135,6 +757,9 @@ function DashboardContent() {
         // The "Mark as applied" button transforms to a disabled ✓ state.
         setAppliedSuccess(true)
         toast.success('Ansökan markerad som skickad!')
+        // Round-89 — Plausible funnel event: the user actually sent an
+        // application (mark-applied success).
+        trackPlausible('job_applied')
         await load()
       } else {
         toast.error(json.error || 'Oj, något gick fel')
@@ -1396,6 +1021,34 @@ function DashboardContent() {
           payload: { url: window.location.origin },
         }, window.location.origin)
       } catch (_) { /* non-fatal */ }
+      // Round-93 (Path B) — cookie fallback. The postMessage bridge
+      // is the primary channel but it silently no-ops when the
+      // content script isn't injected yet (injection race) or the
+      // message is missed. The content script checks this short-lived
+      // cookie on injection and hydrates chrome.storage.local from
+      // it. max-age=60 bounds the exposure window; SameSite=Strict
+      // keeps it same-origin only. The token is the extension's own
+      // bearer (revocable server-side); the full profile follows via
+      // the content script's own /api/extension/profile fetch.
+      try {
+        document.cookie = `jp_ext_token=${json.token}; path=/; max-age=60; SameSite=Strict`
+      } catch (_) { /* cookie blocked — non-fatal */ }
+      // Round-93 (Path B / Task 4) — also mirror the token so a
+      // content script that IS already injected (ev.source !== window
+      // gate excluded it, or injected late) can pick it up without
+      // waiting for a new cookie read. Two mirrors, because MV3
+      // content scripts run in an ISOLATED world: they cannot see
+      // page-world JS globals (window.__JPPENDING_TOKEN), but they
+      // CAN read DOM attributes. Both are written; content.js
+      // prefers the DOM attribute and treats the window mirror as
+      // documentation/spec parity. Cleaned up by content.js after
+      // consumption.
+      try {
+        window.__JPPENDING_TOKEN = { token: json.token, origin: window.location.origin }
+      } catch (_) { /* non-fatal */ }
+      try {
+        document.documentElement.setAttribute('data-jp-pending-token', json.token)
+      } catch (_) { /* non-fatal */ }
       setConnectStatus({ ok: true, message: 'Tillägget är anslutet — profil synkad.' })
       toast.success('JobbPiloten Auto-Fill anslutet!'
         + ' Fyll i formulär direkt från valfri jobbsida.')
@@ -1616,6 +1269,33 @@ function DashboardContent() {
   // the displayed `elapsedDays` is at most 1 day behind the true
   // wall clock. Acceptable for a pace indicator.
   const pace = useMemo(() => getAfCompliancePace(apps, now), [apps, monthLabel])
+
+  // Round-94: has the user generated at least one cover letter? When
+  // false, the hero CTA pulses gently (animate-cta-pulse) to draw the
+  // first generation — purposeful attention, not decoration.
+  const hasCoverLetters = useMemo(
+    () => (apps || []).some((a) => !!a.coverLetter),
+    [apps],
+  )
+
+  // Round-94 (performance): the four stat-card configs are derived from
+  // the module-scope HERO_STATS via useMemo. The config objects keep a
+  // stable identity between renders UNLESS `apps` or `monthLabel` itself
+  // changes — which is exactly when the numbers genuinely need to
+  // re-render anyway. React.memo on HeroStatCard can therefore skip
+  // re-rendering the cards for unrelated dashboard state changes (star
+  // toggles, push status, cron logs) while still updating on real data
+  // changes.
+  const statConfigs = useMemo(
+    () => HERO_STATS.map((c) => ({
+      ...c,
+      label: c.key === 'this-month'
+        ? `Ansökningar ${monthLabel.split(' ')[0]}`
+        : c.label,
+      value: c.key === 'total' ? (apps || []).length : c.value,
+    })),
+    [monthLabel, apps],
+  )
   const pct = Math.min(100, Math.round((pace.applied / pace.target) * 100))
   const pacePct = Math.min(100, Math.round((pace.paceRequired / pace.target) * 100))
   const cfg = {
@@ -1650,11 +1330,7 @@ function DashboardContent() {
   // early return) violated this and caused Next.js to render
   // the "Application error" overlay.
   if (!isLoaded || loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-      </div>
-    )
+    return <DashboardLoadingSkeleton />
   }
 
   // Status badge component
@@ -1700,7 +1376,12 @@ function DashboardContent() {
         {isSaving ? (
           <Loader2 className="w-4 h-4 animate-spin" />
         ) : saved ? (
-          <Star className="w-4 h-4 fill-amber-500 stroke-amber-600" />
+          // Round-94: the star does a 360° spin + scale bounce when the
+          // save state flips (element type change → remount → the
+          // animate-star-pop animation replays exactly once per toggle).
+          <span className="inline-flex animate-star-pop motion-reduce:animate-none">
+            <Star className="w-4 h-4 fill-amber-500 stroke-amber-600" />
+          </span>
         ) : (
           <Star className="w-4 h-4" />
         )}
@@ -1711,7 +1392,7 @@ function DashboardContent() {
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-slate-50">
-        <nav className="border-b bg-white sticky top-0 z-30">
+        <nav className="border-b bg-white/90 backdrop-blur-md sticky top-0 z-30">
           <div className="container mx-auto px-4 py-3 flex items-center justify-between">
             <Link href="/" className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-600 to-blue-600 flex items-center justify-center">
@@ -1725,21 +1406,22 @@ function DashboardContent() {
                 href="/settings"
                 data-testid="dashboard-open-settings"
                 aria-label="Öppna inställningar"
+                // Round-94 (Task 1C): hover-prefetch — warm the /settings
+                // route while the user's pointer is already over the link
+                // so navigation feels instant (Next prefetches the RSC
+                // payload; no fetch on click).
+                onMouseEnter={() => router.prefetch('/settings')}
                 className="inline-flex items-center justify-center w-9 h-9 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 transition-colors"
                 title="Inställningar"
               >
                 <SettingsIcon2 className="w-4 h-4" />
               </Link>
-              {/* Profile picture + greeting — 32x32 avatar renders the user's
-                  chosen upload / avatar, falling back to the default
-                  JobbPiloten-plane circle. avatarSource/avatarId data attrs
-                  let e2e specs probe which mode is active without parsing
-                  the SVG path. */}
-              <div className="hidden md:flex items-center gap-2" data-testid="dashboard-header-greeting">
-                <ProfileAvatar profile={profile} size={32} dataTestid="profile-avatar-nav" />
-                <span className="text-sm text-slate-600">Hej {profile?.fullName?.split(' ')[0] || user?.firstName || 'du'}!</span>
-              </div>
-              <SafeUserButton afterSignOutUrl="/" />
+              {/* Round-94: ONE profile-picture element. UserMenu renders
+                  the app avatar (36px, ring on hover) + "Hej X!" greeting
+                  in a single trigger with a dropdown (Profil /
+                  Inställningar / Logga ut). The old code rendered TWO
+                  avatars — ProfileAvatar AND the Clerk UserButton. */}
+              <UserMenu profile={profile} user={user} showName dataTestid="dashboard-header-greeting" />
             </div>
           </div>
         </nav>
@@ -1814,9 +1496,18 @@ function DashboardContent() {
             </div>
           )}
 
-          <div className="rounded-2xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-blue-700 p-8 text-white relative overflow-hidden shadow-sm">
+          <div className="rounded-2xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-blue-700 p-8 md:p-12 text-white relative overflow-hidden shadow-sm">
             <div className="absolute -right-8 -top-8 w-64 h-64 bg-white/10 rounded-full blur-3xl" />
             <div className="absolute -left-12 -bottom-12 w-48 h-48 bg-amber-400/10 rounded-full blur-3xl" />
+            {/* Round-94: slow desaturated gradient sheen (8s loop) so the
+                hero reads as the dashboard's centerpiece without competing
+                with the CTA. Pure CSS, pointer-events-none. */}
+            {/* Round-94 followup: motion-reduce:animate-none makes the
+                sheen static for prefers-reduced-motion users (the global
+                CSS guard in globals.css would also collapse it, but the
+                explicit variant keeps the intent visible at the usage
+                site). */}
+            <div className="absolute inset-0 bg-gradient-to-br from-indigo-400/20 via-transparent to-blue-400/10 animate-hero-sheen motion-reduce:animate-none pointer-events-none" aria-hidden="true" />
             <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
                 <div className="text-sm text-indigo-200 mb-1">Din AI-assistent</div>
@@ -1858,7 +1549,7 @@ function DashboardContent() {
                 size="lg"
                 disabled={applying}
                 onClick={runAssistant}
-                className="bg-white text-indigo-700 hover:bg-indigo-50 h-12 px-6 shrink-0 shadow-lg shadow-indigo-900/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                className={`bg-white text-indigo-700 hover:bg-indigo-50 h-12 px-6 shrink-0 shadow-lg shadow-indigo-900/20 transition-all hover:scale-[1.02] active:scale-[0.98] ${!applying && !hasCoverLetters ? 'animate-cta-pulse motion-reduce:animate-none' : ''}`}
               >
                 {applying ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> AI-assistenten arbetar...</> : <><Rocket className="w-4 h-4 mr-2" /> Kör AI-assistenten nu</>}
               </Button>
@@ -1907,98 +1598,10 @@ function DashboardContent() {
               palette reads as "amber + indigo + emerald + blue" (the brand
               palette used elsewhere in the app). micro-interaction:
               hover-lift (translateY -2 + stronger shadow). */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4" data-testid="hero-stats">
-            {[
-              {
-                key: 'saved',
-                // Round-33.3 review-fix: label now explicitly period-
-                // anchored so the trend pill matches. Previously the
-                // headline was a lifetime total and the trend reported a
-                // 30-day delta — same number, two meanings. Surfacing
-                // "denna period" in the label closes the contract.
-                label: 'Sparade jobb denna period',
-                trendMatch: (a) => a.saved === true,
-                timestampKey: 'savedAt',
-                showTrend: true,
-                Icon: Star,
-                gradient: 'from-amber-500/10 via-amber-500/5 to-orange-500/10',
-                iconWrap: 'bg-amber-100 text-amber-700',
-              },
-              {
-                key: 'this-month',
-                label: `Ansökningar ${monthLabel.split(' ')[0]}`,
-                trendMatch: (a) => a.status === 'applied' || a.status === 'user-sent',
-                timestampKey: 'appliedAt',
-                showTrend: true,
-                Icon: Send,
-                gradient: 'from-indigo-500/10 via-indigo-500/5 to-blue-500/10',
-                iconWrap: 'bg-indigo-100 text-indigo-700',
-              },
-              {
-                key: 'total',
-                // Cumulative stat — pairwise period-vs-period is a
-                // category error here, so no trend. Draws value from
-                // the `apps` array length so it stays consistent with
-                // the other three period-eligible heroes (which all
-                // use the same client-side source).
-                label: 'Totalt antal',
-                value: (apps || []).length,
-                showTrend: false,
-                Icon: Briefcase,
-                gradient: 'from-blue-500/10 via-blue-500/5 to-cyan-500/10',
-                iconWrap: 'bg-blue-100 text-blue-700',
-              },
-              {
-                key: 'confirmed',
-                label: 'Bekräftade av AF denna period',
-                trendMatch: (a) => a.status === 'confirmed',
-                timestampKey: 'appliedAt',
-                showTrend: true,
-                Icon: Check,
-                gradient: 'from-emerald-500/10 via-emerald-500/5 to-teal-500/10',
-                iconWrap: 'bg-emerald-100 text-emerald-700',
-              },
-            ].map((s, idx) => {
-              // Round-33.3 review-fix: trend-derived headlines. The
-              // headline for the three period-eligible cards is
-              // `trend.current` (the 30-day-window match count), NOT a
-              // lifetime count. This means headline and trend badge
-              // refer to the same window — the "+N denna period" pill
-              // now genuinely says "of this N, N−previous came in this
-              // window" rather than two unrelated numbers.
-              const trend = s.showTrend
-                ? getMonthlyTrend(apps, s.trendMatch, s.timestampKey)
-                : null
-              const headlineValue = s.showTrend ? trend.current : s.value
-              return (
-                <motion.div
-                  key={s.key}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.4, delay: idx * 0.06, ease: [0.16, 1, 0.3, 1] }}
-                  whileHover={{ y: -2 }}
-                  className={`relative overflow-hidden rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md transition-shadow`}
-                >
-                  <div className={`absolute inset-0 bg-gradient-to-br ${s.gradient} pointer-events-none`} aria-hidden="true" />
-                  <div className="relative flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-baseline gap-2 flex-wrap">
-                        <div className="text-3xl font-bold tracking-tight text-slate-900">
-                          <AnimatedCounter value={headlineValue} />
-                        </div>
-                        {s.showTrend && (
-                          <TrendBadge trend={trend.trend} delta={trend.delta} />
-                        )}
-                      </div>
-                      <div className="text-xs text-slate-600 mt-1">{s.label}</div>
-                    </div>
-                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${s.iconWrap}`}>
-                      <s.Icon className="w-4 h-4" aria-hidden="true" />
-                    </div>
-                  </div>
-                </motion.div>
-              )
-            })}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="hero-stats">
+            {statConfigs.map((s, idx) => (
+              <HeroStatCard key={s.key} s={s} apps={apps} idx={idx} />
+            ))}
           </div>
 
           {/* Push notifications card */}
@@ -2378,7 +1981,7 @@ function DashboardContent() {
                                   ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Förbereder...</>
                                   : <><Rocket className="w-3 h-3 mr-1" /> Förbered</>}
                               </Button>
-                              <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-amber-600 transition-colors" aria-hidden="true" />
+                              <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-amber-600 md:opacity-0 md:translate-y-1 md:group-hover:opacity-100 md:group-hover:translate-y-0 md:group-focus-within:opacity-100 md:group-focus-within:translate-y-0 transition-all duration-200" aria-hidden="true" />
                             </div>
                             {idx === 0 && (
                               <Badge className="absolute top-3 right-3 bg-amber-100 text-amber-800 hover:bg-amber-100 text-[10px] uppercase">Topp</Badge>
@@ -2419,7 +2022,7 @@ function DashboardContent() {
                                 }
                               }}
                               data-testid="save-job-mobile"
-                              className="mt-2 w-full h-7 text-[11px] text-slate-500 hover:text-amber-700 hover:bg-amber-50"
+                              className="mt-2 w-full h-7 text-[11px] text-slate-500 hover:text-amber-700 hover:bg-amber-50 md:opacity-0 md:translate-y-1 md:group-hover:opacity-100 md:group-hover:translate-y-0 md:group-focus-within:opacity-100 md:group-focus-within:translate-y-0 transition-all duration-200"
                             >
                               <Star className="w-3 h-3 mr-1" /> Spara till JobbPiloten
                             </Button>
@@ -2513,8 +2116,10 @@ function DashboardContent() {
             </CardContent>
           </Card>
 
-          {/* 2nd source card — parallel search redirects to Blocket Jobb /
-              Jobbsafari. These are honest deep-links (we don't scrape or
+          {/* 2nd source card — parallel search redirect to Jobbsafari.
+              Round-94 followup: the Blocket Jobb link was removed from
+              BroaderSearchCard (platform shut down — jobb.blocket.se is
+              NXDOMAIN). These are honest deep-links (we don't scrape or
               store their listings); the constructed URL carries the user's
               profile.jobTitles[0] + profile.locations[0] forward so they
               land on a pre-filled search results page. Implemented as a
@@ -2582,6 +2187,16 @@ function DashboardContent() {
                     </div>
                     <h4 className="text-sm font-semibold text-slate-900">{cfg.title}</h4>
                     <p className="text-xs text-slate-500 mt-1 leading-relaxed">{cfg.sub}</p>
+                    {appFilter === 'saved' && (
+                      <button
+                        type="button"
+                        onClick={() => pickFilter('all')}
+                        data-testid="empty-saved-cta"
+                        className="mt-4 inline-flex items-center gap-1.5 h-9 px-4 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition-all hover:scale-[1.03] active:scale-[0.97]"
+                      >
+                        <Search className="w-3.5 h-3.5" /> Hitta jobb
+                      </button>
+                    )}
                   </div>
                 )
               })()}
@@ -2636,7 +2251,7 @@ function DashboardContent() {
                         {app.source && app.source !== 'email' && <Tag Icon={Building2} tone="indigo">{app.source}</Tag>}
                         <StatusPill status={app.status} />
                       </div>
-                      <div className="mt-3 flex items-center gap-2 flex-wrap">
+                      <div className="mt-3 flex items-center gap-2 flex-wrap md:opacity-0 md:translate-y-1 md:group-hover:opacity-100 md:group-hover:translate-y-0 md:group-focus-within:opacity-100 md:group-focus-within:translate-y-0 transition-all duration-200">
                         {app.status === 'prepared' && (
                           <Button size="sm" variant="outline" onClick={() => markAsApplied(app.id)} className="text-xs h-7 px-2 border-amber-200 text-amber-700 hover:bg-amber-50 hover:border-amber-300 transition-all hover:scale-[1.03] active:scale-[0.97]">
                             <Send className="w-3 h-3 mr-1" /> Markera som ansökt
@@ -2875,22 +2490,39 @@ function DashboardContent() {
                     // Re-add locally with `console.log(prepAppUrl)` for
                     // one-off debugging if a regression resurfaces.
                     return (
-                      <a
-                        href={finalHref}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={
-                          'inline-flex items-center justify-center h-10 px-4 rounded-md border border-slate-200 bg-white text-sm font-medium ' +
-                          'transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 flex-1 ' +
-                          className
-                        }
-                        data-testid="open-application-page"
-                        data-url-source={prepAppUrl.source}
-                        title={title}
-                      >
-                        <Icon className="w-4 h-4 mr-2" />
-                        {label}
-                      </a>
+                      <>
+                        {/* Round-95 — primary "Ansök i appen": opens the
+                            application URL inside the in-app browser with
+                            autofill (native webview on mobile, iframe
+                            fallback on web). */}
+                        <Button
+                          onClick={openInAppBrowser}
+                          data-testid="apply-in-app"
+                          className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white"
+                        >
+                          <Smartphone className="w-4 h-4 mr-2" />
+                          Ansök i appen
+                        </Button>
+                        {/* Secondary fallback — open in the external browser
+                            (Safari/Chrome). Same per-source label + styling
+                            as before. */}
+                        <a
+                          href={finalHref}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={
+                            'inline-flex items-center justify-center h-10 px-4 rounded-md border border-slate-200 bg-white text-sm font-medium ' +
+                            'transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 flex-1 ' +
+                            className
+                          }
+                          data-testid="open-application-page"
+                          data-url-source={prepAppUrl.source}
+                          title={title}
+                        >
+                          <Icon className="w-4 h-4 mr-2" />
+                          {label}
+                        </a>
+                      </>
                     )
                   })()}
 
@@ -2949,7 +2581,9 @@ function DashboardContent() {
         <Dialog open={!!showLetter} onOpenChange={(o) => !o && setShowLetter(null)}>
           <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
             <DialogHeader><DialogTitle>{showLetter?.company} — {showLetter?.title}</DialogTitle><DialogDescription>Förberedd {showLetter && fmtDate(showLetter.appliedAt)}</DialogDescription></DialogHeader>
-            <div className="rounded-lg bg-slate-50 border p-4 whitespace-pre-wrap text-sm leading-relaxed font-serif">{showLetter?.coverLetter}</div>
+            <div className="rounded-lg bg-slate-50 border p-4 whitespace-pre-wrap text-sm leading-relaxed font-serif">
+              <TypewriterReveal text={showLetter?.coverLetter || ''} />
+            </div>
           </DialogContent>
         </Dialog>
       </div>
@@ -2964,6 +2598,64 @@ function DashboardContent() {
 // The min-h-screen fallback matches the rest of the dashboard's
 // own loading state so the Suspense boundary never flashes a blank
 // frame at the deep-link entry point.
+// Round-94: module-scope stat-card configs. Hoisted out of the JSX so
+// the config objects have a stable identity (React.memo on HeroStatCard
+// depends on it) and the trend-match callbacks are defined once. The
+// month-dependent label and the 'total' value are filled in per render
+// via `statConfigs` (see DashboardContent). Round-33.3 review-fix notes:
+//   • period-anchored labels — headline and trend pill refer to the same
+//     30-day window ("denna period").
+//   • 'total' is a lifetime count with NO trend (pairwise period-vs-
+//     period is a category error there).
+const HERO_STATS = [
+  {
+    key: 'saved',
+    label: 'Sparade jobb denna period',
+    // Round-94: hover hint (Task 4D) — a mini tooltip explaining what
+    // the number means, so a user who hasn't memorised the period
+    // contract can self-serve instead of guessing.
+    hint: 'Jobb du sparat för att söka senare, räknade de senaste 30 dagarna.',
+    trendMatch: (a) => a.saved === true,
+    timestampKey: 'savedAt',
+    showTrend: true,
+    Icon: Star,
+    gradient: 'from-amber-500/10 via-amber-500/5 to-orange-500/10',
+    iconWrap: 'bg-amber-100 text-amber-700',
+  },
+  {
+    key: 'this-month',
+    label: '', // monthLabel-derived, filled in statConfigs
+    hint: 'Ansökningar skickade den här kalendermånaden — antalet som räknas mot AF:s 14/månad-mål.',
+    trendMatch: (a) => a.status === 'applied' || a.status === 'user-sent',
+    timestampKey: 'appliedAt',
+    showTrend: true,
+    Icon: Send,
+    gradient: 'from-indigo-500/10 via-indigo-500/5 to-blue-500/10',
+    iconWrap: 'bg-indigo-100 text-indigo-700',
+  },
+  {
+    key: 'total',
+    label: 'Totalt antal',
+    value: 0, // filled in statConfigs from apps.length
+    hint: 'Alla ansökningar du någonsin registrerat i JobbPiloten — livstidssiffra, ingen period.',
+    showTrend: false,
+    Icon: Briefcase,
+    gradient: 'from-blue-500/10 via-blue-500/5 to-cyan-500/10',
+    iconWrap: 'bg-blue-100 text-blue-700',
+  },
+  {
+    key: 'confirmed',
+    label: 'Bekräftade av AF denna period',
+    hint: 'Ansökningar Arbetsförmedlingen bekräftat (status “bekräftad”) de senaste 30 dagarna.',
+    trendMatch: (a) => a.status === 'confirmed',
+    timestampKey: 'appliedAt',
+    showTrend: true,
+    Icon: Check,
+    gradient: 'from-emerald-500/10 via-emerald-500/5 to-teal-500/10',
+    iconWrap: 'bg-emerald-100 text-emerald-700',
+  },
+]
+
 export default function DashboardPage() {
   return (
     <Suspense

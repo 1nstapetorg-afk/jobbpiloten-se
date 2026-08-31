@@ -253,8 +253,19 @@ release that INTRODUCED the feature, not the current release.** The
 current release is `const VERSION = '0.3.0'` (mirrored as the
 `"version"` field in `extension/manifest.json`, plus
 `JOBBPILOTEN_EXTENSION_VERSION` in background.js and
-`getExtensionVersion()` in content.js — keep ALL FOUR in sync when
-bumping). v0.2.4 (2026-08-02) carried the Chromebook blank-tab fix.
+`getExtensionVersion()` in content.js).
+
+**Round-93-fix — the human-facing BUILD TAG (`1.0.0-93`) lives in
+`extension/version.json`** (`{ "version": "1.0.0-93" }`), NOT on the
+manifest. The manifest's custom `x_jp_version` key was removed
+because Chrome warns about unrecognized top-level manifest keys and
+Chrome Web Store review can reject over them. When bumping, keep in
+sync: `extension/version.json`, `const BUILD_VERSION` in
+`extension/popup.js`, `JOBBPILOTEN_EXTENSION_VERSION` in
+`extension/background.js`, `getExtensionVersion()` in
+`extension/content.js`, the `/api/extension/version` route's
+`FALLBACK_VERSION`, and the `"version"` field in
+`extension/manifest.json` (the store-facing M.N bump). v0.2.4 (2026-08-02) carried the Chromebook blank-tab fix.
 v0.3.0 (2026-08-03) adds the industry taxonomy: 16 new industry-
 specific boolean FIELD_PATTERNS (canShiftWork, hasHLRCertification,
 hasTruckLicenseCE, …), a bundled copy of the shared taxonomy at

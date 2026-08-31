@@ -19,9 +19,9 @@
  * Round-79 refinement (code-reviewer feedback):
  *   • Try/catch scope is NARROW — only wraps `clerkMw(req)`. If the
  *     import of `@clerk/nextjs/server` fails (broken npm install),
- *     or `createRouteMatcher(...)` throws (malformed route pattern),
- *     those errors propagate loudly so the dev-server log shows a
- *     real stack instead of being silently swallowed.
+ *     or a malformed route pattern throws, those errors propagate
+ *     loudly so the dev-server log shows a real stack instead of
+ *     being silently swallowed.
  *   • For `isProtectedRoute(req) === true`, fall back to
  *     `NextResponse.redirect(new URL('/sign-in', req.url))` so
  *     unauthenticated visitors land on the auth page rather than
@@ -30,6 +30,26 @@
  *     anyone.)
  *   • For PUBLIC routes, `NextResponse.next()` is fine — no auth
  *     gate is enforced either way in degraded mode.
+ *
+ * Round-88 / Priority-2 #6 (2026-08-06): `createRouteMatcher` is
+ * DEPRECATED in @clerk/nextjs 7.5.21 — the function logs a deprecation
+ * warning on every construction (i.e. every request in dev) and will be
+ * removed in the next major. Per Clerk's official migration guide
+ * (https://clerk.com/docs/guides/development/upgrading/upgrade-guides/migrate-from-create-route-matcher),
+ * middleware path logic should use the framework's NATIVE matching
+ * (`config.matcher` + `req.nextUrl.pathname`) instead. This file
+ * replaces the deprecated matcher with a small `matchesPath()`
+ * helper implementing the same `(.*)`-wildcard semantics (exact base
+ * OR base + path prefix), so behavior is byte-identical while the
+ * deprecation warning disappears. `clerkMiddleware` itself is KEPT —
+ * it is still required for Clerk to work, and the auth gates here
+ * (JSON 401 for APIs, `auth.protect()` for pages, the Round-85 demo
+ * pass-throughs) are the codebase's actual boundary layer.
+ *
+ * Resource-level checks: every protected /api/* route ALSO calls
+ * `requireAuth(req)` (lib/auth.js) server-side, so the middleware
+ * gate is defense-in-depth, not the only check — consistent with
+ * Clerk's resource-based-auth recommendation.
  */
 
 import { NextResponse } from 'next/server';
@@ -44,6 +64,23 @@ import { isClerkConfiguredServer } from '@/lib/clerk-config';
 // cookie was present.
 import { getDemoUserId } from '@/lib/auth';
 
+// ---- Round-88 / P2 #6 — framework-native path matching -------------
+// Replacement for the deprecated `createRouteMatcher`. Same
+// semantics: a pattern like `/dashboard(.*)` matches the exact base
+// path `/dashboard` AND any `/dashboard/...` prefix. Patterns without
+// `(.*)` match exactly. Operates on `req.nextUrl.pathname` — the
+// framework-native surface Clerk's migration guide recommends.
+function matchesPath(req, patterns) {
+  const pathname = req.nextUrl.pathname;
+  return patterns.some((pattern) => {
+    if (pattern.endsWith('(.*)')) {
+      const base = pattern.slice(0, -4).replace(/\/$/, '');
+      return pathname === base || pathname.startsWith(base + '/');
+    }
+    return pathname === pattern;
+  });
+}
+
 export default async function middleware(req) {
   // If Clerk is not configured, skip all auth protection (demo mode)
   if (!isClerkConfiguredServer()) {
@@ -54,17 +91,16 @@ export default async function middleware(req) {
   // package is missing, corrupted, or has a key issue, log the error
   // and fall back to the demo-mode behavior (allow all requests)
   // rather than crashing every route with a 500.
-  let clerkMiddleware, createRouteMatcher;
+  let clerkMiddleware;
   try {
     const clerkModule = await import('@clerk/nextjs/server');
     clerkMiddleware = clerkModule.clerkMiddleware;
-    createRouteMatcher = clerkModule.createRouteMatcher;
   } catch (importError) {
     console.error('[middleware] Clerk SDK import failed — falling back to no-auth mode:', importError && importError.message ? importError.message : importError);
     return NextResponse.next();
   }
 
-  const isPublicRoute = createRouteMatcher([
+  const isPublicRoute = (r) => matchesPath(r, [
     '/',
     '/sign-in(.*)',
     '/sign-up(.*)',
@@ -78,7 +114,7 @@ export default async function middleware(req) {
     '/api/extension/(.*)',
   ]);
 
-  const isProtectedRoute = createRouteMatcher([
+  const isProtectedRoute = (r) => matchesPath(r, [
     '/dashboard(.*)',
     '/onboarding(.*)',
     '/settings(.*)',

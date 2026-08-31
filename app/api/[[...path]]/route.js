@@ -13,7 +13,7 @@ import { requireAuth } from '@/lib/auth';
 // /api/[[...path]]/route.js's `apply-now` branch). See
 // lib/profile-check.js for the canonical contract definition.
 import { requireCompleteProfile } from '@/lib/profile-check';
-import { searchJobs, multiSourceSearchJobs, getJobById, buildBlocketSearchUrl } from '@/lib/jobScraper';
+import { searchJobs, multiSourceSearchJobs, getJobById, buildLedigaJobbSearchUrl } from '@/lib/jobScraper';
 import { buildJobMatchPayload, broadcastPush, sendPushToUser } from '@/lib/push';
 import { PROFILE_PICTURE_AVATARS } from '@/lib/avatar-keys';
 import { locationsToLänCodes, isRemoteFriendlyText, doesJobMatchUserLocation } from '@/lib/swedishLocations';
@@ -77,7 +77,7 @@ const SAMPLE_JOBS = [
   { company: 'Ericsson', title: 'DevOps Engineer', location: 'Kista', source: 'Arbetsförmedlingen', description: 'Kubernetes, AWS, Terraform. Automatisera CI/CD-flöden för globala telekom-produkter.' },
   { company: 'Truecaller', title: 'Android-utvecklare', location: 'Stockholm', source: 'LinkedIn', description: 'Kotlin, Jetpack Compose, MVVM. Bygg funktioner för hundratals miljoner användare världen över.' },
   { company: 'Northvolt', title: 'Project Manager', location: 'Skellefteå', source: 'Arbetsförmedlingen', description: 'Led tvärfunktionella projekt inom battericellsproduktion. Erfarenhet av tillverkningsindustri och Agile.' },
-  { company: 'Tink', title: 'QA Engineer', location: 'Stockholm', source: 'Blocket Jobb', description: 'Automatisera testning av vår open banking-plattform. Playwright, Cypress, Postman.' },
+  { company: 'Tink', title: 'QA Engineer', location: 'Stockholm', source: 'Ledigajobb', description: 'Automatisera testning av vår open banking-plattform. Playwright, Cypress, Postman.' },
   { company: 'Epidemic Sound', title: 'UX Researcher', location: 'Stockholm', source: 'LinkedIn', description: 'Genomför användarstudier, prototyptester och kvalitativ forskning för att forma produktbeslut.' },
   { company: 'Kinnevik', title: 'Business Analyst', location: 'Stockholm', source: 'Monster.se', description: 'Stödja investeringsbeslut och portföljanalys. Excel, SQL och stark affärsmässig förståelse.' },
   { company: 'Bolt', title: 'Customer Success Manager', location: 'Göteborg', source: 'Metrojobb', description: 'Ansvara för nyckelkunders framgång, onboarding och retention. Flytande svenska och engelska.' },
@@ -85,7 +85,7 @@ const SAMPLE_JOBS = [
   { company: 'Voi Technology', title: 'Operations Coordinator', location: 'Malmö', source: 'Arbetsförmedlingen', description: 'Koordinera daglig drift av vår mikromobilitet-flotta. Logistik och stakeholder-hantering.' },
   { company: 'iZettle (PayPal)', title: 'Sales Development Representative', location: 'Stockholm', source: 'Indeed.se', description: 'Prospektera och kvalificera leads för vårt SME-segment. B2B-försäljning, HubSpot.' },
   { company: 'Fortnox', title: 'Kundsupport-specialist', location: 'Växjö', source: 'Arbetsförmedlingen', description: 'Hjälp svenska småföretag med bokförings- och lönefrågor via telefon och chatt.' },
-  { company: 'Mynewsdesk', title: 'PR & Communications', location: 'Stockholm', source: 'Blocket Jobb', description: 'Driv PR-strategier för nordiska kunder. Mediarelationer och content-produktion.' },
+  { company: 'Mynewsdesk', title: 'PR & Communications', location: 'Stockholm', source: 'Ledigajobb', description: 'Driv PR-strategier för nordiska kunder. Mediarelationer och content-produktion.' },
   { company: 'Yubico', title: 'Security Engineer', location: 'Stockholm', source: 'LinkedIn', description: 'Bygg och underhåll säkerhetsinfrastruktur för vår YubiKey-plattform.' },
   { company: 'Doktor.se', title: 'Legitimerad Sjuksköterska', location: 'Distansarbete', source: 'Arbetsförmedlingen', description: 'Digital vård via videosamtal. Flexibla arbetstider och konkurrenskraftig lön.' },
   { company: 'Trustly', title: 'Compliance Officer', location: 'Stockholm', source: 'Monster.se', description: 'AML/KYC-arbete inom betalningstjänster. Erfarenhet av finansiell reglering.' }
@@ -417,21 +417,22 @@ export async function GET(req, ctx) {
         // truly-empty branch separately.
         //
         // Issue 4 (2026-07-10): call `multiSourceSearchJobs` so the
-        // user sees the combined AF + Blocket pool when they opt out of
-        // the strict Län filter.
+        // user sees the combined AF + Ledigajobb + Jobbland pool when
+        // they opt out of the strict Län filter.
         const { jobs: nationwide, hasMore: hm1 } = await multiSourceSearchJobs({ query: searchQuery, location: '', region: '', limit: PAGE_SIZE, offset: page * PAGE_SIZE, employmentTypes: profileEmploymentTypes });
         available = nationwide.filter((j) => !usedKeys.has(`${j.company}|${j.title}`));
         serverHasMore = hm1
         locationFilterMode = 'fallback-nationwide';
       } else if (regionCodes.length > 0) {
-        // Strict Län-filter pass (region is AF-only; Blocket ignores it).
+        // Strict Län-filter pass (region is AF-only; Ledigajobb /
+        // Jobbland ignore it).
         const { jobs: strictJobs, hasMore: hm2 } = await multiSourceSearchJobs({ query: searchQuery, location: searchLocation, region: regionCodes.join(','), limit: PAGE_SIZE, offset: page * PAGE_SIZE, employmentTypes: profileEmploymentTypes });
         available = strictJobs.filter((j) => !usedKeys.has(`${j.company}|${j.title}`));
         serverHasMore = hm2
         if (available.length === 0) {
           // Loosen to text-only (some AF hits don't carry the matching
           // region_code but mention the city in the headline/description,
-          // plus Blocket content is text-only by nature).
+          // plus Ledigajobb/Jobbland content is text-only by nature).
           // Bug fix (2026-07-11, "Visa fler jobb"): `multiSourceSearchJobs`
             // returns `{ jobs: [...], hasMore: false }`, NOT a bare array.
             // The naive `textJobs.filter(...)` here was crashing the
@@ -494,9 +495,10 @@ export async function GET(req, ctx) {
 
       // 2026-08-02 (location HARD-filter fix): every job returned to a
       // user with preferred (non-remote) locations MUST match one of
-      // them. The AF region filter is the primary gate, but Blocket
-      // jobs in the multi-source pool ignore region codes entirely and
-      // some AF ads carry a mismatched region_code — so this final
+      // them. The AF region filter is the primary gate, but Ledigajobb
+      // / Jobbland jobs in the multi-source pool ignore region codes
+      // entirely and some AF ads carry a mismatched region_code — so
+      // this final
       // doesJobMatchUserLocation pass drops anything out of area.
       // "Göteborg" → only Göteborg + commuting-area jobs. No exceptions.
       // The ONLY escape hatch is the explicit allSweden=1 override
@@ -1340,8 +1342,27 @@ export async function POST(req, ctx) {
     if (path === 'checkout') {
       const body = await req.json();
       const { tier, interval } = body; // tier: 'Basic'|'Professional'|'Elite', interval: 'month'|'year'
-      const priceId = PRICE_MAP[`${tier}:${interval}`];
-      if (!priceId) return NextResponse.json({ error: 'Invalid tier/interval' }, { status: 400 });
+      const priceKey = `${tier}:${interval}`;
+      // Round-91 (P1 #3) — fail-closed on unconfigured pricing. Two
+      // DISTINCT failure modes collapse into one `!priceId` check:
+      //   • an invalid tier/interval combo  → 400 (client bug, stays 400)
+      //   • a VALID combo whose STRIPE_PRICE_* env var is unset
+      //     → 503 PRICING_NOT_CONFIGURED (deploy gap)
+      // Pre-fix, a valid combo with an unset env var hit Stripe with
+      // `undefined` price and surfaced a raw English Stripe error to
+      // the user. `hasOwnProperty` on PRICE_MAP tells the two apart:
+      // the key exists only for the 6 canonical combos, and its value
+      // is undefined exactly when the env is missing.
+      if (!Object.prototype.hasOwnProperty.call(PRICE_MAP, priceKey)) {
+        return NextResponse.json({ error: 'Invalid tier/interval' }, { status: 400 });
+      }
+      const priceId = PRICE_MAP[priceKey];
+      if (!priceId) {
+        return NextResponse.json(
+          { error: 'Prenumerationer är inte konfigurerade ännu — försök igen senare.', code: 'PRICING_NOT_CONFIGURED' },
+          { status: 503 },
+        );
+      }
 
       // Look up existing customer if any
       const profile = await db.collection('profiles').findOne({ clerkId });
@@ -1581,7 +1602,7 @@ export async function POST(req, ctx) {
       // Canonical-key-first read order means the dashboard can rename
       // its field across deploys without a server-side coordinated
       // cutover. The same dual-read pattern is applied to `externalId`
-      // (dashboard now sends it explicitly so Blocket / Ledigajobb
+      // (dashboard now sends it explicitly so Ledigajobb / Jobbland
       // jobs don't have to fall through to the profile-based re-search).
       const { jobId, company, title, location, description, source } = body;
       const candidateUrl = body.jobUrl || body.url || null;
@@ -1594,7 +1615,8 @@ export async function POST(req, ctx) {
       // has enough data to commit a 1:1 application record, write
       // it without touching the AF search waterfall. The PRE-Round-58
       // code unconditionally fell into the else branch for any
-      // jobId that did NOT start with `af-` — Blocket (`blocket-…`)
+      // jobId that did NOT start with `af-` — Blocket (`blocket-…`,
+      // legacy rows only — Blocket Jobb shut down 2026-12-16)
       // and Ledigajobb (`ledigajobb-…`) entries silently overwrote
       // the user-clicked job with a re-searched AF job matching
       // the user's profile.jobTitles, and fell back to a
@@ -1614,8 +1636,9 @@ export async function POST(req, ctx) {
       )
       if (isKnownSource) {
         // For `af-<id>` style ids, parse externalId from the prefix
-        // when the body didn't send one (Blocket / Ledigajobb entries
-        // fall into this with their own externalId). The body value
+        // when the body didn't send one (Ledigajobb / Jobbland entries
+        // fall into this with their own externalId; legacy Blocket
+        // rows too). The body value
         // wins so a future scraper can override the prefix-derived
         // id without breaking the contract.
         const parsedExternalId = jobId.startsWith('af-')
@@ -1739,21 +1762,26 @@ export async function POST(req, ctx) {
       //   (b) Re-searched AF jobs that returned a hit without an
       //       application link (older AF payloads pre-mid-2025)
       // Instead of letting the dashboard Tier-3 fire, synthesize a
-      // Blocket Jobb search URL from the user's profile.jobTitles[0]
-      // + profile.locations[0] and attach it to job.url so Tier-1
+      // Ledigajobb search URL from the user's profile.jobTitles[0] +
+      // profile.locations[0] and attach it to job.url so Tier-1
       // (`app.jobUrl`) catches the destination directly. The user's
       // spec was "NEVER show generic Google search if we can use a
       // per-source search" — keeping sample jobs usable without
       // exposing Tier-3.
       //
-      // Cost: a single buildBlocketSearchUrl() call (cheap string
+      // Round-95 (2026-08-07): previously this used
+      // buildBlocketSearchUrl — Blocket Jobb shut down permanently
+      // (jobb.blocket.se is NXDOMAIN), so the synthesized link would
+      // land on a dead site. Ledigajobb is the live per-source search.
+      //
+      // Cost: a single buildLedigaJobbSearchUrl() call (cheap string
       // build, no network). Profile preferences are user-controlled
       // so the search query stays inside the user's domain.
       if (!job.url && !job.externalId) {
         const profileFirstTitle = (profile.jobTitles || [])[0] || ''
         const profileFirstLocation = (profile.locations || [])[0] || ''
         if (profileFirstTitle || profileFirstLocation) {
-          job.url = buildBlocketSearchUrl({
+          job.url = buildLedigaJobbSearchUrl({
             query: profileFirstTitle,
             location: profileFirstLocation,
           })

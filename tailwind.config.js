@@ -120,6 +120,28 @@ module.exports = {
             '25%':       { transform: 'translate(-3px, -5px)' },
             '75%':       { transform: 'translate(6px, 3px)' },
           },
+          // Round-94 (professional polish) — purposeful motion set.
+          // cta-pulse: gentle expanding-ring pulse on the hero CTA until
+          //   the user has generated a first cover letter (attention with
+          //   a function — the ring collapses at 10px so it never reads
+          //   as an alarm).
+          // star-pop: 360° spin + scale bounce when a job is saved.
+          // hero-sheen: very desaturated 8s gradient drift behind the
+          //   "Redo för nästa ansökan" hero so it reads as the
+          //   centerpiece without competing with the CTA.
+          'cta-pulse': {
+            '0%, 100%': { boxShadow: '0 0 0 0 rgba(99,102,241,0.35)' },
+            '50%':       { boxShadow: '0 0 0 10px rgba(99,102,241,0)' },
+          },
+          'star-pop': {
+            '0%':   { transform: 'rotate(0deg) scale(0.6)' },
+            '60%':  { transform: 'rotate(360deg) scale(1.25)' },
+            '100%': { transform: 'rotate(360deg) scale(1)' },
+          },
+          'hero-sheen': {
+            '0%, 100%': { transform: 'translateX(-3%) translateY(-2%)', opacity: '0.45' },
+            '50%':       { transform: 'translateX(3%) translateY(2%)', opacity: '0.85' },
+          },
         },
         animation: {
           'accordion-down': 'accordion-down 0.2s ease-out',
@@ -128,6 +150,9 @@ module.exports = {
           'hero-particle-a': 'hero-particle-a 18s ease-in-out infinite',
           'hero-particle-b': 'hero-particle-b 22s ease-in-out infinite',
           'hero-particle-c': 'hero-particle-c 26s ease-in-out infinite',
+          'cta-pulse': 'cta-pulse 2.5s ease-in-out infinite',
+          'star-pop': 'star-pop 0.45s ease-out',
+          'hero-sheen': 'hero-sheen 8s ease-in-out infinite',
         }
       }
     },

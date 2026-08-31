@@ -24,6 +24,10 @@ const nextConfig = {
   // See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats
   outputFileTracingIncludes: {
     '/api/extension/download': ['./extension/**/*'],
+    // Round-93 — /api/extension/version reads extension/manifest.json
+    // at runtime (for the popup's stale-install check); the bundler
+    // can't statically trace node:fs reads, so force the folder in.
+    '/api/extension/version': ['./extension/**/*'],
   },
   images: {
     unoptimized: true,

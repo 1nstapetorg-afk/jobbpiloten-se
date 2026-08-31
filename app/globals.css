@@ -2,6 +2,53 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Round-94 (professional polish) — layered card shadows. Resting cards
+   get a soft two-layer shadow (1px hairline + 4px ambient); hover lifts
+   them with a deeper, wider third layer. Replaces flat `shadow-sm`/
+   `shadow-md` on the dashboard's key surfaces. */
+@layer utilities {
+  .shadow-card {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 8px rgba(0, 0, 0, 0.02);
+  }
+  .shadow-card-hover {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 8px 24px rgba(0, 0, 0, 0.08);
+  }
+}
+
+/* Round-94 — keyframes referenced by arbitrary Tailwind animations:
+   `confetti-fall` (onboarding completion burst, components/Confetti.jsx)
+   and `fade-in-soft` (cover-letter reveal tail, TypewriterReveal.jsx). */
+@keyframes confetti-fall {
+  0%   { transform: translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(110vh) rotate(720deg); opacity: 0.6; }
+}
+@keyframes fade-in-soft {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Round-94 followup (prefers-reduced-motion audit) — global guard.
+   Kills every CSS animation/transition (including inline `animation:`
+   shorthand like Confetti's pieces and Tailwind's animate-* utilities)
+   for users who request reduced motion, so Round-94's motion set
+   (cta-pulse, star-pop, hero-sheen, confetti-fall, skeleton pulse, the
+   landing drawer) degrades to instant, static states. `!important` is
+   deliberate: it must beat inline styles AND Tailwind utility classes.
+   This mirrors the standard WCAG-friendly "reduce everything" pattern
+   and complements the Tailwind `motion-safe:` variants already used on
+   the landing hero. Framer-Motion's JS-driven transforms are handled
+   separately via <MotionConfig reducedMotion="user"> in providers.js. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

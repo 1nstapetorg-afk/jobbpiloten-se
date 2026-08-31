@@ -466,6 +466,94 @@ const FIELD_PATTERNS = [
 const PROD_BASE_URL = 'https://jobbpiloten.se'
 const PROD_ALLOWED_ORIGINS = ['https://jobbpiloten.se']
 
+// Round-91 — JobbPiloten APP-origin allowlist. This is the list that
+// gates BOTH (a) the handleDashboardUrl storage WRITE and (b) the
+// resolveApiBaseUrl re-validation of that stored value before it is
+// used as a token-bearing fetch base. It is therefore STRICTLY
+// NARROWER than the popup's mirror:
+//
+//   • `https://*.vercel.app/*` is deliberately ABSENT. `*.vercel.app`
+//     is an attacker-claimable wildcard — anyone can deploy to
+//     `anything.vercel.app` — so a hostile page there could poison
+//     `jobbpiloten_dashboardUrl` and the next AI-fetch would POST the
+//     user's real bearer token to the attacker. The popup keeps it
+//     for openAuthFlow/preview compat, but storage can never be
+//     poisoned to a vercel.app origin because THIS write gate
+//     rejects it first.
+//   • `*.app.github.dev` + `*.preview.app.github.dev` are kept: the
+//     whole point of Round-91 is to support GitHub Codespaces preview
+//     URLs. Residual attacker-claimability (an attacker's own
+//     codespace) is accepted and documented.
+//   • `*.preview.emergentagent.com` is org-controlled (not
+//     attacker-claimable) and kept for the org preview platform.
+//
+// DISTINCT from the manifest host_permissions list, which
+// legitimately includes webmail + job-board hosts for the
+// content-script fetch paths — those must NEVER be adopted as an API
+// base. The content copy is intentionally narrower than the popup's;
+// the two lists must NEVER both contain a pattern that would let a
+// hostile page become a token-bearing fetch base.
+const JOBBPILOTEN_APP_ORIGIN_PATTERNS = [
+  'https://jobbpiloten.se/*',
+  'https://*.preview.emergentagent.com/*',
+  'https://*.preview.app.github.dev/*',
+  'https://*.app.github.dev/*',
+  'http://localhost:*/*',
+  'http://127.0.0.1:*/*',
+]
+
+// Round-91 — narrow app-origin gate for content.js (mirrors the
+// popup's isJobbPilotenAppOrigin). hostPatternToRegex is hoisted (a
+// later function declaration in this file), so this is safe to call
+// from resolveApiBaseUrl / handleDashboardUrl.
+function isJobbPilotenAppOrigin(origin) {
+  try {
+    for (const pattern of JOBBPILOTEN_APP_ORIGIN_PATTERNS) {
+      const re = hostPatternToRegex(pattern)
+      if (re && re.test(origin)) return true
+    }
+  } catch (_) { /* malformed pattern — fail closed */ }
+  return false
+}
+
+// Round-91 — resolve the API base origin for content-script fetches.
+//
+// SECURITY: the stored dashboard URL is read back from
+// chrome.storage (sync first, then local — mirroring the popup's
+// tier order, since handleDashboardUrl writes sync when available)
+// BUT re-validated here against the NARROW JobbPiloten app-origin
+// allowlist before being trusted as an API base. This is required
+// because `jobbpiloten_dashboardUrl` IS writable by a hostile host
+// page via the handleDashboardUrl postMessage path (gated only on
+// `ev.source === window`). Without the narrow re-validation, a page
+// on the attacker-claimable `*.vercel.app` wildcard could poison the
+// key and the next AI-fetch would POST the user's real bearer token
+// to the attacker. The narrow list (see the allowlist comment above)
+// excludes `*.vercel.app`, webmail/job-board hosts, and anything
+// else that isn't a real JobbPiloten deployment origin.
+//
+// Fallback: prod, so the extension keeps working with no configured
+// dashboard URL (e.g. a user who never opened /dashboard).
+async function resolveApiBaseUrl() {
+  // Mirror the popup's tier order: sync first (the dashboard's
+  // handleDashboardUrl writes sync when available), then local
+  // (legacy-Chrome fallback). Reading ONLY local would miss the
+  // sync-written value and silently fall back to prod.
+  for (const area of ['sync', 'local']) {
+    try {
+      const data = await chrome.storage[area].get('jobbpiloten_dashboardUrl')
+      const raw = data && data.jobbpiloten_dashboardUrl
+      if (raw && typeof raw === 'string') {
+        const u = new URL(raw)
+        if ((u.protocol === 'https:' || u.protocol === 'http:') && isJobbPilotenAppOrigin(u.origin)) {
+          return u.origin
+        }
+      }
+    } catch (_) { /* storage area unavailable — try the next tier */ }
+  }
+  return PROD_BASE_URL
+}
+
 // Round-73 / Followup 3 (2026-07-20). Dev-flag logic lives
 // INSIDE clickBooleanOption (as a vm-context-safe local IIFE).
 // An earlier draft exposed a module-level `const __DEV__` here,
@@ -779,6 +867,17 @@ async function writeStorage({ token, profile }) {
 
 async function handleAuthSync(payload) {
   if (!payload || typeof payload !== 'object') return
+  // Round-88 — auth-sync receipt log (devtools trace). A tester who
+  // clicks "Anslut till profil" and sees "Inte ansluten" can open the
+  // auth window's devtools and confirm this line fired — proving the
+  // content-script bridge (Path 2 of the handshake) received the
+  // bundle. Token is NEVER logged — only its presence + shape.
+  console.info('[JobbPiloten ext] received auth-sync', {
+    hasToken: !!payload.token,
+    tokenShape: typeof payload.token === 'string' && payload.token.length,
+    profileKeys: payload.profile && typeof payload.profile === 'object' ? Object.keys(payload.profile).length : 0,
+    source: payload.source || 'dashboard',
+  })
   // SECURITY: ignore payload.baseUrl / payload.allowedOrigins.
   // A malicious host page can fire postMessage with attacker-controlled
   // values; if we persisted them, the popup's next refresh would
@@ -786,6 +885,113 @@ async function handleAuthSync(payload) {
   // a hard-coded constant — see section 3.
   await writeStorage({ token: payload.token || null, profile: payload.profile || null })
   scheduleScan()
+}
+
+// ---------- 3b. Round-93 — pending-token fallback channels ----------
+//
+// The postMessage auth-sync bridge above silently no-ops in two
+// cases:
+//   • Injection race — the dashboard's postMessage fired BEFORE this
+//     content script was injected (document_start vs. React mount).
+//   • ev.source gate — the dashboard sends to itself; on some pages
+//     the event's `source` isn't the same `window` object the
+//     listener compares against, so the message is dropped.
+//
+// Round-93 adds TWO side channels the dashboard writes in
+// `connectExtension` (app/dashboard/page.js) and this function
+// consumes on injection + on a bounded retry schedule:
+//   • Path B — a short-lived same-origin cookie `jp_ext_token`
+//     (max-age=60, SameSite=Strict). The cookie is visible to the
+//     content script regardless of injection timing.
+//   • Task 4 — `window.__JPPENDING_TOKEN` (set only when postMessage
+//     already ran, as a mirror for content scripts injected late).
+//
+// SECURITY: an attacker page can set `jp_ext_token` /
+// `__JPPENDING_TOKEN` to ANY value — but those values are only ever
+// STORED locally and used as the bearer for the extension's own
+// API calls. A hostile token fails the server's signature check at
+// mint time and yields a 401 on the next /api/extension/* call;
+// nothing sensitive is read or exfiltrated by consuming an attacker-
+// supplied token. The token is never POSTed anywhere except the
+// server endpoints that already validate it.
+
+async function consumePendingToken() {
+  let token = null
+  try {
+    // Path B — cookie.
+    const m = /(?:^|;\s*)jp_ext_token=([a-f0-9]{64})/i.exec(document.cookie || '')
+    if (m) token = m[1]
+    // Task 4 — DOM-attribute mirror. MV3 content scripts run in an
+    // ISOLATED world: they cannot read page-world JS globals, so
+    // `window.__JPPENDING_TOKEN` (set by the dashboard page) is
+    // invisible here — but DOM attributes ARE shared across worlds.
+    // The dashboard writes BOTH mirrors; this attribute is the one
+    // that actually reaches us. (The window mirror is kept in both
+    // files for spec parity + any future `world: 'MAIN'` injection.)
+    if (!token) {
+      const attr = document.documentElement && document.documentElement.getAttribute('data-jp-pending-token')
+      if (attr && /^[a-f0-9]{64}$/i.test(attr)) token = attr
+    }
+  } catch (_) { /* cookie/attribute read blocked — ignore */ }
+  if (!token) return
+  // One-shot: clear the cookie + attribute so a later page load
+  // doesn't re-consume a stale token.
+  try {
+    document.cookie = 'jp_ext_token=; path=/; max-age=0; SameSite=Strict'
+  } catch (_) { /* ignore */ }
+  try {
+    if (document.documentElement) document.documentElement.removeAttribute('data-jp-pending-token')
+  } catch (_) { /* ignore */ }
+  // Recover the full profile via the token so storage ends up with a
+  // COMPLETE bundle (the cookie / mirror only carry the token). If
+  // the profile fetch fails (DB down, token revoked) the token still
+  // lands — the popup's refreshProfile will reconcile later.
+  let profile = null
+  try {
+    const base = await resolveApiBaseUrl()
+    const url = `${String(base).replace(/\/$/, '')}/api/extension/profile`
+    await assertOriginAllowed(url)
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    if (res.ok) profile = await res.json().catch(() => null)
+  } catch (_) { /* profile fetch failure — token alone still lands */ }
+  await writeStorage({ token, profile })
+  console.info('[JobbPiloten ext] consumed pending token (cookie/__JPPENDING_TOKEN)', {
+    hasToken: !!token,
+    profileKeys: profile && typeof profile === 'object' ? Object.keys(profile).length : 0,
+  })
+  scheduleScan()
+}
+
+// Bounded retry schedule for the pending-token channels. The
+// dashboard sets the cookie AFTER its POST round-trip, so a
+// document_start injection is too early — we re-check across the
+// cookie's 60 s lifetime a handful of times.
+function watchForPendingToken() {
+  consumePendingToken().catch(() => {})
+  const delays = [1000, 3000, 8000, 15000, 30000]
+  for (const d of delays) {
+    setTimeout(() => consumePendingToken().catch(() => {}), d)
+  }
+}
+
+// Round-93 (Task 4) — 5 s "content_script_alive" bridge heartbeat.
+// The popup listens on chrome.runtime.onMessage; while the popup is
+// open it sees these pings and can confirm the bridge is working
+// (the diagnostics panel shows bridge liveness). Best-effort — the
+// sendMessage is wrapped so a closed popup / missing listener never
+// throws. This is the runtime-message equivalent of "postMessage to
+// the popup" — content scripts cannot window.postMessage to the
+// popup window directly in MV3, so the runtime channel is the
+// canonical route.
+function startBridgePing() {
+  if (startBridgePing._handle) return
+  const ping = () => {
+    try {
+      chrome.runtime.sendMessage({ type: 'JOBBPILOTEN_CONTENT_ALIVE', at: Date.now() })
+    } catch (_) { /* no listener — ignore */ }
+  }
+  ping()
+  startBridgePing._handle = setInterval(ping, 5000)
 }
 
 // ---------- 4. Profile-key resolver ----------
@@ -813,12 +1019,22 @@ function resolveProfileValue(profile, key) {
 // doesn't let content + popup share an ESM module without a
 // bundler) so the two must stay byte-identical — divergence is
 // a silent DNS-rebinding vector.
-function assertOriginAllowed(url) {
+async function assertOriginAllowed(url) {
   const origin = (() => {
     try { return new URL(url).origin } catch (_) { return null }
   })()
   if (!origin) throw new Error('Ogiltig URL')
-  if (!PROD_ALLOWED_ORIGINS.includes(origin)) {
+  // Round-91 — dynamic allow-list: the hard-coded prod origin (the
+  // security floor) PLUS the configured dashboard origin (only ever
+  // written after a host_permissions check). This lets a preview /
+  // Codespaces dashboard (e.g. https://<code>-<port>.app.github.dev)
+  // fetch /api/extension/* without loosening the gate to the whole
+  // manifest host_permissions list.
+  const allowed = new Set(PROD_ALLOWED_ORIGINS)
+  try {
+    allowed.add(await resolveApiBaseUrl())
+  } catch (_) { /* keep the prod-only floor */ }
+  if (!allowed.has(origin)) {
     throw new Error(`Origin ej tillåten: ${origin}`)
   }
   return origin
@@ -2308,8 +2524,8 @@ async function fetchAIAnswers({ token, queue, styleOverride }) {
       // active page's origin). assertOriginAllowed then independently
       // checks the URL against the hard-coded PROD_ALLOWED_ORIGINS
       // allow-list — see the SECURITY comment in section 3.
-      const url = `${PROD_BASE_URL}/api/extension/answer`
-      assertOriginAllowed(url)
+      const url = `${await resolveApiBaseUrl()}/api/extension/answer`
+      await assertOriginAllowed(url)
       const body = { question, field }
       if (overrideStyle) body.style = overrideStyle
       const res = await fetch(url, {
@@ -2412,9 +2628,9 @@ async function fetchBatchAIAnswers({ token, queue, styleOverride }) {
     lang: queue.some((q) => q.lang === 'en') ? 'en' : 'sv',
   }
   if (overrideStyle) payload.style = overrideStyle
-  const url = `${PROD_BASE_URL}/api/extension/ai-answers`
+  const url = `${await resolveApiBaseUrl()}/api/extension/ai-answers`
   try {
-    assertOriginAllowed(url)
+    await assertOriginAllowed(url)
   } catch (_) {
     // Fail closed: a compromised page trying to provoke a token-leak
     // request should not get any response (not even a 4xx). Mirror
@@ -2828,7 +3044,10 @@ async function ensureBadge(matchesCount) {
     const r = await fillAll()
     hideBadge()
     if (r.filled === 0 && r.missing === 0) {
-      showToast('Ingen profil ansluten — öppna jobbpiloten.se/dashboard och klicka Anslut.')
+      // Round-92 (Bug 2 fix) — dynamic dashboard origin instead of
+      // the hard-coded production URL (wrong on preview/Codespaces).
+      const base = await resolveApiBaseUrl()
+      showToast(`Ingen profil ansluten — öppna ${base}/dashboard och klicka Anslut.`)
     }
   }
   badgeEl.addEventListener('click', onActivate)
@@ -2891,8 +3110,41 @@ function showToast(text) {
     'z-index:2147483647',
     'opacity:0',
     'transition:opacity 200ms',
+    // Round-92 (Bug 2 fix) — row layout so the dismiss × sits
+    // inline next to the message text.
+    'display:flex',
+    'align-items:center',
+    'gap:10px',
+    'max-width:min(90vw, 560px)',
   ].join(';')
-  t.textContent = text
+  // Round-92 (Bug 2 fix) — dismiss × button. The "ingen profil"
+  // toast previously auto-dismissed after 2.8s with no way to close
+  // it early; a user who knows they aren't using the extension can
+  // now close it immediately. Aria-label keeps the × accessible to
+  // screen readers.
+  const textEl = document.createElement('span')
+  textEl.textContent = text
+  t.appendChild(textEl)
+  const closeBtn = document.createElement('button')
+  closeBtn.type = 'button'
+  closeBtn.setAttribute('aria-label', 'Stäng')
+  closeBtn.textContent = '×'
+  closeBtn.style.cssText = [
+    'background:none',
+    'border:none',
+    'color:#94a3b8',
+    'font:700 16px system-ui,-apple-system,sans-serif',
+    'cursor:pointer',
+    'padding:2px 6px',
+    'line-height:1',
+    'border-radius:4px',
+    'flex-shrink:0',
+  ].join(';')
+  closeBtn.addEventListener('click', () => {
+    t.style.opacity = '0'
+    setTimeout(() => t.remove(), 220)
+  })
+  t.appendChild(closeBtn)
   document.documentElement.appendChild(t)
   requestAnimationFrame(() => { t.style.opacity = '1' })
   setTimeout(() => {
@@ -2911,11 +3163,28 @@ function scheduleScan() {
   scanTimer = setTimeout(async () => {
     const r = await scanAndPaint()
     if (!r.hasProfile) {
-      // Still partly useful: surface the install button so a fresh
-      // user lands on a registration CTA. Without a connected
-      // profile we don't show the floating badge — it'd be a no-op.
-      if (r.matches.length >= 1) {
-        showToast('JobbPiloten Auto-Fill upptäckt — ingen profil ansluten. Öppna jobbpiloten.se/dashboard och klicka Anslut.')
+      // Still partly useful: surface the install CTA so a fresh user
+      // on a THIRD-PARTY job site lands on a registration path.
+      // Without a connected profile we don't show the floating badge
+      // — it'd be a no-op.
+      //
+      // Round-92 (Bug 2 fix) — three things changed here:
+      //   1. NEVER toast on the JobbPiloten app itself. The content
+      //      script is injected on the app origin too, so the pre-fix
+      //      code showed a dark "Öppna jobbpiloten.se/dashboard"
+      //      banner WHILE the user was already on the dashboard — the
+      //      false positive. The dashboard has its own connect card;
+      //      the toast is only useful on external job sites.
+      //   2. The dashboard URL is now resolved dynamically via
+      //      resolveApiBaseUrl() (configured dashboard origin, prod
+      //      fallback) instead of the hard-coded production domain,
+      //      which was wrong on preview/Codespaces environments.
+      //   3. The toast carries a dismiss × (see showToast), so a
+      //      user who knows they aren't using the extension can
+      //      close it immediately.
+      if (r.matches.length >= 1 && !isJobbPilotenAppOrigin(window.location.origin)) {
+        const base = await resolveApiBaseUrl()
+        showToast(`JobbPiloten Auto-Fill upptäckt — ingen profil ansluten. Öppna ${base}/dashboard och klicka Anslut.`)
       }
       return
     }
@@ -2978,7 +3247,13 @@ function startObserver() {
  * (currently: AI-adaptive fills).
  */
 function getExtensionVersion() {
-  return '0.2.4'
+  // Round-93-fix — synced to extension/version.json (the human-facing
+  // build tag; the manifest custom key `x_jp_version` was removed
+  // because Chrome warns on unrecognized top-level keys). The
+  // dashboard reads this via the data-jobbpiloten-ext-version
+  // attribute for feature gating; the popup's update-check compares
+  // it against /api/extension/version.
+  return '1.0.0-93'
 }
 
 window.addEventListener('message', (ev) => {
@@ -3040,7 +3315,15 @@ function handleDashboardUrl(payload) {
   } catch (_) {
     return
   }
-  if (!isOriginInHostAllowlist(origin)) return
+  // Round-91 — narrow write gate. The pre-fix check used the broad
+  // manifest host_permissions list (which includes the
+  // attacker-controllable `*.vercel.app` wildcard + the webmail /
+  // job-board hosts) — a hostile page on any of those could poison
+  // `jobbpiloten_dashboardUrl`, and since Round-91 makes that key the
+  // API base for token-bearing fetches, the write gate must be the
+  // same narrow JobbPiloten app-origin list the fetch gate uses.
+  // Webmail/job-board hosts were never valid dashboard origins.
+  if (!isJobbPilotenAppOrigin(origin)) return
   try {
     chrome.storage.sync.set({ jobbpiloten_dashboardUrl: origin })
   } catch (_) {
@@ -3049,24 +3332,6 @@ function handleDashboardUrl(payload) {
     // a Tier-1 hit to find.
     chrome.storage.local.set({ jobbpiloten_dashboardUrl: origin })
   }
-}
-
-function isOriginInHostAllowlist(origin) {
-  try {
-    const manifest = chrome.runtime.getManifest()
-    const hostPerms = Array.isArray(manifest.host_permissions) ? manifest.host_permissions : []
-    // Convert each pattern like "https://jobbpiloten.se/*" or
-    // "https://*.vercel.app/*" into a regex; match if origin matches
-    // any pattern. The trailing-`/*`-strip in hostPatternToRegex
-    // makes the bare-origin test work, so re.test(origin) covers
-    // both the origin alone AND the origin + path.
-    for (const pattern of hostPerms) {
-      if (!pattern || typeof pattern !== 'string') continue
-      const re = hostPatternToRegex(pattern)
-      if (re && re.test(origin)) return true
-    }
-  } catch (_) { /* chrome not available */ }
-  return false
 }
 
 function hostPatternToRegex(pattern) {
@@ -3305,6 +3570,10 @@ if (_skipAuthPage) {
   // anslutet" pill reflects the current browser state.
   startHeartbeat()
   startHeartbeatAttributeMirror()
+  // Round-93 — the pending-token channels + bridge ping apply on
+  // auth pages too (the dashboard's connectExtension runs there).
+  watchForPendingToken()
+  startBridgePing()
 } else if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     startObserver()
@@ -3319,6 +3588,10 @@ if (_skipAuthPage) {
     // document.querySelectorAll, <1ms on a typical page.
     setTimeout(() => scheduleScan(), 0)
     idleScheduler(() => scheduleScan())
+    // Round-93 — consume the dashboard's cookie/__JPPENDING_TOKEN
+    // fallback channels + start the 5 s bridge ping.
+    watchForPendingToken()
+    startBridgePing()
   })
 } else {
   startObserver()
@@ -3327,6 +3600,9 @@ if (_skipAuthPage) {
   startHeartbeatAttributeMirror()
   setTimeout(() => scheduleScan(), 0)
   idleScheduler(() => scheduleScan())
+  // Round-93 — consume pending-token channels + bridge ping.
+  watchForPendingToken()
+  startBridgePing()
 }
 
 // Always attempt the file-button injection on load — it doesn't

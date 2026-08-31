@@ -298,6 +298,29 @@ function main() {
     }
   }
 
+  // --- 5a. version.json build-tag check (Round-93-fix) ---
+  // The human-facing build tag lives in extension/version.json (the
+  // manifest custom key `x_jp_version` was removed — Chrome warns on
+  // unrecognized top-level keys). The popup fetches this file at
+  // runtime for the footer stamp + stale-install check, and
+  // /api/extension/version reads it server-side, so it MUST exist
+  // and parse in every shipped zip.
+  const versionJsonPath = path.join(EXT, 'version.json')
+  if (!fs.existsSync(versionJsonPath)) {
+    err('version.json missing — the popup + /api/extension/version read it for the build tag (was manifest x_jp_version)')
+  } else {
+    try {
+      const vj = JSON.parse(fs.readFileSync(versionJsonPath, 'utf-8'))
+      if (typeof vj.version !== 'string' || !vj.version) {
+        err('version.json must contain a non-empty "version" string (e.g. { "version": "1.0.0-93" })')
+      } else {
+        ok(`version.json: ${vj.version}`)
+      }
+    } catch (e) {
+      err(`version.json is not valid JSON: ${e.message}`)
+    }
+  }
+
   // --- 5b. Permissions sanity check ---
   // Chrome rejects installs with unknown permission names at LOAD
   // time, not at zip-build time — exactly the silent-failure class

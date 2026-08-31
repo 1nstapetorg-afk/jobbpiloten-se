@@ -145,6 +145,10 @@ const sandbox = {
       }),
     }
   },
+  // Round-91 — the extracted AI-fetch bodies now build their URL
+  // via `await resolveApiBaseUrl()`. The sandbox provides a prod
+  // stub so the tests stay env-free (no chrome.storage in node).
+  resolveApiBaseUrl: async () => 'https://jobbpiloten.se',
   // Helpers the extracted code calls after fetch resolves.
   assertOriginAllowed: (_url) => true, // origin OK
   getFieldMeta: () => 'mock label',

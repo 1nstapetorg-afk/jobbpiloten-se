@@ -132,7 +132,6 @@ test('BUG 2: popup.html inline CSP includes the standard JobbPiloten allow-list 
     'https://outlook.live.com',
     'https://outlook.office.com',
     'https://*.arbetsformedlingen.se',
-    'https://*.blocket.se',
   ]) {
     assert.ok(
       csp.includes(host),

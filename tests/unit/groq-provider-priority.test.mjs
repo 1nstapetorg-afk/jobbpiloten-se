@@ -239,13 +239,24 @@ test('Round-80: TEXT_MODELS is an ordered fallback chain with the primary first'
   // 2026-08-16, so keeping it as the fallback would waste the retry on
   // a dead model.
   assert.equal(groq[0], 'qwen/qwen3.6-27b')
-  assert.ok(
-    groq.length >= 2,
-    'Groq text chain must carry a secondary model for decommission resilience (qwen primary + llama-4-maverick secondary)',
+  // Round-95 (2026-08-07): secondary swapped from
+  // llama-4-maverick (returns 404 "does not exist" on this account)
+  // to openai/gpt-oss-120b — live-verified via the Groq /models API
+  // + a chat-completions probe (finish: stop, Swedish output). Lock
+  // the exact pair so a regression back to the 404'ing maverick (or
+  // a shutdown-scheduled model) is caught at commit time.
+  assert.deepEqual(
+    groq,
+    ['qwen/qwen3.6-27b', 'openai/gpt-oss-120b'],
+    'Groq text chain must be [qwen/qwen3.6-27b, openai/gpt-oss-120b] — account-verified models only',
   )
   assert.ok(
     !groq.includes('llama-3.3-70b-versatile'),
     'llama-3.3-70b-versatile must NOT appear in the chain (shuts down 2026-08-16)',
+  )
+  assert.ok(
+    !groq.some((m) => m.includes('maverick')),
+    'llama-4-maverick must NOT appear in the chain (returns 404 on this account)',
   )
   assert.equal(textModelChainForProvider('openai', 'x')[0], 'gpt-4o-mini')
   assert.deepEqual(textModelChainForProvider('unknown-vendor', 'fb'), ['fb'])
@@ -271,18 +282,28 @@ test('Round-80: daysUntilDecommission returns days-left for scheduled models and
 test('Round-80: every LLM call site routes through createChatWithFallback, not raw client calls', () => {
   // The five generation paths (cover letter, answer, adaptive answer,
   // email body, generateText) must ALL go through the fallback chain.
-  // A single raw `client.chat.completions.create` in a generation path
-  // would silently bypass the decommission resilience. Comments may
+  // A raw `client.chat.completions.create` in a generation path would
+  // silently bypass the decommission resilience. Comments may
   // reference the raw call (doc examples), so we count only lines that
   // are NOT comment/doc lines.
   const rawCallLines = SRC.split('\n').filter(
     (l) => l.includes('client.chat.completions.create') && !l.trim().startsWith('//') && !l.trim().startsWith('*'),
   )
-  // Exactly one executable raw call remains: inside createChatWithFallback.
+  // Two executable raw calls are legitimate, both documented:
+  //   1. createChatWithFallback — the shared choke point every
+  //      generation surface funnels through.
+  //   2. probeGroqHealth (Round-88 / /api/admin/ai-status) — the
+  //      quota health probe DELIBERATELY bypasses the fallback chain:
+  //      it must observe the RAW provider error (TPD quota 429 vs
+  //      model-level rejection vs unreachable) to classify the
+  //      outage for an operator. Routing it through
+  //      createChatWithFallback would mask a TPD-exhaustion 429 as a
+  //      successful retry and hide the very signal the probe exists
+  //      to surface.
   assert.equal(
     rawCallLines.length,
-    1,
-    `expected 1 executable raw call (inside the helper), found ${rawCallLines.length}:\n${rawCallLines.join('\n')}`,
+    2,
+    `expected exactly 2 executable raw calls (createChatWithFallback + probeGroqHealth), found ${rawCallLines.length}:\n${rawCallLines.join('\n')}`,
   )
   const fallbackCalls = SRC.match(/createChatWithFallback\(/g) || []
   assert.ok(fallbackCalls.length >= 5, `all 5 generation paths must use createChatWithFallback — found ${fallbackCalls.length}`)
@@ -335,6 +356,36 @@ test('Round-80 Bug 4: stripReasoningTraces removes closed <think> blocks + trunc
   // Non-string input is a no-op.
   assert.equal(stripReasoningTraces(null), null)
   assert.equal(stripReasoningTraces(undefined), undefined)
+})
+
+test('Round-94 followup: PROMPT_ECHO errors retry the next model in the fallback chain', () => {
+  // 2026-08-07 dev-log audit: qwen/qwen3.6-27b intermittently echoes
+  // the prompt back, tripping isPromptEcho. Before this fix the echo
+  // threw immediately (503 for the user) even though a secondary
+  // (gpt-oss-120b, Round-95) sat in the chain. The retry condition
+  // must treat a PROMPT_ECHO-
+  // coded error the same as a model-level rejection — continue to the
+  // next model instead of propagating. A future refactor that narrows
+  // the `continue` back to model-level-only regresses the AI surfaces
+  // to hard 503s on provider degradation.
+  // The retry gate is `(isModelLevelError(msg) || isEcho) &&
+  // models.length > 1` — isEcho sits inside the OR with the model-
+  // level check, so assert the whole condition shape.
+  assert.match(
+    SRC,
+    /\(isModelLevelError\(msg\)\s*\|\|\s*isEcho\)\s*&&\s*models\.length\s*>\s*1/,
+    'createChatWithFallback must gate the chain-retry on (isModelLevelError(msg) || isEcho) && models.length > 1',
+  )
+  assert.match(
+    SRC,
+    /PROMPT_ECHO_ERROR_CODE\s*\|\|\s*err\?\.[a-zA-Z]+\s*===\s*PROMPT_ECHO_ERROR_CODE/,
+    'isEcho must read BOTH err.code and err.error so promptEchoError() (which sets both) is always caught',
+  )
+  assert.match(
+    SRC,
+    /isEcho\s*\?\s*['"]echoed the prompt['"]/,
+    'the retry warn must distinguish echo from rejection so operator logs are unambiguous',
+  )
 })
 
 test('Round-80 Bug 4: every LLM text-output path calls stripReasoningTraces before returning', () => {

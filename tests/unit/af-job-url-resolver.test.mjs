@@ -4,7 +4,7 @@
 // chain. The pre-Round-56 work already plumbed the direct
 // `applicationUrl` through:
 //   - lib/scrapers/ledigajobb.js — extracts `url` from listing HTML
-//   - lib/scrapers/blocket.js    — extracts `url` from JSON-LD
+//   - lib/scrapers/jobbland.js   — extracts `url` from listing HTML
 //   - lib/jobScraper.js resolveAFJobUrl() — tries 5 AF API field
 //     variants before falling back to the constructed Platsbanken
 //     landing page

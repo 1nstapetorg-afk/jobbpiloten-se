@@ -1,25 +1,422 @@
+yarn run v1.22.22
+$ node scripts/run-dev.mjs
    ▲ Next.js 15.5.16
    - Local:        http://localhost:3000
    - Network:      http://0.0.0.0:3000
    - Environments: .env
 
  ✓ Starting...
- ✓ Ready in 1557ms
- ✓ Compiled /middleware in 251ms (213 modules)
+ ✓ Ready in 2.4s
+ ○ Compiling /middleware ...
+ ✓ Compiled /middleware in 1911ms (214 modules)
+ ○ Compiling /api/health ...
+<w> [webpack.cache.PackFileCacheStrategy] Serializing big strings (264kiB) impacts deserialization performance (consider using Buffer instead and decode when needed)
+ ✓ Compiled /api/health in 6.2s (454 modules)
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /api/health 200 in 8258ms
  ○ Compiling / ...
- ✓ Compiled / in 3.2s (2218 modules)
- GET / 200 in 3910ms
- ✓ Compiled in 244ms (889 modules)
+ ✓ Compiled / in 18.5s (2333 modules)
+ GET / 200 in 22827ms
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 12s (2147 modules)
+ GET /dashboard 404 in 9648ms
+ ✓ Compiled in 2.1s (952 modules)
+ ○ Compiling /api/health ...
+ ✓ Compiled /api/health in 711ms (260 modules)
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /api/health 200 in 2703ms
+ ○ Compiling / ...
+ ✓ Compiled / in 1017ms (1381 modules)
+ GET / 200 in 2385ms
+ GET / 200 in 230ms
+ GET / 200 in 226ms
  ○ Compiling /api/[[...path]] ...
- ✓ Compiled /api/[[...path]] in 1690ms (2909 modules)
-[groq] using provider=groq model=llama-3.3-70b-versatile
-[groq] using provider=groq model=llama-3.3-70b-versatile
- GET /api/health 200 in 3283ms
- GET /api/public/stats 200 in 32ms
-[groq] using provider=groq model=llama-3.3-70b-versatile
- ✓ Compiled in 658ms (890 modules)
- ✓ Compiled /api/[[...path]] in 318ms (801 modules)
-[groq] using provider=groq model=llama-3.3-70b-versatile
- GET /api/public/stats 200 in 907ms
- GET /api/health 200 in 31ms
-[groq] using provider=groq model=llama-3.3-70b-versatile
+ ✓ Compiled /api/[[...path]] in 8.5s (1749 modules)
+[groq] using provider=groq model=qwen/qwen3.6-27b
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ POST /api/profile 200 in 11593ms
+ POST /api/profile 200 in 11617ms
+ GET /api/profile 200 in 180ms
+ GET /api/profile 200 in 195ms
+ GET /api/applications 200 in 99ms
+ GET /api/applications 200 in 107ms
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 8.2s (2901 modules)
+ GET /dashboard 200 in 10485ms
+ GET /dashboard 200 in 10489ms
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /api/stats 200 in 9001ms
+ GET /api/applications 200 in 9475ms
+ GET /api/profile 200 in 9504ms
+ GET /api/subscription 200 in 10057ms
+ GET /api/applications 200 in 1347ms
+ GET /api/profile 200 in 1401ms
+ GET /api/stats 200 in 1791ms
+ GET /api/subscription 200 in 1830ms
+ GET /api/push-status 200 in 1996ms
+ ○ Compiling /api/cron ...
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /api/applications 200 in 9241ms
+ GET /api/stats 200 in 9245ms
+ ✓ Compiled /api/cron in 12.7s (2903 modules)
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ POST /api/profile 200 in 138ms
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /api/profile 200 in 1045ms
+ GET /api/applications 200 in 154ms
+ ○ Compiling /settings ...
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ ✓ Compiled /settings in 9.4s (2981 modules)
+ GET /settings 200 in 11464ms
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /api/profile 200 in 3034ms
+ ○ Compiling /api/ai-usage ...
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ ✓ Compiled /api/ai-usage in 9.9s (2997 modules)
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /api/push-status 200 in 15016ms
+ GET /api/subscription 200 in 15046ms
+ GET /api/profile 200 in 11942ms
+ GET /api/ai-usage 200 in 15395ms
+ GET /api/extension/token 200 in 15675ms
+ GET /api/push-status 200 in 355ms
+ GET /api/subscription 200 in 767ms
+ GET /api/ai-usage 200 in 773ms
+ GET /api/extension/token 200 in 102ms
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ ○ Compiling /api/saved-answers ...
+ ✓ Compiled /api/saved-answers in 4.5s (3000 modules)
+ GET /api/saved-answers 200 in 5098ms
+ GET /api/saved-answers 200 in 137ms
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /api/profile 200 in 688ms
+ GET /api/stats 200 in 127ms
+ ○ Compiling /api/applications/recent ...
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ ✓ Compiled /api/applications/recent in 4.5s (2981 modules)
+ GET /api/applications/recent 401 in 4634ms
+ GET /settings 200 in 1001ms
+ GET /dashboard 200 in 163ms
+ GET /settings 200 in 122ms
+Clerk: Refreshing the session token resulted in an infinite redirect loop. This usually means that your Clerk instance keys do not match - make sure to copy the correct publishable and secret keys from the Clerk dashboard.
+ GET /dashboard 200 in 186ms
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /api/stats 200 in 1729ms
+ GET /api/applications 200 in 1885ms
+ GET /api/profile 200 in 1923ms
+ GET /api/subscription 200 in 1950ms
+ ○ Compiling /api/cron ...
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ ✓ Compiled /api/cron in 8.6s (1971 modules)
+[groq] using provider=groq model=qwen/qwen3.6-27b
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ POST /api/profile 200 in 1362ms
+[groq] using provider=groq model=qwen/qwen3.6-27b
+Clerk: Refreshing the session token resulted in an infinite redirect loop. This usually means that your Clerk instance keys do not match - make sure to copy the correct publishable and secret keys from the Clerk dashboard.
+ GET /dashboard 200 in 928ms
+ GET /api/stats 200 in 517ms
+ GET /api/profile 200 in 521ms
+ GET /api/applications 200 in 535ms
+ GET /api/subscription 200 in 539ms
+ GET /api/cron 200 in 269ms
+ GET /api/push-status 200 in 285ms
+ GET /api/applications 200 in 332ms
+ GET /api/stats 200 in 500ms
+ GET /api/profile 200 in 655ms
+ GET /api/cron 200 in 647ms
+ GET /api/subscription 200 in 718ms
+ GET /api/push-status 200 in 755ms
+ GET /api/applications 200 in 519ms
+ GET /api/stats 200 in 874ms
+ GET /api/profile 200 in 766ms
+ GET /api/cron 200 in 765ms
+ GET /api/subscription 200 in 729ms
+ GET /api/push-status 200 in 727ms
+[jobScraper] fetching https://jobsearch.api.jobtechdev.se/search?q=Frontend&region=01&l=Stockholm&limit=10
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /api/jobs-available?query=Frontend&location=Stockholm 200 in 1481ms
+{"evt":"multiSource.metric","v":2,"af":10,"blk":0,"lj":10,"jl":10,"in":30,"dedup":29,"capped":10,"offset":0,"hasMore":true,"q":"Frontend","l":"Stockholm"}
+ ○ Compiling / ...
+ ✓ Compiled / in 5.4s (1282 modules)
+ GET / 200 in 6462ms
+ GET / 200 in 387ms
+ ○ Compiling /api/[[...path]] ...
+ ✓ Compiled /api/[[...path]] in 3.2s (1994 modules)
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ POST /api/profile 200 in 5228ms
+ POST /api/profile 200 in 5305ms
+ GET /api/profile 200 in 256ms
+ GET /api/profile 200 in 283ms
+ GET /api/applications 200 in 110ms
+ GET /api/applications 200 in 173ms
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /dashboard 200 in 2666ms
+ GET /dashboard 200 in 2664ms
+ GET /api/stats 200 in 1399ms
+ GET /api/applications 200 in 2215ms
+ GET /api/profile 200 in 2229ms
+ GET /api/subscription 200 in 2337ms
+ GET /api/stats 200 in 1357ms
+ GET /api/push-status 200 in 2020ms
+ GET /api/applications 200 in 2043ms
+ GET /api/profile 200 in 2074ms
+ ○ Compiling /api/cron ...
+ GET /api/subscription 200 in 2155ms
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ ✓ Compiled /api/cron in 7.8s (1971 modules)
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /api/cron 200 in 18431ms
+ GET /api/cron 200 in 16327ms
+ GET /api/applications 200 in 18190ms
+ GET /api/profile 200 in 18205ms
+ GET /api/push-status 200 in 16207ms
+ GET /api/subscription 200 in 16226ms
+ GET /api/push-status 200 in 15636ms
+ GET /api/stats 200 in 18796ms
+ GET /api/cron 200 in 1297ms
+ GET /api/cron 200 in 2073ms
+ GET /api/applications 200 in 1904ms
+ GET /api/profile 200 in 1873ms
+ GET /api/push-status 200 in 1907ms
+ GET /api/subscription 200 in 1969ms
+ GET /api/stats 200 in 2168ms
+ GET /api/push-status 200 in 1954ms
+ GET /api/cron 200 in 1136ms
+ GET /api/cron 200 in 811ms
+[jobScraper] fetching https://jobsearch.api.jobtechdev.se/search?q=Frontend+Developer&region=01&l=Stockholm&limit=10
+[groq] using provider=groq model=qwen/qwen3.6-27b
+{"evt":"multiSource.metric","v":2,"af":3,"blk":0,"lj":10,"jl":10,"in":23,"dedup":22,"capped":10,"offset":0,"hasMore":true,"q":"Frontend Developer","l":"Stockholm"}
+[jobs-available] hard location gate dropped 7/10 out-of-area job(s) for Stockholm
+ GET /api/jobs-available?query=Frontend%20Developer&location=Stockholm 200 in 1981ms
+[jobScraper] fetching https://jobsearch.api.jobtechdev.se/search?q=Frontend+Developer&region=01&l=Stockholm&limit=10
+{"evt":"multiSource.metric","v":2,"af":3,"blk":0,"lj":10,"jl":10,"in":23,"dedup":22,"capped":10,"offset":0,"hasMore":true,"q":"Frontend Developer","l":"Stockholm"}
+[jobs-available] hard location gate dropped 7/10 out-of-area job(s) for Stockholm
+ GET /api/jobs-available?query=Frontend%20Developer&location=Stockholm 200 in 297ms
+ POST /api/profile 200 in 95ms
+ GET /api/profile 200 in 68ms
+ GET /api/applications 200 in 73ms
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /settings 200 in 1555ms
+ GET /api/profile 200 in 395ms
+ ○ Compiling /api/ai-usage ...
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ ✓ Compiled /api/ai-usage in 11.3s (1984 modules)
+ ✓ Compiled (1987 modules)
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /api/subscription 200 in 15401ms
+ GET /api/extension/token 200 in 15705ms
+ GET /api/ai-usage 200 in 15731ms
+ GET /api/push-status 200 in 15751ms
+ ○ Compiling /api/saved-answers ...
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ ✓ Compiled /api/saved-answers in 3.1s (1990 modules)
+ GET /api/saved-answers 200 in 3760ms
+ GET /dashboard 200 in 784ms
+ GET /api/saved-answers 200 in 685ms
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /api/profile 200 in 2515ms
+ GET /api/applications 200 in 2522ms
+ GET /api/stats 200 in 2529ms
+ ○ Compiling /api/cron ...
+ ✓ Compiled /api/cron in 1507ms (1992 modules)
+[groq] using provider=groq model=qwen/qwen3.6-27b
+[groq] using provider=groq model=qwen/qwen3.6-27b
+[groq] using provider=groq model=qwen/qwen3.6-27b
+Clerk: Refreshing the session token resulted in an infinite redirect loop. This usually means that your Clerk instance keys do not match - make sure to copy the correct publishable and secret keys from the Clerk dashboard.
+ ○ Compiling /onboarding ...
+ ✓ Compiled /onboarding in 15.2s (2284 modules)
+ GET /onboarding 200 in 16349ms
+ ○ Compiling /api/health ...
+ ✓ Compiled /api/health in 11.4s (1411 modules)
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /api/health 200 in 11963ms
+ ○ Compiling / ...
+ ✓ Compiled / in 3.9s (1263 modules)
+ GET / 200 in 4750ms
+ ○ Compiling /api/[[...path]] ...
+ ✓ Compiled /api/[[...path]] in 8.1s (2995 modules)
+{"evt":"jobbpiloten.event","v":1,"name":"landing_page_view","ts":"2026-08-19T13:42:25.928Z","env":"dev","hasClerk":"0","source":"client","ip":"185.47.192.189"}
+{"evt":"jobbpiloten.event","v":1,"name":"landing_page_view","ts":"2026-08-19T13:42:25.929Z","env":"dev","hasClerk":"0","source":"client","ip":"185.47.192.189"}
+{"evt":"jobbpiloten.event","v":1,"name":"landing_page_view","ts":"2026-08-19T13:42:25.929Z","env":"dev","hasClerk":"0","source":"client","ip":"185.47.192.189"}
+ POST /api/track 200 in 5431ms
+ POST /api/track 200 in 5412ms
+ POST /api/track 200 in 8424ms
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /api/public/stats 200 in 8617ms
+ GET /api/public/stats 200 in 95ms
+ GET /api/public/stats 200 in 54ms
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ ○ Compiling /sign-in/[[...sign-in]] ...
+ ✓ Compiled /sign-in/[[...sign-in]] in 981ms (2972 modules)
+ GET /sign-in 200 in 2178ms
+ GET /sign-in/SignIn_clerk_catchall_check_1787146953653 200 in 624ms
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 797ms (1250 modules)
+ GET /dashboard 200 in 1770ms
+ ○ Compiling /api/[[...path]] ...
+ ✓ Compiled /api/[[...path]] in 1950ms (1337 modules)
+ ✓ Compiled (1964 modules)
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /api/profile 200 in 3575ms
+ GET /api/applications 200 in 3583ms
+ GET /api/push-status 200 in 3594ms
+ GET /api/subscription 200 in 3628ms
+ GET /api/cron 200 in 3748ms
+ GET /api/stats 200 in 3712ms
+ GET /api/profile 200 in 101ms
+ GET /api/applications 200 in 142ms
+ GET /api/cron 200 in 191ms
+ GET /api/push-status 200 in 192ms
+ GET /api/subscription 200 in 202ms
+ GET /api/stats 200 in 292ms
+ GET /api/profile 200 in 68ms
+ GET /api/applications 200 in 150ms
+ GET /api/cron 200 in 153ms
+ GET /api/subscription 200 in 88ms
+ GET /api/push-status 200 in 118ms
+ GET /api/stats 200 in 166ms
+[jobScraper] fetching https://jobsearch.api.jobtechdev.se/search?q=Lagerarbetare+Lokalv%C3%A5rdare&region=14&l=G%C3%B6teborg&limit=10
+[groq] using provider=groq model=qwen/qwen3.6-27b
+{"evt":"multiSource.metric","v":2,"af":10,"blk":0,"lj":10,"jl":7,"in":27,"dedup":27,"capped":10,"offset":0,"hasMore":true,"q":"Lagerarbetare Lokalvårdare","l":"Göteborg"}
+ GET /api/jobs-available?query=Lagerarbetare%20Lokalv%C3%A5rdare&location=G%C3%B6teborg 200 in 842ms
+[jobScraper] fetching https://jobsearch.api.jobtechdev.se/search?q=Lagerarbetare+Lokalv%C3%A5rdare&region=14&l=G%C3%B6teborg&limit=10
+{"evt":"multiSource.metric","v":2,"af":10,"blk":0,"lj":10,"jl":7,"in":27,"dedup":27,"capped":10,"offset":0,"hasMore":true,"q":"Lagerarbetare Lokalvårdare","l":"Göteborg"}
+ GET /api/jobs-available?query=Lagerarbetare%20Lokalv%C3%A5rdare&location=G%C3%B6teborg 200 in 214ms
+[groq] using provider=groq model=qwen/qwen3.6-27b
+[cron] running for 50 active subscribers
+ POST /api/cron 200 in 189ms
+ GET /api/cron 200 in 32ms
+ ○ Compiling /api/extension/token ...
+ ✓ Compiled /api/extension/token in 1724ms (1952 modules)
+ POST /api/extension/token 200 in 2052ms
+ ○ Compiling /api/extension/version ...
+ ✓ Compiled /api/extension/profile in 1839ms (1360 modules)
+ ✓ Compiled in 2.4s (2677 modules)
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /api/extension/profile 200 in 6364ms
+ GET /dashboard 200 in 4599ms
+ ○ Compiling /api/cron ...
+ ✓ Compiled /api/cron in 683ms (2094 modules)
+ ✓ Compiled (2096 modules)
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /api/cron 200 in 1467ms
+ GET /api/applications 200 in 1622ms
+ GET /api/profile 200 in 1555ms
+ GET /api/subscription 200 in 1540ms
+ GET /api/push-status 200 in 1491ms
+ GET /api/stats 200 in 1740ms
+ GET /api/cron 200 in 117ms
+ GET /api/subscription 200 in 99ms
+ GET /api/profile 200 in 106ms
+ GET /api/applications 200 in 120ms
+ GET /api/push-status 200 in 204ms
+ GET /api/stats 200 in 235ms
+ GET /api/cron 200 in 225ms
+ GET /api/subscription 200 in 258ms
+ GET /api/profile 200 in 305ms
+ GET /api/applications 200 in 324ms
+ GET /api/push-status 200 in 115ms
+ GET /api/stats 200 in 138ms
+[jobScraper] fetching https://jobsearch.api.jobtechdev.se/search?q=Lagerarbetare+Lokalv%C3%A5rdare&region=14&l=G%C3%B6teborg&limit=10
+[groq] using provider=groq model=qwen/qwen3.6-27b
+{"evt":"multiSource.metric","v":2,"af":10,"blk":0,"lj":10,"jl":7,"in":27,"dedup":27,"capped":10,"offset":0,"hasMore":true,"q":"Lagerarbetare Lokalvårdare","l":"Göteborg"}
+ GET /api/jobs-available?query=Lagerarbetare%20Lokalv%C3%A5rdare&location=G%C3%B6teborg 200 in 1006ms
+[jobScraper] fetching https://jobsearch.api.jobtechdev.se/search?q=Lagerarbetare+Lokalv%C3%A5rdare&region=14&l=G%C3%B6teborg&limit=10
+{"evt":"multiSource.metric","v":2,"af":10,"blk":0,"lj":10,"jl":7,"in":27,"dedup":27,"capped":10,"offset":0,"hasMore":true,"q":"Lagerarbetare Lokalvårdare","l":"Göteborg"}
+ GET /api/jobs-available?query=Lagerarbetare%20Lokalv%C3%A5rdare&location=G%C3%B6teborg 200 in 197ms
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /api/applications/recent 200 in 47ms
+ GET /api/extension/version 200 in 27ms
+[extension/email-body] jobDescription fetch failed: fetch failed
+[groq] text model qwen/qwen3.6-27b echoed the prompt — trying next in chain
+ POST /api/extension/email-body 200 in 1530ms
+{"evt":"jobbpiloten.event","v":1,"name":"extension_email_body","ts":"2026-08-19T13:44:21.968Z","env":"dev","source":"groq","lang":"sv","cvShortWarning":false,"jobUrlLength":75}
+ ○ Compiling /settings ...
+ ✓ Compiled /settings in 2.2s (1595 modules)
+ GET /settings 200 in 2578ms
+ ○ Compiling /api/ai-usage ...
+ ✓ Compiled /api/ai-usage in 1477ms (2129 modules)
+ ✓ Compiled (2133 modules)
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /api/push-status 200 in 3681ms
+ GET /api/subscription 200 in 3603ms
+ GET /api/profile 200 in 3797ms
+ GET /api/ai-usage 200 in 3423ms
+ GET /api/extension/token 200 in 3653ms
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ ○ Compiling /api/saved-answers ...
+ ✓ Compiled /api/saved-answers in 752ms (2136 modules)
+ GET /api/saved-answers 200 in 875ms
+ GET /api/saved-answers 200 in 21ms
+ GET /dashboard 200 in 129ms
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /api/profile 200 in 452ms
+ ○ Compiling /api/cron ...
+ ✓ Compiled /api/cron in 1190ms (1971 modules)
+[groq] using provider=groq model=qwen/qwen3.6-27b
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /api/subscription 200 in 2808ms
+ GET /api/push-status 200 in 2815ms
+ GET /api/cron 200 in 2870ms
+ GET /api/profile 200 in 2131ms
+ GET /api/applications 200 in 2394ms
+ GET /api/stats 200 in 2904ms
+ GET /api/cron 200 in 77ms
+ GET /api/applications 200 in 124ms
+ GET /api/subscription 200 in 138ms
+ GET /api/push-status 200 in 146ms
+ GET /api/stats 200 in 176ms
+[jobScraper] fetching https://jobsearch.api.jobtechdev.se/search?q=Lagerarbetare+Lokalv%C3%A5rdare&region=14&l=G%C3%B6teborg&limit=10
+[groq] using provider=groq model=qwen/qwen3.6-27b
+{"evt":"multiSource.metric","v":2,"af":10,"blk":0,"lj":10,"jl":7,"in":27,"dedup":27,"capped":10,"offset":0,"hasMore":true,"q":"Lagerarbetare Lokalvårdare","l":"Göteborg"}
+ GET /api/jobs-available?query=Lagerarbetare%20Lokalv%C3%A5rdare&location=G%C3%B6teborg 200 in 901ms
+[jobScraper] fetching https://jobsearch.api.jobtechdev.se/search?q=Lagerarbetare+Lokalv%C3%A5rdare&region=14&l=G%C3%B6teborg&limit=10
+{"evt":"multiSource.metric","v":2,"af":10,"blk":0,"lj":10,"jl":7,"in":27,"dedup":27,"capped":10,"offset":0,"hasMore":true,"q":"Lagerarbetare Lokalvårdare","l":"Göteborg"}
+ GET /api/jobs-available?query=Lagerarbetare%20Lokalv%C3%A5rdare&location=G%C3%B6teborg 200 in 218ms
+[groq] using provider=groq model=qwen/qwen3.6-27b
+[jobScraper] fetching https://jobsearch.api.jobtechdev.se/search?q=Lagerarbetare+Lokalv%C3%A5rdare&l=G%C3%B6teborg&limit=5
+[groq] text model qwen/qwen3.6-27b echoed the prompt — trying next in chain
+ POST /api/apply-now 200 in 3127ms
+ GET /api/stats 200 in 205ms
+ GET /api/profile 200 in 109ms
+ GET /api/applications 200 in 159ms
+ GET /api/push-status 200 in 173ms
+ GET /api/subscription 200 in 150ms
+[groq] using provider=groq model=qwen/qwen3.6-27b
+[jobScraper] fetching https://jobsearch.api.jobtechdev.se/search?q=Lagerarbetare+Lokalv%C3%A5rdare&region=14&l=G%C3%B6teborg&limit=10
+{"evt":"multiSource.metric","v":2,"af":10,"blk":0,"lj":10,"jl":7,"in":27,"dedup":27,"capped":10,"offset":0,"hasMore":true,"q":"Lagerarbetare Lokalvårdare","l":"Göteborg"}
+ GET /api/jobs-available?query=Lagerarbetare%20Lokalv%C3%A5rdare&location=G%C3%B6teborg 200 in 325ms
+ ✓ Compiled /api/extension/version in 320ms (1278 modules)
+ ✓ Compiled (1590 modules)
+[groq] using provider=groq model=qwen/qwen3.6-27b
+ GET /api/extension/version 200 in 974ms
+ POST /api/extension/email-body 200 in 1082ms
+ GET /api/applications/recent 200 in 1098ms
+[extension/email-body] jobDescription fetch failed: fetch failed
+[groq] text model qwen/qwen3.6-27b echoed the prompt — trying next in chain
+{"evt":"jobbpiloten.event","v":1,"name":"extension_email_body","ts":"2026-08-19T13:45:56.590Z","env":"dev","source":"groq","lang":"sv","cvShortWarning":false,"jobUrlLength":91}
+ ○ Compiling /api/[[...path]] ...
+ ✓ Compiled /api/[[...path]] in 524ms (1969 modules)
+[groq] using provider=groq model=qwen/qwen3.6-27b
+[jobScraper] fetching https://jobsearch.api.jobtechdev.se/search?q=Lagerarbetare+Lokalv%C3%A5rdare&l=G%C3%B6teborg&limit=5
+[groq] using provider=groq model=qwen/qwen3.6-27b
+[groq] text model qwen/qwen3.6-27b echoed the prompt — trying next in chain
+ POST /api/apply-now 200 in 4806ms
+ GET /api/profile 200 in 242ms
+ GET /api/applications 200 in 117ms
+ GET /api/stats 200 in 276ms
+ GET /api/subscription 200 in 83ms
+ GET /api/push-status 200 in 93ms
+[jobScraper] fetching https://jobsearch.api.jobtechdev.se/search?q=Lagerarbetare+Lokalv%C3%A5rdare&region=14&l=G%C3%B6teborg&limit=10
+[groq] using provider=groq model=qwen/qwen3.6-27b
+{"evt":"multiSource.metric","v":2,"af":10,"blk":0,"lj":10,"jl":7,"in":27,"dedup":27,"capped":10,"offset":0,"hasMore":true,"q":"Lagerarbetare Lokalvårdare","l":"Göteborg"}
+ GET /api/jobs-available?query=Lagerarbetare%20Lokalv%C3%A5rdare&location=G%C3%B6teborg 200 in 788ms
+ ✓ Compiled in 6.8s (2276 modules)
+ ✓ Compiled in 1805ms (2276 modules)
+ ✓ Compiled in 1065ms (2276 modules)
+ ○ Compiling / ...
+ ✓ Compiled / in 11.5s (1282 modules)
+ HEAD / 200 in 5160ms
+[?25h
+Done in 2549.71s.

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="280" viewBox="0 0 440 280">
+  <defs>
+    <linearGradient id="promoBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4f46e5"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+  <rect width="440" height="280" fill="url(#promoBg)"/>
+  <circle cx="380" cy="40" r="70" fill="#ffffff" opacity="0.08"/>
+  <circle cx="60" cy="250" r="90" fill="#ffffff" opacity="0.08"/>
+  <rect x="168" y="66" width="104" height="104" rx="20" fill="#ffffff" opacity="0.95"/>
+  <text x="220" y="140" text-anchor="middle" font-family="system-ui, sans-serif" font-size="64" font-weight="800" fill="#4f46e5">J</text>
+  <text x="220" y="205" text-anchor="middle" font-family="system-ui, sans-serif" font-size="30" font-weight="700" fill="#ffffff">JobbPiloten</text>
+  <text x="220" y="236" text-anchor="middle" font-family="system-ui, sans-serif" font-size="17" fill="#e0e7ff">AI-jobbansökningar</text>
+  <text x="220" y="262" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" fill="#c7d2fe">promo-tile placeholder — ersätt med PNG 440×280</text>
+</svg>

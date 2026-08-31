@@ -4,9 +4,10 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useUser } from '@/hooks/useAuth'
-import dynamic from 'next/dynamic'
-import { trackEventClient } from '@/lib/analytics'
+import { trackEventClient, trackPlausible } from '@/lib/analytics'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
@@ -14,21 +15,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import {
   Plane, Sparkles, FileText, Check, Zap, Trophy, ArrowRight,
   PlayCircle, Bot, Users, Star, Rocket, AlertTriangle, Briefcase,
-  HelpCircle, Shield, Lock, Quote, MapPin, ShieldCheck,
+  HelpCircle, Shield, Lock, Quote, MapPin, ShieldCheck, Menu, X,
 } from 'lucide-react'
+import UserMenu from '@/components/UserMenu'
 import { SUPPORT_EMAIL } from '@/lib/siteConfig'
 
-// Dynamically import UserButton to avoid Clerk dependency when in demo mode.
-// Clerk's UserButton throws if rendered outside ClerkProvider, so we wrap it
-// in a guard that only mounts it when Clerk is actually configured.
-const ClerkUserButton = dynamic(
-  () => import('@clerk/nextjs').then(mod => ({ default: mod.UserButton })).catch(() => ({ default: () => null })),
-  { ssr: false }
-)
-
-// Canonical client-side Clerk check — see lib/clerk-config.js.
-import { isClerkConfiguredClient } from '@/lib/clerk-config'
-const isClerkConfigured = isClerkConfiguredClient
+// Round-94 — the landing navbar uses the shared <UserMenu /> (single
+// 36px avatar + dropdown: Profil / Inställningar / Logga ut) instead of
+// Clerk's <UserButton /> — the old markup rendered TWO avatar elements
+// when signed in. See components/UserMenu.jsx.
 
 // Round-34 (Part 1) — interactive landing demo. Client component,
 // self-contained state machine + Framer Motion + Framer-free
@@ -38,13 +33,15 @@ const isClerkConfigured = isClerkConfiguredClient
 // shell.
 import InteractiveDemo from '@/components/InteractiveDemo'
 
-function SafeUserButton(props) {
-  if (!isClerkConfigured()) return null
-  return <ClerkUserButton {...props} />
-}
+// Round-94 followup (reviewer fix): the old `SafeUserButton` wrapper
+// around Clerk's <UserButton /> was removed along with the Clerk
+// dynamic import — <UserMenu /> (components/UserMenu.jsx) is the
+// single avatar surface now.
 
 export default function LandingPage() {
   const [annual, setAnnual] = useState(true)
+  // Round-94: mobile nav drawer state.
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [loadingTier, setLoadingTier] = useState(null)
   // Round-34 / Public stats — wire landing copy to real aggregate
   // counts from /api/public/stats. null = "loading or fetch failed";
@@ -54,6 +51,9 @@ export default function LandingPage() {
   // no client-side body, so a single useEffect with [] deps is the
   // right pattern (no need to refetch on user state change).
   const [publicStats, setPublicStats] = useState(null)
+  // Round-89 — waitlist form state ('idle' | 'loading' | 'done').
+  const [waitlistEmail, setWaitlistEmail] = useState('')
+  const [waitlistState, setWaitlistState] = useState('idle')
   const { isSignedIn, user } = useUser()
   const router = useRouter()
 
@@ -105,6 +105,39 @@ export default function LandingPage() {
     } catch (e) {
       alert('Fel: ' + e.message)
       setLoadingTier(null)
+    }
+  }
+
+  // Round-89 — waitlist signup. POSTs to /api/waitlist (public route):
+  // 201 = added, 409 = already queued (both land on the success state),
+  // anything else surfaces a Swedish error toast and keeps the form
+  // editable so the visitor can retry.
+  const handleWaitlist = async (e) => {
+    e.preventDefault()
+    const email = waitlistEmail.trim()
+    if (!email) return
+    setWaitlistState('loading')
+    try {
+      const res = await fetch('/api/waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.status === 201) {
+        setWaitlistState('done')
+        trackPlausible('waitlist_signup')
+        toast.success('Du är med! Vi hör av oss när det är din tur.')
+      } else if (res.status === 409) {
+        setWaitlistState('done')
+        toast.success('Du finns redan i kön — vi hör av oss snart.')
+      } else {
+        setWaitlistState('idle')
+        toast.error(data?.error || 'Något gick fel — försök igen.')
+      }
+    } catch (err) {
+      setWaitlistState('idle')
+      toast.error('Kunde inte nå servern — försök igen.')
     }
   }
 
@@ -185,7 +218,20 @@ export default function LandingPage() {
               Beta
             </Badge>
           </Link>
-          <div className="flex items-center gap-6 text-sm text-slate-600">
+          {/* Round-94: mobile hamburger — toggles the slide-down drawer
+              below. Desktop keeps the inline links. */}
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(v => !v)}
+            aria-expanded={mobileMenuOpen}
+            aria-controls="landing-mobile-menu"
+            aria-label={mobileMenuOpen ? 'Stäng meny' : 'Öppna meny'}
+            data-testid="landing-mobile-menu-btn"
+            className="md:hidden inline-flex items-center justify-center w-9 h-9 rounded-md text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors"
+          >
+            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+          <div className="hidden md:flex items-center gap-6 text-sm text-slate-600">
             <a href="#hur" className="hidden md:block hover:text-slate-900">Så fungerar det</a>
             <a href="#priser" className="hidden md:block hover:text-slate-900">Priser</a>
             <a href="#faq" className="hidden md:block hover:text-slate-900">FAQ</a>
@@ -197,13 +243,39 @@ export default function LandingPage() {
             )}
             {isSignedIn && (
               <>
-                <Link href="/dashboard"><Button variant="outline">Dashboard</Button></Link>
-                <SafeUserButton afterSignOutUrl="/" />
+                {/* Round-94 (Task 1C): hover-prefetch the dashboard route
+                    so signed-in navigation feels instant. */}
+                <Link href="/dashboard" onMouseEnter={() => router.prefetch('/dashboard')}><Button variant="outline">Dashboard</Button></Link>
+                <UserMenu user={user} />
               </>
             )}
           </div>
         </div>
       </nav>
+
+      {/* Round-94: mobile slide-down drawer — same links as the desktop
+          nav, animated with max-height/opacity so no JS library is
+          needed. Closes on link click. */}
+      <div
+        id="landing-mobile-menu"
+        className={`md:hidden overflow-hidden transition-all duration-300 ease-out motion-reduce:transition-none motion-reduce:duration-0 ${mobileMenuOpen ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}
+        data-testid="landing-mobile-menu"
+      >
+        <div className="container mx-auto px-4 py-3 space-y-1 border-b border-slate-100 bg-white/95 backdrop-blur">
+          <a href="#hur" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-slate-700 hover:text-slate-900">Så fungerar det</a>
+          <a href="#priser" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-slate-700 hover:text-slate-900">Priser</a>
+          <a href="#faq" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-slate-700 hover:text-slate-900">FAQ</a>
+          {!isSignedIn && (
+            <>
+              <Link href="/sign-in" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-slate-700 hover:text-slate-900">Logga in</Link>
+              <Link href="/sign-up" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-slate-700 hover:text-slate-900 font-medium text-indigo-600">Starta gratis</Link>
+            </>
+          )}
+          {isSignedIn && (
+            <Link href="/dashboard" onMouseEnter={() => router.prefetch('/dashboard')} onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-slate-700 hover:text-slate-900 font-medium text-indigo-600">Dashboard</Link>
+          )}
+        </div>
+      </div>
 
       {/* Hero */}
       <section className="container mx-auto px-4 pt-16 pb-24 grid md:grid-cols-2 gap-12 items-center">
@@ -741,6 +813,33 @@ export default function LandingPage() {
               {primaryCtaLabel} <ArrowRight className="ml-2 w-4 h-4" />
             </Button>
           </Link>
+        </div>
+      </section>
+
+      {/* Waitlist (Round-89) — tidig tillgång. The email form POSTs to
+          /api/waitlist (public, zod-validated, dup-guarded with 409) and
+          the button toggles its own loading/done states so a visitor
+          can't double-submit. testids are locked by the landing e2e. */}
+      <section className="bg-white py-16" data-testid="waitlist-section">
+        <div className="container mx-auto px-4 max-w-2xl text-center">
+          <Badge variant="secondary" className="mb-4 bg-indigo-50 text-indigo-700 border-indigo-100">Tidig tillgång</Badge>
+          <h2 className="text-3xl font-bold text-slate-900">Få tidig tillgång</h2>
+          <p className="mt-3 text-slate-600">Vi släpper i vågor under betan. Lämna din e-post så får du en inbjudan så snart det är din tur.</p>
+          <form className="mt-6 flex flex-col sm:flex-row gap-3 max-w-md mx-auto" onSubmit={handleWaitlist} data-testid="waitlist-form">
+            <Input
+              type="email"
+              required
+              placeholder="din@epost.se"
+              value={waitlistEmail}
+              onChange={(e) => setWaitlistEmail(e.target.value)}
+              disabled={waitlistState === 'done'}
+              data-testid="waitlist-email"
+              className="h-12 flex-1"
+            />
+            <Button type="submit" disabled={waitlistState === 'loading' || waitlistState === 'done'} className="h-12 bg-slate-900 hover:bg-slate-800" data-testid="waitlist-submit">
+              {waitlistState === 'loading' ? 'Skickar…' : waitlistState === 'done' ? 'Du är med ✓' : 'Få tidig tillgång'}
+            </Button>
+          </form>
         </div>
       </section>
 

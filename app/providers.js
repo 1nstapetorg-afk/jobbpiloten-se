@@ -12,9 +12,11 @@
  * renders the floating toast notification anywhere in the app.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MotionConfig } from 'framer-motion';
 import { ThemeProvider } from 'next-themes';
 import { Toaster, toast } from '@/components/ui/sonner';
 import InstallBanner from '@/components/InstallBanner';
+import { BrowserProvider } from '@/lib/browser-store';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { setDemoSessionCookie, hasDemoSessionCookie } from '@/lib/auth-cookie';
 import { isClerkConfiguredClient } from '@/lib/clerk-config';
@@ -192,12 +194,27 @@ function TokenMintBridge() {
 export function Providers({ children }) {
   return (
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
+      {/* Round-94 followup (prefers-reduced-motion audit): MotionConfig
+          reducedMotion="user" makes EVERY framer-motion component in the
+          tree read the OS prefers-reduced-motion setting and drop
+          transform/layout animations (opacity stays). Covers the
+          dashboard stat-card stagger, onboarding step slides, settings
+          header fades and InteractiveDemo without per-component hooks. */}
+      <MotionConfig reducedMotion="user">
       <ClerkAwareProvider>
-        {/* Sonner toast portal — renders floating notifications. Position
-            top-right on desktop, bottom on mobile via Toaster's responsive
-            defaults. richColors makes success/error/info visually distinct. */}
-        <Toaster richColors position="top-right" closeButton />
-        {children}
+        {/* Sonner toast portal — renders floating notifications.
+            Round-94: bottom-right placement + 8px stack gap. Sonner's
+            default motion for bottom-right slides toasts in from the
+            right and out to the right after `duration` (4s) or manual
+            dismiss. richColors keeps the four types (success / error /
+            info / warning) visually distinct with their default icons. */}
+        <Toaster richColors position="bottom-right" closeButton gap={8} visibleToasts={4} duration={4000} />
+        {/* Round-95 — in-app browser (mobile extension replacement). Mounted
+            at the root so session/tab state survives the dashboard →
+            /browser navigation when the user taps "Ansök i appen". */}
+        <BrowserProvider>
+          {children}
+        </BrowserProvider>
         {/* Mounted globally so the PWA install prompt can appear on any
             page (landing, dashboard, sign-in, etc.). The component listens
             for `beforeinstallprompt` and only renders when the browser
@@ -209,6 +226,7 @@ export function Providers({ children }) {
             app). Returns null; mounts a single addEventListener. */}
         <TokenMintBridge />
       </ClerkAwareProvider>
+      </MotionConfig>
     </ThemeProvider>
   );
 }

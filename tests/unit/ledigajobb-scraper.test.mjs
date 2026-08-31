@@ -2,7 +2,7 @@
 //
 // Lock the public contract of lib/scrapers/ledigajobb.js + the
 // `lj` field on the multiSource waterfall in lib/jobScraper.js.
-// Mirrors tests/unit/blocket-scraper.test.mjs in shape (SEED,
+// Mirrors tests/unit/jobbland-scraper.test.mjs in shape (SEED,
 // unindexed-afterEach, mocked global.fetch) so the two scrapers
 // can never drift in cache policy or metric shape.
 //
@@ -27,39 +27,41 @@ const SEED = `${Date.now()}-${Math.random().toString(36).slice(2)}`
 
 test('buildLedigaJobbSearchUrl returns null when both query and location are empty', () => {
   assert.equal(buildLedigaJobbSearchUrl({ query: '', location: '' }), null)
-  // Pure whitespace is also "empty" after toSlug strips it.
+  // Pure whitespace is also "empty" after trim() strips it.
   assert.equal(buildLedigaJobbSearchUrl({ query: ' ', location: '   ' }), null)
 })
 
-test('buildLedigaJobbSearchUrl builds an "Q-…" path when only query is provided', () => {
+test('buildLedigaJobbSearchUrl builds a query-string URL when only query is provided', () => {
   assert.equal(
     buildLedigaJobbSearchUrl({ query: 'frontend', location: '' }),
-    'https://ledigajobb.se/sok/q-frontend/',
+    'https://ledigajobb.se/sok?q=frontend',
   )
 })
 
-test('buildLedigaJobbSearchUrl builds an "L-…" path when only location is provided', () => {
+test('buildLedigaJobbSearchUrl builds a query-string URL when only location is provided', () => {
   assert.equal(
     buildLedigaJobbSearchUrl({ query: '', location: 'Stockholm' }),
-    'https://ledigajobb.se/sok/l-stockholm/',
+    'https://ledigajobb.se/sok?l=Stockholm',
   )
 })
 
 test('buildLedigaJobbSearchUrl places query BEFORE location', () => {
-  // Mirror the Blocket ordering — reordering would silently route to
-  // a different (often empty) results page on the upstream site.
+  // Order mirrors the site's own search-form field order — reordering
+  // would silently route to a different results page on the upstream.
   assert.equal(
     buildLedigaJobbSearchUrl({ query: 'backend', location: 'Göteborg' }),
-    'https://ledigajobb.se/sok/q-backend/l-göteborg/',
+    'https://ledigajobb.se/sok?q=backend&l=G%C3%B6teborg',
   )
 })
 
-test('buildLedigaJobbSearchUrl downcases + hyphenates + KEEPS Swedish diacritics', () => {
-  // Slug shape must match the upstream path grammar so the
-  // dashboard's deep-link button lands on a real results page.
+test('buildLedigaJobbSearchUrl percent-encodes Swedish diacritics (no path slugging)', () => {
+  // 2026-08-07 audit: ledigajobb.se moved from the path-segment scheme
+  // (/sok/q-…/l-…/) to query-string params (?q=…&l=…) — the old path
+  // shape returns 404 for every search. URLSearchParams percent-encodes
+  // ÅÄÖ (Malmö → Malm%C3%B6), which the live site accepts.
   assert.equal(
     buildLedigaJobbSearchUrl({ query: 'MÅLARE', location: 'Malmö' }),
-    'https://ledigajobb.se/sok/q-målare/l-malmö/',
+    'https://ledigajobb.se/sok?q=M%C3%85LARE&l=Malm%C3%B6',
   )
 })
 
@@ -203,7 +205,7 @@ test('scrapeLedigajobbJobs parses the `anchor-flattened` pattern with middle-dot
 })
 
 test('scrapeLedigajobbJobs returns early on empty query+location (no GET issued)', async () => {
-  // When toSlug strips both query and location to '', the URL
+  // When trim() strips both query and location to '', the URL
   // builder returns null and the scraper MUST short-circuit so we
   // don't accidentally point at the site's home page.
   let fetchCalled = false
@@ -228,8 +230,9 @@ afterEach(() => {
 test('multiSourceSearchJobs emits the lj field on the metric log per call', async () => {
   const captured = []
   console.log = (...args) => captured.push(args.join(' '))
-  // Make AF succeed with 1 result, Blocket fail, Ledigajobb succeed
-  // with 1 result. The `in` count should be 1 + 0 + 1 = 2.
+  // Make AF succeed with 1 result, Ledigajobb succeed with 1 result
+  // (Blocket leg is retired — Round-94 followup, always 0).
+  // The `in` count should be 1 + 0 + 1 = 2.
   const sharedUrl = `https://example.com/canonical-${SEED}`
   global.fetch = async (url) => {
     const s = String(url)
@@ -280,15 +283,16 @@ test('multiSourceSearchJobs emits the lj field on the metric log per call', asyn
   assert.equal(parsed.af, 1)
   assert.equal(parsed.blk, 0)
   assert.equal(parsed.lj, 1)
-  assert.equal(parsed.in, 2, 'in = af + blk + lj (pre-dedupe total)')
+  assert.equal(parsed.in, 2, 'in = af + blk(0) + lj + jl(0) (pre-dedupe total)')
   assert.equal(parsed.dedup, 1, 'AF + LJ collapsed on shared URL -> dedup = 1')
   assert.equal(parsed.capped, 1)
 })
 
-test('multiSourceSearchJobs emits lj=0 + the canonical both-empty warn when only Ledigajobb fails', async () => {
-  // Both AF and Blocket fail; Ledigajobb is up but returns 403.
-  // Same end-user behaviour as before Ledigajobb was added: warning
-  // fires + jobs=[] + the metric shows all three zero counts.
+test('multiSourceSearchJobs emits lj=0 + the canonical all-empty warn when every source fails', async () => {
+  // AF, Ledigajobb AND Jobbland all fail (Blocket leg is retired —
+  // Round-94/95 followup). Same end-user behaviour as before Ledigajobb
+  // was added: warning fires + jobs=[] + the metric shows all four
+  // zero counts.
   const capturedLog = []
   const capturedWarn = []
   console.log = (...args) => capturedLog.push(args.join(' '))
@@ -302,7 +306,7 @@ test('multiSourceSearchJobs emits lj=0 + the canonical both-empty warn when only
     limit: 20,
   })
   assert.deepEqual(jobs, [])
-  const warn = capturedWarn.find((l) => l.includes('[multiSource] both sources returned empty'))
+  const warn = capturedWarn.find((l) => l.includes('[multiSource] all sources returned empty'))
   assert.ok(warn)
   const metric = capturedLog.find((l) => l.includes('"evt":"multiSource.metric"'))
   assert.ok(metric)
@@ -310,4 +314,40 @@ test('multiSourceSearchJobs emits lj=0 + the canonical both-empty warn when only
   assert.equal(parsed.af, 0)
   assert.equal(parsed.blk, 0)
   assert.equal(parsed.lj, 0)
+  assert.equal(parsed.jl, 0)
+})
+
+test('scrapeLedigajobbJobs discards links that resolve to the homepage (Round-96 Bug 1)', async () => {
+  // A listing whose <a href> is a bare home link (or a /sok search page)
+  // must NOT be returned — clicking it would take the user to the
+  // front page instead of the job ad. Only real /jobb/<slug> deep links
+  // survive.
+  const html = `
+    <html>
+      <body>
+        <article class="job-listing">
+          <a href=${'/'} class="job-link"><h2>Bad home link</h2></a>
+          <span class="company">Acme</span><span class="location">Stockholm</span>
+        </article>
+        <article class="job-listing">
+          <a href="https://ledigajobb.se" class="job-link"><h2>Bad bare host</h2></a>
+          <span class="company">Acme</span><span class="location">Stockholm</span>
+        </article>
+        <article class="job-listing">
+          <a href="/jobb/good-${SEED}" class="job-link"><h2>Bra roll</h2></a>
+          <span class="company">Klarna</span><span class="location">Stockholm</span>
+        </article>
+      </body>
+    </html>
+  `
+  global.fetch = async () => new Response(html, { status: 200 })
+  const jobs = await scrapeLedigajobbJobs({
+    query: `unique-F-${SEED}`,
+    location: 'Stockholm',
+    limit: 20,
+  })
+  // Only the real deep link survives; the two homepage links are dropped.
+  assert.equal(jobs.length, 1)
+  assert.equal(jobs[0].title, 'Bra roll')
+  assert.ok(jobs[0].url.includes('/jobb/good-'), 'returned url must be a real deep link')
 })

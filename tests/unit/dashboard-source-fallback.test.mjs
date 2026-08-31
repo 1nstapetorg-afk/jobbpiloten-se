@@ -48,11 +48,16 @@ test('Round-58 / Bug 2: SEARCH_VIEW must be REMOVED to avoid dual source-of-trut
   )
 })
 
-test('Round-58 / Bug 2: SOURCE_FALLBACKS must include a Blocket entry', () => {
-  assert.match(
+test('Round-94 followup: SOURCE_FALLBACKS must NOT include a Blocket entry (platform shut down)', () => {
+  // Schibsted shut Blocket Jobb down permanently (jobb.blocket.se is
+  // NXDOMAIN in public DNS) — a fallback that deep-links to a dead
+  // site is worse than a generic search, so the entry was removed
+  // 2026-08-07. Re-adding it without re-verifying the domain is live
+  // would ship a broken button to the prep modal.
+  assert.doesNotMatch(
     SRC,
-    /key:\s*['"]blocket['"][\s\S]{0,400}buildBlocketSearchUrl/,
-    'SOURCE_FALLBACKS must have a blocket entry that calls buildBlocketSearchUrl() so Blocket-sourced jobs open Blocket Jobb',
+    /key:\s*['"]blocket['"]/,
+    'SOURCE_FALLBACKS must NOT have a blocket entry (Blocket Jobb shut down 2026-12-16 — jobb.blocket.se is NXDOMAIN)',
   )
 })
 
@@ -61,6 +66,18 @@ test('Round-58 / Bug 2: SOURCE_FALLBACKS must include a Ledigajobb entry', () =>
     SRC,
     /key:\s*['"]ledigajobb['"][\s\S]{0,400}buildLedigaJobbSearchUrl/,
     'SOURCE_FALLBACKS must have a ledigajobb entry that calls buildLedigaJobbSearchUrl() so Ledigajobb-sourced jobs open Ledigajobb.se',
+  )
+})
+
+test('Round-95: SOURCE_FALLBACKS must include a Jobbland entry (Blocket successor)', () => {
+  // Round-95 (2026-08-07): Blocket Jobb is shut down; Duunitori's
+  // jobbland.se (which also absorbed Jobbsafari) is the natural
+  // per-source successor. Jobbland-sourced jobs that fall through to
+  // Tier-3 must open Jobbland's own search, not a generic Google query.
+  assert.match(
+    SRC,
+    /key:\s*['"]jobbland['"][\s\S]{0,400}buildJobblandSearchUrl/,
+    'SOURCE_FALLBACKS must have a jobbland entry that calls buildJobblandSearchUrl() so Jobbland-sourced jobs open Jobbland.se',
   )
 })
 
@@ -82,15 +99,19 @@ test('Round-58 / Bug 2: SOURCE_FALLBACKS must include a generic Google last-reso
 })
 
 test('Round-58 / Bug 2: SOURCE_FALLBACKS entries must own their own presentation (className)', () => {
-  assert.match(
-    SRC,
-    /key:\s*['"]blocket['"][\s\S]{0,400}border-blue-300/,
-    'blocket entry must use brand-matching blue border (same as BroaderSearchCard) so colour matches source identity',
-  )
+  // Round-94 followup: the blocket-entry colour assertion was removed
+  // alongside the entry itself (platform shut down). Ledigajobb keeps
+  // its brand-matching emerald border; Jobbland (Round-95) uses violet
+  // to match its board accent.
   assert.match(
     SRC,
     /key:\s*['"]ledigajobb['"][\s\S]{0,400}border-emerald-300/,
     'ledigajobb entry must use brand-matching emerald border for the same reason',
+  )
+  assert.match(
+    SRC,
+    /key:\s*['"]jobbland['"][\s\S]{0,400}border-violet-300/,
+    'jobbland entry must use brand-matching violet border',
   )
 })
 
@@ -148,10 +169,48 @@ test('Round-58 / Bug 2: resolveApplicationUrl 3-tier chain must still return sou
   )
 })
 
-test('Round-58 / Bug 2: Per-source match must be case-insensitive substring (handles "Blocket Jobb", "Ledigajobb.se")', () => {
+test('Round-58 / Bug 2: Per-source match must be case-insensitive substring (handles "Blocket Jobb", "Ledigajobb.se", "Jobbland")', () => {
   assert.match(
     SRC,
     /(app|app\?)\s*\.\s*source[\s\S]{0,80}\.toLowerCase\(\)\s*\.\s*includes/,
     'matchesJobSource must use case-insensitive substring (handles "Blocket Jobb", "Ledigajobb.se")',
+  )
+})
+
+
+// ---------- 5. Round-96B — reject homepage / search-page stored URLs ----------
+
+test('Round-96B: dashboard must declare isValidJobUrl (rejects homepage + /sok)', () => {
+  assert.match(
+    SRC,
+    /function\s+isValidJobUrl\s*\(url\)/,
+    'dashboard/page.js must declare isValidJobUrl to guard stored job links',
+  )
+})
+
+test('Round-96B: isValidJobUrl must reject bare homepage and /sok search pages', () => {
+  // The RegExp body must reject path '/' / '' and any path starting with
+  // '/sok' so a stored `https://ledigajobb.se/sok?q=...` (or the bare
+  // host) never renders as a clickable deep link.
+  assert.match(
+    SRC,
+    /p\s*===\s*['"]['"]\s*\|\|\s*p\s*===\s*['"]\/['"]/,
+    'isValidJobUrl must reject both "/" and the empty path',
+  )
+  assert.match(
+    SRC,
+    /p\.startsWith\(['"]\/sok['"]\)/,
+    'isValidJobUrl must reject /sok search-page paths',
+  )
+})
+
+test('Round-96B: resolveApplicationUrl must route a jobUrl through isValidJobUrl before returning direct', () => {
+  // Without this gate, a stored `/sok?...` jobUrl would be returned as
+  // source:'direct' and the modal would deep-link (or redirect) to the
+  // search page instead of the job ad.
+  assert.match(
+    SRC,
+    /if\s*\(app\.jobUrl\s*&&\s*isValidJobUrl\(app\.jobUrl\)\)/,
+    'the jobUrl branch must only treat a valid deep link as source:direct',
   )
 })
