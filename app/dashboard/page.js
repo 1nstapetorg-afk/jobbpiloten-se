@@ -80,9 +80,25 @@ const FILTERS = [
  *
  * Returns `{ url, source }` or `null` if there is nothing to open.
  */
+function isValidJobUrl(url) {
+  if (!url) return false
+  try {
+    const u = new URL(url)
+    const p = u.pathname.replace(/\/$/, '')
+    // Reject the bare homepage and search/landing pages (e.g. a stored
+    // Ledigajobb `/sok?...` URL) — these are not deep job links and must
+    // not be rendered as a clickable "Gå till ansökningssida".
+    if (p === '' || p === '/') return false
+    if (p === '/sok' || p.startsWith('/sok')) return false
+    return true
+  } catch {
+    return false
+  }
+}
+
 function resolveApplicationUrl(app) {
   if (!app) return null
-  if (app.jobUrl) {
+  if (app.jobUrl && isValidJobUrl(app.jobUrl)) {
     return { url: app.jobUrl, source: 'direct' }
   }
   if (app.externalId) {

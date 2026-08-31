@@ -176,3 +176,41 @@ test('Round-58 / Bug 2: Per-source match must be case-insensitive substring (han
     'matchesJobSource must use case-insensitive substring (handles "Blocket Jobb", "Ledigajobb.se")',
   )
 })
+
+
+// ---------- 5. Round-96B — reject homepage / search-page stored URLs ----------
+
+test('Round-96B: dashboard must declare isValidJobUrl (rejects homepage + /sok)', () => {
+  assert.match(
+    SRC,
+    /function\s+isValidJobUrl\s*\(url\)/,
+    'dashboard/page.js must declare isValidJobUrl to guard stored job links',
+  )
+})
+
+test('Round-96B: isValidJobUrl must reject bare homepage and /sok search pages', () => {
+  // The RegExp body must reject path '/' / '' and any path starting with
+  // '/sok' so a stored `https://ledigajobb.se/sok?q=...` (or the bare
+  // host) never renders as a clickable deep link.
+  assert.match(
+    SRC,
+    /p\s*===\s*['"]['"]\s*\|\|\s*p\s*===\s*['"]\/['"]/,
+    'isValidJobUrl must reject both "/" and the empty path',
+  )
+  assert.match(
+    SRC,
+    /p\.startsWith\(['"]\/sok['"]\)/,
+    'isValidJobUrl must reject /sok search-page paths',
+  )
+})
+
+test('Round-96B: resolveApplicationUrl must route a jobUrl through isValidJobUrl before returning direct', () => {
+  // Without this gate, a stored `/sok?...` jobUrl would be returned as
+  // source:'direct' and the modal would deep-link (or redirect) to the
+  // search page instead of the job ad.
+  assert.match(
+    SRC,
+    /if\s*\(app\.jobUrl\s*&&\s*isValidJobUrl\(app\.jobUrl\)\)/,
+    'the jobUrl branch must only treat a valid deep link as source:direct',
+  )
+})
